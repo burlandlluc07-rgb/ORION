@@ -153,7 +153,8 @@ def main() -> int:
     record("fast path: screenshot saved", bool(pics), r["reply"], **r)
 
     r = o.ask("volume 30")
-    record("fast path: volume", "30" in r["reply"] or "Volume" in r["reply"], r["reply"], **r)
+    record("fast path: volume (honest result)", r["reply"] == "Volume set to 30%." or "can't reach the speakers" in r["reply"],
+           r["reply"], **r)
 
     r = o.ask("how's my pc doing")
     record("fast path: system status", "CPU" in r["reply"], r["reply"], **r)

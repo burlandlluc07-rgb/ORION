@@ -228,3 +228,17 @@ async def test_history_includes_compact_action_log(engine):
     model_turn = next(c for c in history if c.role == "model")
     joined = " ".join(p.text for p in model_turn.parts)
     assert "[Actions I took: Probe: “report.txt” → done (probed report.txt)]" in joined
+
+
+async def test_fast_path_hardware_error_is_reported_not_sent_to_gemini(engine, monkeypatch):
+    from orion.tools import system
+    from orion.tools.registry import ToolError
+
+    def no_speakers(level: int) -> str:
+        raise ToolError("I can't reach the speakers — no audio output device seems to be connected or enabled.")
+
+    engine.registry.get("set_volume").fn = no_speakers
+    engine.brain = FakeBrain([])
+    res = await engine.agent.handle("volume 30")
+    assert "can't reach the speakers" in res["reply"] and engine.brain.calls == []
+    _ = system

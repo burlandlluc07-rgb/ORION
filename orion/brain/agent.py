@@ -172,14 +172,16 @@ class Agent:
             return None
         t0 = time.perf_counter()
         ok, result = await self.run_tool(route.tool, route.args, task, cid)
-        if not ok and "declined" not in result and "Stopped" not in result:
+        if not ok and "declined" not in result and "Stopped" not in result and route.fallback \
+                and self.e.config.get_api_key():
             log.info("Fast path %s failed (%s); handing to Gemini", route.tool, result)
             task.steps.clear()
             return None
         if ok:
             reply = route.reply(result) if callable(route.reply) else route.reply
         else:
-            reply = "Okay — I won't do that." if "declined" in result else "Stopped."
+            reply = ("Okay — I won't do that." if "declined" in result else "Stopped." if "Stopped" in result
+                     else result)
         ms = round((time.perf_counter() - t0) * 1000)
         msg = self.e.store.add_message(cid, "assistant", reply, {"model": "local", "latency_ms": ms, "task_id": task.id})
         self.e.bus.emit("message", message=msg)

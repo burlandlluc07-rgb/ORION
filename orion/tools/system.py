@@ -8,10 +8,14 @@ import shutil
 import time
 from typing import Literal
 
+import logging
+
 import psutil
 
 from .platform import IS_LINUX, IS_MAC, IS_WIN, powershell, run
 from .registry import ToolContext, ToolError, tool
+
+log = logging.getLogger("orion.tools.system")
 
 
 @tool(category="system")
@@ -151,15 +155,14 @@ def set_volume(level: int) -> str:
     if IS_WIN:
         try:
             ep = _win_endpoint()
-            ep.SetMute(0, None)
-            ep.SetMasterVolumeLevelScalar(level / 100, None)
-            return f"Volume set to {level}%."
-        except Exception:
-            import pyautogui
-
-            pyautogui.press("volumedown", presses=50)
-            pyautogui.press("volumeup", presses=level // 2)
-            return f"Volume set to about {level}%."
+        except Exception as exc:
+            # Don't fake it with key presses: report the real problem (verified on a speaker-less Windows VM).
+            log.warning("Speaker endpoint unavailable: %s", exc)
+            raise ToolError("I can't reach the speakers — no audio output device seems to be connected or enabled.") from exc
+        ep.SetMute(0, None)
+        ep.SetMasterVolumeLevelScalar(level / 100, None)
+        actual = round(ep.GetMasterVolumeLevelScalar() * 100)
+        return f"Volume set to {actual}%."
     if IS_MAC:
         run(["osascript", "-e", f"set volume output volume {level}"])
     elif shutil.which("pactl"):
@@ -181,7 +184,7 @@ def change_volume(delta: int) -> str:
         import pyautogui
 
         pyautogui.press("volumeup" if delta > 0 else "volumedown", presses=max(1, abs(delta) // 2))
-        return "Volume adjusted."
+        return f"Pressed volume {'up' if delta > 0 else 'down'} (couldn't read the exact level)."
     return set_volume(cur + int(delta))
 
 

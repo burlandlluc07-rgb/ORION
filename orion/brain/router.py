@@ -19,11 +19,20 @@ POLITE = re.compile(r"^(?:(?:please|can you|could you|would you|will you|i want 
 TRAILING = re.compile(r"[\s,]*(?:please|for me|now|thanks|thank you|right now)?[\s.!?]*$", re.I)
 
 
+# When these fail, Gemini can't do better (e.g. no speakers): show the error instead of spending a request.
+NO_FALLBACK = {"set_volume", "change_volume", "mute", "set_brightness", "media_control", "lock_pc", "take_screenshot",
+               "get_time_and_date", "system_status", "set_timer", "set_reminder", "undo_last_change"}
+
+
 @dataclass
 class Route:
     tool: str
     args: dict
     reply: Callable[[str], str] | str  # template or function of the tool result
+
+    @property
+    def fallback(self) -> bool:
+        return self.tool not in NO_FALLBACK
 
 
 def normalise(text: str) -> str:
