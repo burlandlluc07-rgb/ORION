@@ -406,7 +406,9 @@ class Vault:
                 REVIEW_PROMPT.format(today=dt.date.today().isoformat(), items=listing,
                                      known="\n".join(f"- {k}" for k in perm) or "(nothing yet)"),
                 tier="fast", json_mode=True, patient=True)
-            decisions = {int(d["n"]): d for d in json.loads(raw).get("decisions", []) if str(d.get("n", "")).isdigit()}
+            data = json.loads(raw)
+            rows = data if isinstance(data, list) else data.get("decisions", [])  # models sometimes drop the wrapper
+            decisions = {int(d["n"]): d for d in rows if isinstance(d, dict) and str(d.get("n", "")).isdigit()}
         except Exception as exc:
             self.e.store.kv_set("vault_review_retry", time.time() + 3600)
             raise RuntimeError(f"Memory review couldn't run ({exc}); nothing was deleted, will retry.") from exc

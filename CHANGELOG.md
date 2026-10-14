@@ -1,6 +1,11 @@
 # Changelog
 
 ## 2.4.0
+- **Choose your own wake word.** Any phrase or name ("Hey ORION", "Friday", "Computer"…), several at once, in the
+  speech languages Windows supports. It runs on Windows' built-in offline recogniser, so there's no download and
+  it works in the installed app (the old "Hey Jarvis" needed a developer-only package). A dictation model absorbs
+  other speech to avoid false wake-ups. Settings has a sensitivity slider and shows what was heard, how sure it
+  was, and whether it woke. The recogniser restarts itself after device changes or sleep.
 - **Second brain in Obsidian.** Memory moved from a hidden database into an Obsidian vault of Markdown notes on
   the PC (`Documents\ORION Brain`, or a folder inside your own vault). Permanent notes are `About me`
   (profile + preferences), `People/<name>`, `Projects/<name>`, `Plans & dates` and `Facts`, linked from `Home`.

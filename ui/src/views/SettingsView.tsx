@@ -55,7 +55,7 @@ export function SettingsView() {
         <Field label="Your name" hint="ORION greets and addresses you by it.">
           <input className="input" defaultValue={st.user_name} onBlur={(e) => save({ user_name: e.target.value.trim() })} />
         </Field>
-        <Field label="Assistant name" hint="What ORION calls itself (wake word stays “Hey Jarvis”).">
+        <Field label="Assistant name" hint="What ORION calls itself. Set the words that wake it under Voice → Wake word.">
           <input className="input" defaultValue={st.assistant_name} onBlur={(e) => save({ assistant_name: e.target.value.trim() || "ORION" })} />
         </Field>
         <Field label="Personality">
@@ -138,9 +138,10 @@ export function SettingsView() {
             </select>
           </Field>
         )}
-        <Field label="“Hey Jarvis” wake word" hint="Runs fully offline on your PC; audio is only sent to Gemini after you say it. Needs the optional openwakeword package.">
+        <Field label="Wake word" hint="Say it to start talking, hands-free. Recognised offline by Windows: audio only goes to Gemini after it hears the wake word.">
           <Toggle on={st.voice.wake_word} onChange={(v) => saveVoice({ wake_word: v })} />
         </Field>
+        {st.voice.wake_word && <WakeWordSettings />}
         <Field label="Speak replies" hint="Read answers aloud for voice requests, timers and reminders.">
           <Toggle on={st.voice.speak_replies} onChange={(v) => saveVoice({ speak_replies: v })} />
         </Field>
@@ -378,6 +379,74 @@ function SystemCheck() {
           </div>}
         </Modal>
       )}
+    </>
+  );
+}
+
+
+const WAKE_SUGGESTIONS = ["Hey ORION", "ORION", "Hey Jarvis", "Jarvis", "Friday", "Computer", "Hey Assistant"];
+
+function WakeWordSettings() {
+  const st = useStore((s) => s.engine?.settings)!;
+  const status = useStore((s) => s.engine?.voice);
+  const heard = useStore((s) => s.heard);
+  const save = useStore((s) => s.saveSettings);
+  const vs = st.voice;
+  const [draft, setDraft] = useState("");
+  const setPhrases = (p: string[]) => save({ voice: { ...vs, wake_phrases: p } });
+  const add = (p: string) => {
+    const t = p.trim();
+    if (t && !vs.wake_phrases.some((x) => x.toLowerCase() === t.toLowerCase())) setPhrases([...vs.wake_phrases, t]);
+    setDraft("");
+  };
+  const fresh = heard && Date.now() - heard.at < 15000;
+  return (
+    <>
+      <Field label="Wake phrases" hint="Any words or names, e.g. “Hey ORION”, “Friday” or your own. Two or more syllables work best; several can be active at once.">
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
+          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+            {vs.wake_phrases.map((p) => (
+              <span key={p} className="chip">{p}
+                <button className="icon-btn" title="Remove" disabled={vs.wake_phrases.length < 2}
+                  onClick={() => setPhrases(vs.wake_phrases.filter((x) => x !== p))}>×</button></span>
+            ))}
+          </div>
+          <div className="row" style={{ gap: 6 }}>
+            <input className="input" value={draft} placeholder="Add a phrase…" onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && add(draft)} />
+            <button className="btn" onClick={() => add(draft)} disabled={!draft.trim()}>Add</button>
+          </div>
+          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+            {WAKE_SUGGESTIONS.filter((s) => !vs.wake_phrases.some((p) => p.toLowerCase() === s.toLowerCase())).map((s) => (
+              <button key={s} className="btn ghost" style={{ fontSize: 12, padding: "2px 8px" }} onClick={() => add(s)}>+ {s}</button>
+            ))}
+          </div>
+        </div>
+      </Field>
+      <Field label="Sensitivity" hint="Lower it if ORION wakes up by itself; raise it if it misses you. Say a wake phrase and watch the meter below.">
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, width: "100%" }}>
+          <div className="row" style={{ gap: 10 }}>
+            <span className="muted" style={{ fontSize: 12 }}>Strict</span>
+            <input type="range" min={0} max={1} step={0.05} defaultValue={vs.wake_sensitivity} className="grow"
+              onMouseUp={(e) => save({ voice: { ...vs, wake_sensitivity: Number((e.target as HTMLInputElement).value) } })}
+              onTouchEnd={(e) => save({ voice: { ...vs, wake_sensitivity: Number((e.target as HTMLInputElement).value) } })} />
+            <span className="muted" style={{ fontSize: 12 }}>Relaxed</span>
+          </div>
+          <div className="d" style={{ fontSize: 12.5 }}>
+            {status?.error && status.wake_word === false ? <span style={{ color: "var(--danger)" }}>{status.error}</span>
+              : fresh ? <>Heard “{heard!.phrase}” · {Math.round(heard!.confidence * 100)}% sure · {heard!.accepted ? "woke up" : "ignored (below sensitivity)"}</>
+              : status?.wake_word ? <>Listening for {(status.wake_phrases ?? vs.wake_phrases).map((p) => `“${p}”`).join(", ")}{status.wake_language ? ` (${status.wake_language})` : ""}. Say one to test.</>
+              : "Starting…"}
+          </div>
+        </div>
+      </Field>
+      <Field label="Speech language" hint="The language you say the wake phrase in. Uses the speech languages installed in Windows (Settings → Time & language → Speech).">
+        <select className="select" value={vs.wake_language} onChange={(e) => save({ voice: { ...vs, wake_language: e.target.value } })}>
+          <option value="">Same as Windows</option>
+          {[["en-US", "English (US)"], ["en-GB", "English (UK)"], ["es-ES", "Spanish"], ["fr-FR", "French"], ["de-DE", "German"],
+            ["ja-JP", "Japanese"], ["zh-CN", "Chinese (Simplified)"], ["zh-TW", "Chinese (Traditional)"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+      </Field>
     </>
   );
 }

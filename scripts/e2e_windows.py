@@ -251,6 +251,31 @@ def memory_checks(o: "Orion") -> None:
                json.dumps(res)[:300])
 
 
+def wake_checks() -> None:
+    """Custom wake word on real Windows speech recognition: Windows' own voice says the phrase into a WAV."""
+    from orion.voice.wake import detect_in_wav
+
+    tmp = OUT / "wake"
+    tmp.mkdir(exist_ok=True)
+
+    def say(text: str, name: str) -> str:
+        wav = tmp / f"{name}.wav"
+        subprocess.run(["powershell", "-NoProfile", "-Command",
+                        "Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+                        f"$s.SetOutputToWaveFile('{wav}'); $s.Speak('{text}'); $s.Dispose()"], check=False, timeout=60)
+        return str(wav)
+
+    phrases = ["Hey ORION", "Friday"]
+    pos = detect_in_wav(say("Hey Orion. What is the weather like today?", "positive"), phrases)
+    pos2 = detect_in_wav(say("Friday, open my email please.", "positive2"), phrases)
+    neg = detect_in_wav(say("Let us order a pizza and watch a movie tonight.", "negative"), phrases)
+    best = max((h["confidence"] for h in pos["hits"]), default=0)
+    ok = bool(pos["hits"]) and pos["hits"][0]["phrase"] == "Hey Orion" and any(h["phrase"] == "Friday" for h in pos2["hits"]) \
+        and not [h for h in neg["hits"] if h["confidence"] >= 0.675]
+    record("custom wake word (Windows offline speech): hears its phrases, ignores other speech", ok,
+           f"lang={pos['ready']} pos={pos['hits']} pos2={pos2['hits']} neg={neg['hits']} err={pos['error']} best={best}")
+
+
 def main() -> int:
     HOME.mkdir(parents=True, exist_ok=True)
     (HOME / "settings.json").write_text(json.dumps({"user_name": "Lluc", "onboarded": True, "voice": {"mode": "classic"}}))
@@ -342,6 +367,12 @@ def main() -> int:
         if seen:
             break
     record("proactive: download finished alert", seen is not None, seen["message"] if seen else "no alert within 90s")
+
+    # ── Custom wake word ───────────────────────────────────────────────────
+    try:
+        wake_checks()
+    except Exception as exc:
+        record("custom wake word", False, repr(exc))
 
     # ── Memory vault ───────────────────────────────────────────────────────
     try:

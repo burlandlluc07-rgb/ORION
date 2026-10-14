@@ -9,6 +9,8 @@ import sys
 import time
 from typing import TYPE_CHECKING, Awaitable, Callable
 
+from .tools.platform import powershell
+
 if TYPE_CHECKING:
     from .engine import Engine
 
@@ -139,9 +141,21 @@ async def check_extras(_: "Engine") -> list[Check]:
     out.append(_result("mcp", "Connector runtimes", True if (node and uvx) else None,
                        f"npx: {'yes' if node else 'no'} · uvx: {'yes' if uvx else 'no'}",
                        "Optional: install Node.js and/or uv to use connectors from the catalog."))
-    ww = importlib.util.find_spec("openwakeword") is not None
-    out.append(_result("wake", "Wake word engine", True if ww else None, "openwakeword installed" if ww else "Not installed.",
-                       "Optional: `pip install openwakeword` for the offline “Hey Jarvis” wake word."))
+    if sys.platform == "win32":
+        try:
+            langs = await asyncio.to_thread(
+                powershell, "Add-Type -AssemblyName System.Speech; [System.Speech.Recognition.SpeechRecognitionEngine]"
+                "::InstalledRecognizers() | ForEach-Object { $_.Culture.Name }", 30, True)
+            langs = ", ".join(sorted(set(langs.split()))) or ""
+        except Exception as exc:
+            langs, err = "", str(exc)[:120]
+        else:
+            err = ""
+        out.append(_result("wake", "Wake word engine", bool(langs), f"Windows speech recognition: {langs}" if langs
+                           else (err or "No speech recogniser installed."),
+                           "Add a speech language in Windows Settings → Time & language → Speech."))
+    else:
+        out.append(_result("wake", "Wake word engine", None, "Uses Windows speech recognition (Windows only).", ""))
     if sys.platform == "win32":
         uia = importlib.util.find_spec("pywinauto") is not None
         out.append(_result("uia", "Windows app control", uia, "UI Automation available" if uia else "pywinauto missing",

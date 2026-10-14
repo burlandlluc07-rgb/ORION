@@ -51,7 +51,11 @@ class VoiceSettings(BaseModel):
     tts_voice: str = "en-GB-RyanNeural"  # edge-tts voice used in classic mode
     tts_rate: str = "+8%"
     wake_word: bool = False
-    wake_word_model: str = "hey_jarvis"
+    wake_phrases: list[str] = Field(default_factory=lambda: ["Hey Jarvis", "Hey ORION"])  # any words you like
+    wake_sensitivity: float = 0.5  # 0 strict … 1 relaxed
+    wake_language: str = ""  # speech language, e.g. "en-GB" or "es-ES" ("" = Windows display language)
+    wake_engine: str = "windows"  # "windows" (any phrase, built in) | "openwakeword" (pre-trained models)
+    wake_word_model: str = "hey_jarvis"  # openwakeword model when that engine is chosen
     input_device: int | None = None
     output_device: int | None = None
     speak_replies: bool = True

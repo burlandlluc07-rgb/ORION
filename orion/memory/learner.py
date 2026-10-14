@@ -111,9 +111,11 @@ class Learner:
             PROMPT.format(known="\n".join(f"- {k}" for k in known) or "(nothing yet)", lines=lines),
             tier="fast", json_mode=True, patient=True)
         try:
-            facts = json.loads(raw).get("facts", [])
-        except (ValueError, AttributeError):
+            data = json.loads(raw)
+        except ValueError:
             return 0
+        facts = data if isinstance(data, list) else data.get("facts", []) if isinstance(data, dict) else []
+        facts = [f for f in facts if isinstance(f, dict)]
         added = 0
         for f in facts[:5]:
             text = str(f.get("text", "")).strip()

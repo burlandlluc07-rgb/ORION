@@ -72,6 +72,10 @@ export interface VoiceSettings {
   tts_voice: string;
   tts_rate: string;
   wake_word: boolean;
+  wake_phrases: string[];
+  wake_sensitivity: number;
+  wake_language: string;
+  wake_engine: "windows" | "openwakeword";
   wake_word_model: string;
   input_device: number | null;
   output_device: number | null;
@@ -120,6 +124,8 @@ export interface VoiceStatus {
   muted?: boolean;
   mode?: string;
   wake_word?: boolean;
+  wake_phrases?: string[] | null;
+  wake_language?: string;
   live_model?: string | null;
   error?: string | null;
 }

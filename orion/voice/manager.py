@@ -92,7 +92,8 @@ class VoiceManager:
 
     def status(self) -> dict:
         return {"state": self.state, "detail": self.detail, "muted": self.muted, "mode": self.mode,
-                "wake_word": self.wake is not None, "live_model": self.e.brain.live_model, "error": self.error}
+                "wake_word": self.wake is not None,
+                "wake_phrases": getattr(self.wake, "phrases", None), "wake_language": getattr(self.wake, "language", ""), "live_model": self.e.brain.live_model, "error": self.error}
 
     # ── Lifecycle ──────────────────────────────────────────────────────────
     async def start(self) -> None:
@@ -106,17 +107,51 @@ class VoiceManager:
             self.error = f"No microphone available ({exc})"
             self.set_state("unavailable", self.error)
             return
-        if self.e.config.settings.voice.wake_word:
+        vs = self.e.config.settings.voice
+        if vs.wake_word:
             try:
-                self.wake = await asyncio.to_thread(WakeWord, self.e.config.settings.voice.wake_word_model)
+                if vs.wake_engine == "openwakeword":
+                    self.wake = await asyncio.to_thread(WakeWord, vs.wake_word_model)
+                else:
+                    await self._start_windows_wake()
                 self._wake_task = asyncio.create_task(self._wake_loop(), name="wake-word")
             except ImportError:
-                self.error = "Wake word needs the 'openwakeword' package (Settings → Voice → Install)."
+                self.error = "The openWakeWord engine isn't installed; use the built-in Windows engine instead."
                 log.info(self.error)
             except Exception as exc:
                 self.error = f"Wake word failed: {exc}"
                 log.warning(self.error)
         self.set_state("standby")
+
+    async def _start_windows_wake(self) -> None:
+        import sys
+
+        from .wake import WindowsWake
+
+        if sys.platform != "win32":
+            raise RuntimeError("the built-in wake word engine needs Windows")
+        vs = self.e.config.settings.voice
+        loop = self.loop
+
+        def heard(text: str, conf: float, accepted: bool) -> None:
+            loop.call_soon_threadsafe(lambda: self.e.bus.emit("voice.heard", phrase=text, confidence=round(conf, 2),
+                                                              accepted=accepted))
+
+        def hit(text: str, conf: float) -> None:
+            loop.call_soon_threadsafe(self._wake_hits.put_nowait, (text, conf))
+
+        def error(msg: str) -> None:
+            self.error = msg
+            loop.call_soon_threadsafe(lambda: self.set_state(self.state, self.detail))
+
+        self._wake_hits: asyncio.Queue = asyncio.Queue()
+        engine = WindowsWake(vs.wake_phrases, vs.wake_sensitivity, vs.wake_language, hit, heard, error)
+        await asyncio.to_thread(engine.start)
+        if self.error and not engine.language:
+            engine.stop()
+            raise RuntimeError(self.error)
+        self.wake = engine  # type: ignore[assignment]
+        log.info("Wake word listening for %s (%s)", engine.phrases, engine.language)
 
     async def stop(self) -> None:
         await self.live.stop()
@@ -126,6 +161,8 @@ class VoiceManager:
         self.tts.stop()
         self.mic.stop()
         self.speaker.close()
+        if self.wake is not None and hasattr(self.wake, "stop"):
+            self.wake.stop()
         self.wake = None
         self.set_state("off")
 
@@ -176,17 +213,27 @@ class VoiceManager:
     async def _wake_loop(self) -> None:
         q = self.mic.subscribe()
         ring: list[bytes] = []
+        windows = not isinstance(self.wake, WakeWord)
         try:
             while True:
                 frame = await q.get()
                 ring.append(frame)
-                ring = ring[-40:]  # ~0.8 s pre-roll so the command right after "hey jarvis" isn't lost
-                if self.muted or self.live.running or (self._classic_task and not self._classic_task.done()):
+                ring = ring[-40:]  # ~0.8 s pre-roll so the command right after the wake phrase isn't lost
+                busy = self.muted or self.live.running or (self._classic_task and not self._classic_task.done())
+                if windows:
+                    hit = None
+                    while not self._wake_hits.empty():
+                        hit = self._wake_hits.get_nowait()
+                    if hit is None or busy:
+                        continue
+                    phrase = hit[0]
+                elif busy or not self.wake.feed(frame):  # type: ignore[union-attr]  (~1 ms per frame)
                     continue
-                if self.wake.feed(frame):  # type: ignore[union-attr]  (~1 ms per frame)
-                    log.info("Wake word detected")
-                    self.e.bus.emit("voice.wake")
-                    await self.activate(preroll=ring[-10:])
+                else:
+                    phrase = self.e.config.settings.voice.wake_word_model
+                log.info("Wake word detected: %s", phrase)
+                self.e.bus.emit("voice.wake", phrase=phrase)
+                await self.activate(preroll=ring[-10:])
         finally:
             self.mic.unsubscribe(q)
 

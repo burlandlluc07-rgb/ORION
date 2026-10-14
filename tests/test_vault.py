@@ -137,3 +137,13 @@ def test_remember_tool_routes_tiers(engine):
     assert "short-term" in remember("Ana arrives Friday", kind="plan", permanent=False, ctx=ctx)
     hits = recall("Ana", ctx=ctx)
     assert {h["tier"] for h in hits} == {"permanent", "short"}
+
+
+async def test_review_accepts_a_bare_list(vault, engine, monkeypatch):
+    vault.add("Bought milk today", "fact", tier="short")
+
+    async def fake(prompt, **kw):
+        return json.dumps([{"n": 1, "action": "discard"}])  # no {"decisions": …} wrapper
+
+    monkeypatch.setattr(engine.brain, "generate_text", fake)
+    assert (await vault.review())["discarded"] == ["Bought milk today"]

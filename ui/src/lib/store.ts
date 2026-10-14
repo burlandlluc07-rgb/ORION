@@ -28,6 +28,7 @@ interface Store {
   vitals: Vitals | null;
   voice: VoiceStatus;
   transcript: { role: string; text: string } | null;
+  heard: { phrase: string; confidence: number; accepted: boolean; at: number } | null;
   models: string[];
   toasts: Toast[];
   rightOpen: boolean;
@@ -65,6 +66,7 @@ export const useStore = create<Store>((set, get) => ({
   vitals: null,
   voice: { state: "off" },
   transcript: null,
+  heard: null,
   models: [],
   toasts: [],
   rightOpen: localStorage.getItem("orion.right") !== "0",
@@ -192,6 +194,9 @@ export const useStore = create<Store>((set, get) => ({
         if (ev.state === "listening" && ev.conv_id && s.view === "chat" && s.activeId !== ev.conv_id && s.messages.length === 0) {
           get().openConversation(ev.conv_id);
         }
+        break;
+      case "voice.heard":
+        set({ heard: { phrase: ev.phrase, confidence: ev.confidence, accepted: ev.accepted, at: Date.now() } });
         break;
       case "voice.transcript":
         set({ transcript: { role: ev.role, text: ev.text } });
