@@ -30,6 +30,12 @@ OUT.mkdir(exist_ok=True)
 HAS_KEY = bool(os.environ.get("GEMINI_API_KEY"))
 DESKTOP = Path.home() / "Desktop"
 
+for _stream in (sys.stdout, sys.stderr):  # the runner console is cp1252; keep emoji/quotes from crashing prints
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
 results: list[dict] = []
 shots: list[str] = []
 

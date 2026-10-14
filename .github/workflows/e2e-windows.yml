@@ -34,6 +34,7 @@ jobs:
         shell: pwsh
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PYTHONIOENCODING: utf-8
         run: |
           $env:ORION_HOME = "$env:RUNNER_TEMP\orion-e2e"
           python scripts/e2e_windows.py
