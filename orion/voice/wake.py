@@ -52,16 +52,19 @@ public static class OrionWake {
     info = info ?? all.FirstOrDefault(r => r.Culture.Name == CultureInfo.CurrentUICulture.Name) ?? all[0];
     using (var rec = new SpeechRecognitionEngine(info)) {
       var c = info.Culture;
-      var alone = B(c); alone.Append(new Choices(phrases));
-      var lead = B(c); lead.Append(new Choices(phrases)); lead.AppendWildcard();
-      var gb = B(c); gb.Append(new Choices(alone, lead));
+      // AppendWildcard compiles to an optional GARBAGE rule, so this covers "Friday" and "Friday, open my email".
+      var gb = B(c); gb.Append(new Choices(phrases)); gb.AppendWildcard();
       var g = new Grammar(gb); g.Name = "wake";
       rec.LoadGrammar(g);
       var done = new ManualResetEvent(false);
-      rec.SpeechRecognized += (s, e) => Say("HIT:" + F(PhraseConfidence(e.Result)) + ":" + e.Result.Text);
-      rec.SpeechRecognitionRejected += (s, e) => {
-        if (e.Result != null && e.Result.Alternates.Count > 0 && e.Result.Alternates[0].Confidence >= 0.3)
-          Say("NEAR:" + F(PhraseConfidence(e.Result.Alternates[0])) + ":" + e.Result.Alternates[0].Text);
+      try { rec.UpdateRecognizerSetting("AdaptationOn", 0); } catch { }  // always-on mic: don't drift towards noise
+      rec.SpeechRecognized += (s, e) => {
+        if (e.Result.Grammar == null || e.Result.Grammar.Name != "wake") return;
+        Say("HIT:" + F(PhraseConfidence(e.Result)) + ":" + e.Result.Text);
+      };
+      rec.SpeechRecognitionRejected += (s, e) => {  // near-misses: shown in Settings for tuning, never a wake
+        var a = e.Result == null ? null : e.Result.Alternates.FirstOrDefault(x => x.Grammar != null && x.Grammar.Name == "wake");
+        if (a != null && a.Confidence >= 0.3) Say("NEAR:" + F(PhraseConfidence(a)) + ":" + a.Text);
       };
       rec.RecognizeCompleted += (s, e) => {
         if (e.Error != null) Say("ERR:" + e.Error.Message.Replace("\r", " ").Replace("\n", " "));
