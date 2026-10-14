@@ -36,6 +36,7 @@ dependencies = [
   "mcp>=1.9,<3",
   "qrcode>=7,<9",
   "pywebpush>=2,<3",
+  "py-vapid>=1.7,!=1.9.5",  # 1.9.5's source archive contains a symlink pip refuses to unpack
   "icalendar>=5,<8",
   "recurring-ical-events>=2.1,<4",
   "pypdf>=4,<7",
