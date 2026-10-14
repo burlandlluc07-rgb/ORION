@@ -1,0 +1,13 @@
+name: Wake word lab (Windows speech)
+on:
+  workflow_dispatch:
+
+jobs:
+  lab:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run wake-word grammar experiments
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\wake_lab.ps1
