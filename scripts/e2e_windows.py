@@ -252,38 +252,15 @@ def memory_checks(o: "Orion") -> None:
 
 
 def wake_checks() -> None:
-    """Custom wake word on real Windows speech recognition: Windows' own voice says the phrase into a WAV."""
-    from orion.voice.wake import detect_in_wav
+    """Custom wake word on real Windows speech recognition (same cases as scripts/wake_check.py)."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from wake_check import run_cases
 
-    tmp = OUT / "wake"
-    tmp.mkdir(exist_ok=True)
-
-    def say(text: str, name: str) -> str:
-        wav = tmp / f"{name}.wav"
-        subprocess.run(["powershell", "-NoProfile", "-Command",
-                        "Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-                        f"$s.SetOutputToWaveFile('{wav}'); $s.Speak('{text}'); $s.Dispose()"], check=False, timeout=60)
-        return str(wav)
-
-    phrases = ["Hey ORION", "Friday"]
-    cases = {
-        "alone": ("Hey Orion.", "Hey Orion"),
-        "then_command": ("Hey Orion, what is the weather like today?", "Hey Orion"),
-        "friday": ("Friday, open my email please.", "Friday"),
-    }
-    seen = {}
-    for name, (text, want) in cases.items():
-        res = detect_in_wav(say(text, name), phrases)
-        seen[name] = res
-        seen[name]["ok"] = any(h["phrase"] == want and h["confidence"] >= 0.675 for h in res["hits"])
-    negatives = {n: detect_in_wav(say(t, n), phrases) for n, t in (
-        ("pizza", "Let us order a pizza and watch a movie tonight."),
-        ("mention", "I watched a documentary about the Orion constellation last night."))}
-    false = {n: [h for h in r["hits"] if h["confidence"] >= 0.675] for n, r in negatives.items()}
-    ok = all(r["ok"] for r in seen.values()) and not any(false.values())
-    record("custom wake word (Windows offline speech): hears its phrases, ignores other speech", ok,
-           f"lang={seen['alone']['ready']} " + " ".join(f"{n}={r['hits']}" for n, r in seen.items())
-           + f" | false={false} err={seen['alone']['error']}")
+    results = run_cases()
+    record("custom wake word (Windows offline speech): hears its phrases, ignores other speech",
+           all(r["ok"] for r in results),
+           " | ".join(f"{r['case']}:{'ok' if r['ok'] else 'FAIL'} hits={[(h['phrase'], h['confidence']) for h in r['hits']]}"
+                      for r in results) + f" | lang={results[0]['ready']} err={results[0]['error']}")
 
 
 def main() -> int:

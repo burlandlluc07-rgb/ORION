@@ -1,8 +1,8 @@
 """Wake word: say any phrase you choose ("Hey ORION", "Jarvis", "Friday"…) to start talking.
 
 Default engine: Windows' built-in offline speech recogniser (System.Speech, part of every Windows install).
-It listens for the chosen phrases only. A dictation "garbage" model soaks up other speech, so ordinary
-conversation doesn't trigger it. Unusual names work too: Windows works out how they're pronounced. Nothing
+It listens only for the chosen phrases at the start of an utterance, optionally followed by a command ("Hey
+ORION, what's the weather?"). Sentences that merely mention the name don't wake it. Unusual names work too: Windows works out how they're pronounced. Nothing
 leaves the PC; audio goes to Gemini only after a wake phrase is heard.
 
 Optional engine: openWakeWord's pre-trained models (hey_jarvis, alexa…) when that package is installed.
@@ -28,52 +28,61 @@ param([string]$Phrases, [string]$Culture = '', [string]$Wav = '')
 $ErrorActionPreference = 'Stop'
 function Say([string]$s) { [Console]::Out.WriteLine($s); [Console]::Out.Flush() }
 try { Add-Type -AssemblyName System.Speech } catch { Say 'ERR:NOSPEECH'; exit 2 }
-$all = [System.Speech.Recognition.SpeechRecognitionEngine]::InstalledRecognizers()
-if ($all.Count -eq 0) { Say 'ERR:NORECOGNIZER'; exit 3 }
-$info = $null
-if ($Culture) {
-  $info = $all | Where-Object { $_.Culture.Name -eq $Culture } | Select-Object -First 1
-  if (-not $info) { $info = $all | Where-Object { $_.Culture.TwoLetterISOLanguageName -eq $Culture.Substring(0, 2) } | Select-Object -First 1 }
-}
-if (-not $info) { $info = $all | Where-Object { $_.Culture.Name -eq [Globalization.CultureInfo]::CurrentUICulture.Name } | Select-Object -First 1 }
-if (-not $info) { $info = $all[0] }
-$list = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Phrases)) | ConvertFrom-Json
-$rec = New-Object System.Speech.Recognition.SpeechRecognitionEngine($info)
-$choices = New-Object System.Speech.Recognition.Choices
-foreach ($p in $list) { $choices.Add([string]$p) }
-# The phrase on its own, or followed by anything ("Hey Orion, what's the weather?").
-$alone = New-Object System.Speech.Recognition.GrammarBuilder
-$alone.Culture = $info.Culture
-$alone.Append($choices)
-$lead = New-Object System.Speech.Recognition.GrammarBuilder
-$lead.Culture = $info.Culture
-$lead.Append($choices)
-$lead.AppendWildcard()
-$either = New-Object System.Speech.Recognition.Choices
-$either.Add([System.Speech.Recognition.GrammarBuilder[]]@($alone, $lead))
-$gb = New-Object System.Speech.Recognition.GrammarBuilder
-$gb.Culture = $info.Culture
-$gb.Append($either)
-$wake = New-Object System.Speech.Recognition.Grammar($gb)
-$wake.Name = 'wake'
-$rec.LoadGrammar($wake)
-try { $d = New-Object System.Speech.Recognition.DictationGrammar; $d.Name = 'other'; $rec.LoadGrammar($d) } catch { }
-if ($Wav) { $rec.SetInputToWaveFile($Wav) } else {
-  try { $rec.SetInputToDefaultAudioDevice() } catch { Say 'ERR:NOMIC'; exit 4 }
-}
-Say ("READY:" + $info.Culture.Name)
-while ($true) {
-  $r = $rec.Recognize([TimeSpan]::FromSeconds(30))
-  if ($r -ne $null -and $r.Grammar.Name -eq 'wake') {
-    # Score the wake words themselves, not whatever was said after them.
-    $words = @($r.Words | Where-Object { $_.Text -and $_.Text -ne '...' -and $_.Confidence -gt 0 })
-    $conf = $r.Confidence
-    if ($words.Count -gt 0) { $conf = [Math]::Max($conf, ($words | Measure-Object -Property Confidence -Average).Average) }
-    Say ("HIT:" + [string]::Format([Globalization.CultureInfo]::InvariantCulture, '{0:0.000}', $conf) + ":" + $r.Text)
+# Grammar choice measured on real Windows (scripts/wake_lab.ps1): the phrase followed by an optional wildcard and NO
+# dictation grammar. Dictation competes with the wake phrase and steals it ("Hey Orion" -> "The Ryan"); a phrase-only
+# grammar false-wakes on sentences that merely contain the name. Phrase + wildcard caught every phrase at ~0.95 and
+# rejected both kinds of trap at 0.00.
+$src = @'
+using System; using System.Linq; using System.Speech.Recognition; using System.Threading; using System.Globalization;
+public static class OrionWake {
+  static void Say(string s) { Console.Out.WriteLine(s); Console.Out.Flush(); }
+  static string F(double d) { return d.ToString("0.000", CultureInfo.InvariantCulture); }
+  static GrammarBuilder B(CultureInfo c) { var g = new GrammarBuilder(); g.Culture = c; return g; }
+  static double PhraseConfidence(RecognitionResult r) {
+    var words = r.Words.Where(w => w.Text != "..." && !string.IsNullOrEmpty(w.Text)).ToList();
+    return words.Count == 0 ? r.Confidence : words.Min(w => (double)w.Confidence);  // the weakest wake word decides
   }
-  if ($Wav -and $r -eq $null) { break }
+  public static int Run(string culture, string[] phrases, string wav) {
+    var all = SpeechRecognitionEngine.InstalledRecognizers();
+    if (all.Count == 0) { Say("ERR:NORECOGNIZER"); return 3; }
+    RecognizerInfo info = null;
+    if (!string.IsNullOrEmpty(culture)) {
+      info = all.FirstOrDefault(r => r.Culture.Name == culture)
+          ?? all.FirstOrDefault(r => r.Culture.TwoLetterISOLanguageName == culture.Substring(0, 2));
+    }
+    info = info ?? all.FirstOrDefault(r => r.Culture.Name == CultureInfo.CurrentUICulture.Name) ?? all[0];
+    using (var rec = new SpeechRecognitionEngine(info)) {
+      var c = info.Culture;
+      var alone = B(c); alone.Append(new Choices(phrases));
+      var lead = B(c); lead.Append(new Choices(phrases)); lead.AppendWildcard();
+      var gb = B(c); gb.Append(new Choices(alone, lead));
+      var g = new Grammar(gb); g.Name = "wake";
+      rec.LoadGrammar(g);
+      var done = new ManualResetEvent(false);
+      rec.SpeechRecognized += (s, e) => Say("HIT:" + F(PhraseConfidence(e.Result)) + ":" + e.Result.Text);
+      rec.SpeechRecognitionRejected += (s, e) => {
+        if (e.Result != null && e.Result.Alternates.Count > 0 && e.Result.Alternates[0].Confidence >= 0.3)
+          Say("NEAR:" + F(PhraseConfidence(e.Result.Alternates[0])) + ":" + e.Result.Alternates[0].Text);
+      };
+      rec.RecognizeCompleted += (s, e) => {
+        if (e.Error != null) Say("ERR:" + e.Error.Message.Replace("\r", " ").Replace("\n", " "));
+        done.Set();
+      };
+      if (string.IsNullOrEmpty(wav)) {
+        try { rec.SetInputToDefaultAudioDevice(); } catch { Say("ERR:NOMIC"); return 4; }
+      } else { rec.SetInputToWaveFile(wav); }
+      Say("READY:" + c.Name);
+      rec.RecognizeAsync(RecognizeMode.Multiple);
+      done.WaitOne();  // a WAV ends by itself; live listening runs until the process is stopped
+      Say("END");
+      return 0;
+    }
+  }
 }
-Say 'END'
+'@
+try { Add-Type -TypeDefinition $src -ReferencedAssemblies System.Speech, System.Core } catch { Say ('ERR:COMPILE ' + $_.Exception.Message); exit 5 }
+$list = [string[]]@([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Phrases)) | ConvertFrom-Json)
+exit [OrionWake]::Run($Culture, $list, $Wav)
 """
 
 ERRORS = {
@@ -132,12 +141,13 @@ def match_phrase(text: str, phrases: list[str]) -> str:
 def parse_line(line: str) -> tuple[str, float, str] | None:
     """'HIT:0.912:Hey ORION' → ("hit", 0.912, "Hey ORION"); READY/ERR/END → (kind, 0, detail)."""
     line = line.strip()
-    if line.startswith("HIT:"):
-        _, conf, text = line.split(":", 2)
-        try:
-            return "hit", float(conf), text
-        except ValueError:
-            return None
+    for tag, kind in (("HIT:", "hit"), ("NEAR:", "near")):
+        if line.startswith(tag):
+            _, conf, text = line.split(":", 2)
+            try:
+                return kind, float(conf), text
+            except ValueError:
+                return None
     for kind in ("READY", "ERR"):
         if line.startswith(kind + ":"):
             return kind.lower(), 0.0, line.split(":", 1)[1]
@@ -152,15 +162,16 @@ def detect_in_wav(wav: str, phrases: list[str], culture: str = "", timeout: floa
 
     res = subprocess.run(_command(clean_phrases(phrases), culture, wav), capture_output=True, timeout=timeout,
                          creationflags=CREATE_NO_WINDOW)
-    out = {"ready": None, "hits": [], "error": None}
+    out = {"ready": None, "hits": [], "near": [], "error": None}
     for raw in (res.stdout or b"").decode("utf-8", "replace").splitlines():
         p = parse_line(raw)
         if not p:
             continue
         if p[0] == "ready":
             out["ready"] = p[2]
-        elif p[0] == "hit":
-            out["hits"].append({"phrase": match_phrase(p[2], clean_phrases(phrases)), "confidence": p[1]})
+        elif p[0] in ("hit", "near"):
+            out["hits" if p[0] == "hit" else "near"].append(
+                {"phrase": match_phrase(p[2], clean_phrases(phrases)), "confidence": p[1]})
         elif p[0] == "err":
             out["error"] = ERRORS.get(p[2], p[2])
     if res.returncode not in (0, None) and not out["error"]:
@@ -216,6 +227,8 @@ class WindowsWake:
                     self.on_error(ERRORS.get(text, text))
                     fatal = text in ("NOSPEECH", "NORECOGNIZER")
                     self._ready.set()
+                elif kind == "near":  # close but rejected by Windows: shown in Settings to help tuning
+                    self.on_heard(match_phrase(text, self.phrases), conf, False)
                 elif kind == "hit":
                     text = match_phrase(text, self.phrases)
                     accepted = conf >= self.threshold
