@@ -98,6 +98,8 @@ class Browser:
                                 "args": ["--start-maximized", "--no-first-run", "--no-default-browser-check"],
                                 "accept_downloads": True}
         exe = os.environ.get("ORION_BROWSER_PATH")
+        # Keep the browser's security sandbox on (Playwright turns it off by default, which also shows a warning bar).
+        opts["chromium_sandbox"] = not exe
         attempts = [{"executable_path": exe}] if exe else ([{"channel": "msedge"}, {"channel": "chrome"}] if IS_WIN
                                                          else [{"channel": "chrome"}, {"channel": "msedge"}, {}])
         last: Exception | None = None
