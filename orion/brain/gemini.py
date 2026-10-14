@@ -116,7 +116,7 @@ class GeminiBrain:
 
     async def stream(
         self, contents: list[types.Content], *, system: str | None = None, tools: list[dict] | None = None,
-        tier: str = "fast",
+        tier: str = "fast", patient: bool = False,
     ) -> AsyncIterator[tuple[str, Any]]:
         """Yield ("model", name) first, then ("part", Part) for every part, then ("usage", n).
 
@@ -126,7 +126,7 @@ class GeminiBrain:
         tried: set[str] = set()
         last_exc: BaseException | None = None
         for _ in range(3):
-            model = await self.governor.acquire(tier, exclude=tried)
+            model = await self.governor.acquire(tier, exclude=tried, max_wait=180 if patient else 6)
             tried.add(model)
             yielded = False
             try:
@@ -156,7 +156,8 @@ class GeminiBrain:
                 self.governor.record(model)
                 last_exc = exc
                 if exc.code == 429:
-                    self.governor.cool_down(model, str(exc))
+                    delay = self.governor.cool_down(model, str(exc))
+                    log.warning("Rate limited on %s for %.0fs: %s", model, delay, str(exc)[:400])
                 if yielded or exc.code not in RETRYABLE | {404}:
                     raise
                 log.warning("Model %s failed (%s); falling back", model, exc.code)
@@ -165,7 +166,7 @@ class GeminiBrain:
         raise last_exc or BrainError("All models failed.")
 
     async def generate_text(self, prompt: str | list, *, system: str | None = None, tier: str = "fast",
-                            json_mode: bool = False) -> str:
+                            json_mode: bool = False, patient: bool = False) -> str:
         """One-shot request with the same resilience as streaming: on overload (503), rate limits or
         server errors it retries once and then falls back to the other model in the tier chain."""
         contents = prompt if isinstance(prompt, list) else [types.Content(role="user", parts=[types.Part(text=prompt)])]
@@ -173,7 +174,7 @@ class GeminiBrain:
         tried: set[str] = set()
         last_exc: BaseException | None = None
         for attempt in range(3):
-            model = await self.governor.acquire(tier, exclude=tried)
+            model = await self.governor.acquire(tier, exclude=tried, max_wait=180 if patient else 6)
             try:
                 r = await self.client.aio.models.generate_content(
                     model=model, contents=contents, config=self._config(system, None, model, **extra))
@@ -181,7 +182,8 @@ class GeminiBrain:
             except errors.APIError as exc:
                 last_exc = exc
                 if exc.code == 429:
-                    self.governor.cool_down(model, str(exc))
+                    delay = self.governor.cool_down(model, str(exc))
+                    log.warning("Rate limited on %s for %.0fs: %s", model, delay, str(exc)[:400])
                 if exc.code not in RETRYABLE | {404}:
                     raise
                 log.warning("Model %s failed (%s); %s", model, exc.code, "retrying" if attempt == 0 else "falling back")

@@ -39,3 +39,14 @@ def test_cool_down_parses_retry_delay(config, engine):
     assert gov.cool_down("m", "429 RESOURCE_EXHAUSTED ... 'retryDelay': '17s'") == 17.0
     assert gov.cool_down("m", "quota exceeded GenerateRequestsPerDayPerProjectPerModel") >= 3600
     assert quota_day()
+
+
+async def test_patient_acquire_waits_out_a_short_cooldown(config, engine):
+    import time
+
+    gov = Governor(config, engine.store)
+    for m in gov.chain("smart"):
+        gov._st(m).cooldown_until = time.time() + 0.3
+    with pytest.raises(QuotaExhausted):
+        await gov.acquire("smart", max_wait=0.1)  # interactive: don't wait that long
+    assert await gov.acquire("smart", max_wait=5) in gov.chain("smart")  # background: wait it out

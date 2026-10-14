@@ -57,7 +57,7 @@ class Governor:
         lim = self.config.settings.model_limits.get(model)
         if lim:
             return lim
-        return ModelLimits(rpm=15, rpd=1000) if "lite" in model else ModelLimits(rpm=10, rpd=250)
+        return ModelLimits(rpm=15, rpd=1000) if "lite" in model else ModelLimits(rpm=5, rpd=250)
 
     def _st(self, model: str) -> ModelState:
         return self._state.setdefault(model, ModelState(collections.deque()))
@@ -78,41 +78,42 @@ class Governor:
             return 0.0
         return 60 - (now - st.window[0]) + 0.05
 
-    async def acquire(self, tier: str, exclude: set[str] | None = None) -> str:
-        """Reserve a request slot and return the model to use."""
+    async def acquire(self, tier: str, exclude: set[str] | None = None, max_wait: float = MAX_SLOT_WAIT) -> str:
+        """Reserve a request slot and return the model to use.
+
+        Interactive requests wait at most a few seconds; background work (missions, routines,
+        learning) passes a larger ``max_wait`` and patiently waits out per-minute limits."""
         exclude = exclude or set()
-        async with self._lock:
-            now = time.time()
-            best: tuple[float, str] | None = None
-            soonest_cool = None
-            for model in self.chain(tier):
-                if model in exclude:
-                    continue
-                st, lim = self._st(model), self.limits(model)
-                if st.cooldown_until > now:
-                    soonest_cool = min(soonest_cool or st.cooldown_until, st.cooldown_until)
-                    continue
-                if self.used_today(model) >= lim.rpd:
-                    continue
-                wait = self._rpm_wait(model, now)
-                if wait == 0:
-                    st.window.append(now)
-                    return model
-                if best is None or wait < best[0]:
-                    best = (wait, model)
-            if best and best[0] <= MAX_SLOT_WAIT:
-                wait, model = best
-            else:
-                retry = (best[0] if best else None) or (soonest_cool - now if soonest_cool else None)
-                raise QuotaExhausted(
-                    "Gemini free-tier limit reached for now" + (f"; try again in {int(retry) + 1}s." if retry else
-                                                               " for today. Quotas reset at midnight Pacific time."),
-                    retry,
-                )
-        await asyncio.sleep(wait)
-        async with self._lock:
-            self._st(model).window.append(time.time())
-        return model
+        deadline = time.time() + max_wait
+        while True:
+            async with self._lock:
+                now = time.time()
+                best: tuple[float, str] | None = None
+                soonest_cool = None
+                for model in self.chain(tier):
+                    if model in exclude:
+                        continue
+                    st, lim = self._st(model), self.limits(model)
+                    if st.cooldown_until > now:
+                        soonest_cool = min(soonest_cool or st.cooldown_until, st.cooldown_until)
+                        continue
+                    if self.used_today(model) >= lim.rpd:
+                        continue
+                    wait = self._rpm_wait(model, now)
+                    if wait == 0:
+                        st.window.append(now)
+                        return model
+                    if best is None or wait < best[0]:
+                        best = (wait, model)
+                candidates = [w for w in ((best[0] if best else None), (soonest_cool - now if soonest_cool else None)) if w]
+                retry = min(candidates) if candidates else None
+                if retry is None or now + retry > deadline:
+                    raise QuotaExhausted(
+                        "Gemini free-tier limit reached for now" + (f"; try again in {int(retry) + 1}s." if retry else
+                                                                   " for today. Quotas reset at midnight Pacific time."),
+                        retry,
+                    )
+            await asyncio.sleep(min(retry, 5.0) + 0.05)  # re-check: a cooldown may end or a slot may free up
 
     def record(self, model: str, tokens: int = 0) -> None:
         self.store.add_usage(model, quota_day(), tokens)

@@ -12,7 +12,7 @@ class FakeBrain:
         self.rounds = list(rounds)
         self.calls = []
 
-    async def stream(self, contents, *, system=None, tools=None, tier="fast"):
+    async def stream(self, contents, *, system=None, tools=None, tier="fast", patient=False):
         self.calls.append({"contents": list(contents), "system": system, "tools": tools, "tier": tier})
         yield "model", "fake-model"
         parts = self.rounds.pop(0) if self.rounds else [types.Part(text="(no more script)")]

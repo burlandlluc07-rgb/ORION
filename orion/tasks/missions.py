@@ -85,6 +85,14 @@ class Missions:
                 m["goal"], m["conv_id"], source="mission", mode="smart", extra_system=MISSION_PROMPT,
                 max_rounds=MISSION_ROUNDS, on_task=lambda t: self._update(mid, task_id=t.id))
             reply = (res.get("reply") or "").strip()
+            attempts = m.get("attempts", 0)
+            if "free-tier limit" in reply and attempts < 3:
+                # Still rate-limited after waiting: try again in a few minutes rather than failing.
+                self._update(mid, status="queued", attempts=attempts + 1,
+                             summary="Waiting for Gemini's free-tier limit to reset — will retry automatically.")
+                await asyncio.sleep(120 * (attempts + 1))
+                self._queue.append(mid)
+                return
             failed = reply.startswith("⚠") or not res.get("ok", True)
             stopped = "*(stopped)*" in reply
             status = "stopped" if stopped else ("failed" if failed else "done")

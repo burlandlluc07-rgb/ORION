@@ -268,7 +268,8 @@ class Agent:
             for round_ in range(max_rounds):
                 parts: list[types.Part] = []
                 calls: list[types.FunctionCall] = []
-                async for kind, val in e.brain.stream(contents, system=system, tools=tools, tier=tier):
+                async for kind, val in e.brain.stream(contents, system=system, tools=tools, tier=tier,
+                                                      patient=source in ("mission", "routine")):
                     if task.cancel.is_set():
                         break
                     if kind == "model":

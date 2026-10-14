@@ -72,7 +72,7 @@ class Settings(BaseModel):
     model_limits: dict[str, ModelLimits] = Field(
         default_factory=lambda: {
             "gemini-flash-lite-latest": ModelLimits(rpm=15, rpd=1000),
-            "gemini-flash-latest": ModelLimits(rpm=10, rpd=250),
+            "gemini-flash-latest": ModelLimits(rpm=5, rpd=250),
         }
     )
     thinking_budget: int = 0  # 0 = off (fastest). Raise for harder reasoning.

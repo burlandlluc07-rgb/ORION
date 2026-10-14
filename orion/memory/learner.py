@@ -104,7 +104,7 @@ class Learner:
         self._spend()
         raw = await self.e.brain.generate_text(
             PROMPT.format(known="\n".join(f"- {k}" for k in known) or "(nothing yet)", lines=lines),
-            tier="fast", json_mode=True)
+            tier="fast", json_mode=True, patient=True)
         try:
             facts = json.loads(raw).get("facts", [])
         except (ValueError, AttributeError):
