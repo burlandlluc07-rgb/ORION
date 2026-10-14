@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.4.0
+- **Toolkits.** Tools are grouped into toolkits (documents, browser, email, Windows, smart home). A toolkit's tools
+  are sent to Gemini only when a request needs them, picked up from the wording or loaded mid-task. That keeps
+  requests small and tool choice accurate as ORION grows.
+- **Documents.** Word and PDF from Markdown (headings, lists, tables, formatting, Unicode); Excel workbooks with
+  live formulas, styled headers and bar/line/pie charts; PowerPoint decks (16:9, dark or light, notes, images).
+  ORION also edits Word (find/replace, append) and Excel (cells, rows, new sheets), reads .xlsx/.pptx, merges
+  PDFs and images, splits/reorders/rotates PDF pages, fills PDF forms, batch-edits images, zips and unzips (safe
+  against malicious archives), downloads files and searches inside files. Everything is backed up and undoable.
+- **Browser control.** A real Microsoft Edge window driven through Playwright, with a persistent ORION profile.
+  It reads pages as numbered elements plus text, then clicks, types, selects, scrolls, goes back, switches tabs
+  and looks at the page with vision. It follows pop-ups, refuses password fields, and asks before actions.
+- **Email.** Attachments, reply-all with proper threading, forward (keeps attachments), save attachments,
+  read/unread/star, archive/trash/spam/move to folder (works with or without IMAP MOVE), folder list, and
+  contact lookup by name.
+- **Windows.** Wi-Fi, Bluetooth, dark/light mode, wallpaper, power plans, winget install/uninstall/update,
+  startup apps, network info, speed test, ping, Windows Update check, drive health, battery health, temp
+  cleanup, Recycle Bin, and window snapping and side-by-side. Every change is read back to confirm it, and the
+  parsers work with translated Windows output.
+- **To-do and shopping lists** with due-time reminders; **currency conversion** (ECB rates, with a fallback).
+- Faster replies: the stable part of the prompt comes first, so Gemini can reuse its cache.
+- A local-only API runs one tool directly, with approvals still enforced.
+- The Windows end-to-end test exercises every new toolkit on a real PC.
+
 ## 2.3.0
 - **Phone app.** An installable PWA with chat, hold-to-talk voice, a Control tab (media, volume, apps, routines,
   smart home, lock/sleep), a live screen you can tap to click and type into, and an Activity tab. QR pairing

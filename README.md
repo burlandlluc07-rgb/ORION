@@ -1,4 +1,4 @@
-# O.R.I.O.N. 2.3
+# O.R.I.O.N. 2.4
 
 **A voice-first AI assistant for your Windows PC, in the spirit of J.A.R.V.I.S.** Talk to it or type to it.
 It opens apps, controls the system, manages files, reads your screen, searches the web, runs scheduled routines
@@ -24,7 +24,11 @@ a tray icon, global hotkeys, a Quick Bar over any app, an installer, and a modul
 | **Routines** | "Every weekday at 8:00, run my briefing." Timers and reminders persist and catch up after a restart. |
 | **Connectors** | **MCP** (Model Context Protocol), the same open standard Claude and Cowork use. Add GitHub, Notion, a real browser (Playwright), Home Assistant and more from a catalog, or any MCP server. |
 | **Plugins** | Drop a Python file with an `@tool` function into the plugins folder and ORION can use it. |
-| **Email & calendar** | Connect any IMAP/SMTP mailbox with an app password (Gmail, iCloud, Yahoo, Outlook…) and your calendars' private iCal links. ORION reads, searches and sends email (sending asks first), lists your schedule including recurring events, and opens new events pre-filled. No Google Cloud setup needed. |
+| **Documents** | "Make a budget spreadsheet with a chart", "turn these notes into a Word doc", "build a 6-slide deck", "merge these PDFs". ORION writes real **.docx, .xlsx (live formulas, charts), .pptx and .pdf** files that open in Office, Google Docs or LibreOffice, without needing Office installed. It also edits Word and Excel files, fills PDF forms, splits and rotates PDFs, resizes and converts photos in bulk, zips and unzips, downloads files, and finds files by what's *inside* them. |
+| **Browser control** | ORION drives a real Microsoft Edge window: opens sites, reads the page, clicks, types, picks from drop-downs, switches tabs and looks at the page visually. It has its own profile, so once you sign in to a site it stays signed in. It never types passwords or card numbers (you do that), and clicks and form submissions ask first. |
+| **Email & calendar** | Connect any IMAP/SMTP mailbox with an app password (Gmail, iCloud, Yahoo, Outlook…) and your calendars' private iCal links. ORION checks, searches and reads mail, then **replies (or replies-all) in the same thread, forwards, sends attachments, saves attachments, archives, deletes, files into folders and marks read/unread/starred**. It looks up addresses by name from your mail. It lists your schedule including recurring events and opens new events pre-filled. Sending always asks first, and no Google Cloud setup is needed. |
+| **Windows control** | Wi-Fi (see, scan, join, disconnect, radio on/off), Bluetooth on/off, dark/light mode, wallpaper, power plans, **install, uninstall and update apps** (winget), startup apps, network info, speed test, ping, Windows Update check, drive and battery health, temp-file cleanup, Recycle Bin, and snapping windows side by side. Every change is read back to confirm it worked, and it works on Windows in any language. |
+| **To-dos & lists** | To-do, shopping and work lists. "Add milk to my shopping list", "remind me to send the invoice Friday 5pm" (a due time sets a reminder). Currency conversion at today's rates. |
 | **Phone app** | Turn it on in Settings, scan the QR code, and "Add to Home Screen". Your phone gets an installable ORION app: chat with hold-to-talk voice, media, volume, apps and smart-home controls, a **live view of your screen** you can tap to click, and approvals as **push notifications** with Approve/Deny buttons. It works away from home through Tailscale or a free Cloudflare tunnel. Each phone has its own revocable key and can't change settings. |
 | **Missions** | "Research the best budget gaming laptops and put a comparison on my desktop." Missions run in the background with a plan, many steps and the deep model. They wait out free-tier limits, and ORION notifies your PC and phone when they finish. |
 | **Proactive** | ORION speaks up by itself: low battery, CPU or RAM running hot for a while, a disk nearly full, a finished download, an upcoming calendar event, the internet dropping. It respects quiet hours. |
@@ -49,15 +53,18 @@ requests as possible:
    quota meter in the UI shows where you stand.
 4. **Lean context.** Only the last N turns are sent, plus the few memories relevant to the request (SQLite FTS5).
    Skills are loaded only when needed. Thinking is off by default for the lowest latency.
-5. **Free services for the rest.** Search, weather and Edge neural TTS cost no Gemini quota.
-6. **Parallel lookups.** When Gemini asks for several read-only things at once (weather, news, calendar…), they run
+5. **Toolkits.** About 60 specialised tools (documents, browser, email, Windows settings, smart home) are only sent
+   to Gemini when a request needs them, so everyday requests stay small and tool choice stays accurate.
+6. **Free services for the rest.** Search, weather and Edge neural TTS cost no Gemini quota.
+7. **Parallel lookups.** When Gemini asks for several read-only things at once (weather, news, calendar…), they run
    concurrently, so a briefing takes as long as its slowest lookup.
-7. **Speech starts early.** In Classic voice mode, each sentence is spoken as soon as it's generated.
-8. **Live voice closes itself.** The Live session disconnects after 90 s of silence, and the wake word keeps the
+8. **Speech starts early.** In Classic voice mode, each sentence is spoken as soon as it's generated.
+9. **Live voice closes itself.** The Live session disconnects after 90 s of silence, and the wake word keeps the
    mic local until you need it.
 
-Default limits are deliberately conservative (Flash-Lite 15 RPM / 1000 RPD, Flash 10 RPM / 250 RPD). Google changes
-free quotas from time to time, so match them to what AI Studio shows for your key in **Settings → Brain**.
+Default limits follow the 2026 free tier (Flash-Lite 15 RPM / 500 RPD, Flash 5 RPM / 20 RPD). Google no longer
+publishes free-tier numbers and changes them, so ORION reads the real limits from Google's rate-limit replies and
+corrects itself. When the main models run out it continues on other free Flash models (each has its own quota).
 
 ## Install (Windows)
 
@@ -103,6 +110,8 @@ worked on this week"*.
   the session.
 - **High-risk** tools (deleting, shell and Python, power, killing processes) always ask, unless you choose *Trust*
   mode.
+- The browser never types into password fields, and it asks before clicking or submitting. ORION is told to confirm
+  before anything is bought, booked or sent.
 - File changes are limited to your user folder plus folders you add. Deletes go to the Recycle Bin. Writes and moves
   are verified.
 - The engine listens on `127.0.0.1` only and requires a random per-launch token, so websites and other programs
@@ -174,7 +183,6 @@ logging (logs are in `%APPDATA%\ORION\logs`).
 ## Roadmap ideas
 - Full Google and Microsoft OAuth (write access to calendars, labels and folders) as an alternative to app passwords
 - Screen-watch mode (ORION notices what you're doing and offers help)
-- Browser control built in (drive a real Chrome session without a connector)
 - Multiple PCs paired to one phone
 - Local STT/LLM fallback (faster-whisper, Ollama) for offline use
 - Per-skill tool allowlists and a skill marketplace
