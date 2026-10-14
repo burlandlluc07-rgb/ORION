@@ -4,7 +4,7 @@ import type {
   Approval, Conversation, EngineState, Message, QuotaRow, Settings, Task, Vitals, VoiceStatus,
 } from "./types";
 
-export type View = "chat" | "tasks" | "routines" | "ecosystem" | "memory" | "settings";
+export type View = "chat" | "missions" | "tasks" | "routines" | "ecosystem" | "memory" | "settings";
 
 export interface Toast {
   id: number;
@@ -210,6 +210,10 @@ export const useStore = create<Store>((set, get) => ({
         set({ models: ev.models ?? [] });
         if (s.engine) set({ engine: { ...get().engine!, live_model: ev.live_model } });
         break;
+      case "alert":  // non-quiet alerts also arrive as "notify"; quiet-hour ones only show in the app
+        if (ev.alert.quiet) get().toast({ title: ev.alert.title, body: ev.alert.message, tone: "info" });
+        bump("alert");
+        break;
       case "update.available":
         if (s.engine) set({ engine: { ...s.engine, update: ev.update } });
         break;
@@ -220,6 +224,7 @@ export const useStore = create<Store>((set, get) => ({
         get().toast({ title: "Stopped", body: ev.count ? `Halted ${ev.count} running task(s).` : "Nothing was running.", tone: "warn" });
         break;
       case "memory.changed":
+      case "missions.changed":
       case "remote.changed":
       case "ecosystem.changed":
       case "routines.changed":

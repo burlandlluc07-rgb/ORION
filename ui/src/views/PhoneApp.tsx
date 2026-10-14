@@ -12,6 +12,7 @@ import { blobToB64, speak, WavRecorder } from "../lib/recorder";
 import { levels, useStore } from "../lib/store";
 import type { Routine } from "../lib/types";
 import { MessageView } from "./ChatView";
+import { MissionCard, useMissions } from "./MissionsView";
 
 type Tab = "chat" | "control" | "screen" | "activity";
 
@@ -220,6 +221,8 @@ function ControlTab() {
         </div>
       </section>
 
+      <HomeCard />
+
       <section className="ctl-card">
         <div className="ctl-title">Open on PC</div>
         <div className="ctl-grid">
@@ -372,6 +375,7 @@ function ActivityTab() {
           {push === "off" && <button className="btn primary" onClick={enablePush}>Enable</button>}
         </div>
       </section>
+      <AlertsAndMissions />
       <section>
         <div className="ctl-title">Recent tasks</div>
         {tasks.length === 0 ? <div className="empty">Nothing yet.</div> : (
@@ -412,5 +416,72 @@ export function PairView({ code }: { code: string }) {
       <p>{err || "One moment."}</p>
       {!err && <p className="muted" style={{ fontSize: 13 }}>Tip: after this, use your browser's “Add to Home Screen” to install ORION as an app.</p>}
     </div></div>
+  );
+}
+
+interface HomeDevice { id: string; name: string; type: string; state: string; brightness?: number }
+
+function HomeCard() {
+  const toast = useStore((st) => st.toast);
+  const [devices, setDevices] = useState<HomeDevice[] | null>(null);
+  const load = () => api.get<HomeDevice[]>("/api/home/devices").then(setDevices).catch(() => setDevices(null));
+  useEffect(() => { load(); }, []);
+  if (!devices) return null;
+  const lights = devices.filter((d) => ["light", "switch", "room", "fan", "input_boolean"].includes(d.type)).slice(0, 16);
+  const scenes = devices.filter((d) => d.type === "scene").slice(0, 8);
+  const sensors = devices.filter((d) => d.type === "sensor" && /°|%/.test(d.state)).slice(0, 4);
+  const toggle = async (d: HomeDevice) => {
+    navigator.vibrate?.(10);
+    try { await control("home_control", { target: d.id, action: d.state === "on" ? "off" : "on" }); setTimeout(load, 500); }
+    catch (e) { toast({ title: d.name, body: (e as Error).message, tone: "error" }); }
+  };
+  return (
+    <section className="ctl-card">
+      <div className="ctl-title">Home</div>
+      {sensors.length > 0 && <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>{sensors.map((x) => `${x.name}: ${x.state}`).join(" · ")}</div>}
+      <div className="ctl-grid">
+        {lights.map((d) => (
+          <button key={d.id} className={`btn ${d.state === "on" ? "primary" : ""}`} onClick={() => toggle(d)}>{d.name}</button>
+        ))}
+        {scenes.map((d) => (
+          <button key={d.id} className="btn" onClick={() => control("home_scene", { name: d.name }).then(() => toast({ title: d.name, tone: "success" }))}>✦ {d.name}</button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AlertsAndMissions() {
+  const s = useStore();
+  const missions = useMissions();
+  const [alerts, setAlerts] = useState<{ title: string; message: string; ts: number }[]>([]);
+  const [goal, setGoal] = useState("");
+  useEffect(() => { api.get<typeof alerts>("/api/alerts").then(setAlerts).catch(() => {}); }, [s.bump["alert"]]);
+  return (
+    <>
+      <section className="ctl-card">
+        <div className="ctl-title">New mission</div>
+        <div className="ctl-row" style={{ gap: 8 }}>
+          <input className="input" value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="e.g. research the best budget earbuds" />
+          <button className="btn primary" disabled={goal.trim().length < 8} onClick={() => api.post("/api/missions", { goal }).then(() => { setGoal(""); s.toast({ title: "Mission started", tone: "success" }); })}>Go</button>
+        </div>
+      </section>
+      {missions.length > 0 && (
+        <section>
+          <div className="ctl-title">Missions</div>
+          <div className="list">{missions.slice(0, 6).map((m) => <MissionCard key={m.id} m={m} compact />)}</div>
+        </section>
+      )}
+      {alerts.length > 0 && (
+        <section>
+          <div className="ctl-title">Alerts</div>
+          <div className="list">{alerts.slice(0, 8).map((a, i) => (
+            <div key={i} className="item" style={{ padding: "9px 12px" }}>
+              <div className="grow"><div className="t" style={{ fontSize: 13 }}>{a.title}</div><div className="d">{a.message}</div></div>
+            </div>
+          ))}</div>
+        </section>
+      )}
+    </>
   );
 }

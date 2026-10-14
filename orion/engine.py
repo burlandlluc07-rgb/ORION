@@ -48,8 +48,20 @@ class Engine:
         from .server.remote import RemoteServer
 
         self.accounts = Accounts(self.config.root, self.registry, lambda: self.bus.emit("ecosystem.changed"))
+        from .ecosystem.home import SmartHome
+
+        self.home = SmartHome(self.accounts, self.registry)
         self.remote = RemoteServer(self)
         self.approvals.on_request = self._push_approval
+        from .proactive import Proactive
+
+        self.proactive = Proactive(self)
+        from .tasks.missions import Missions
+
+        self.missions = Missions(self)
+        from .memory.learner import Learner
+
+        self.learner = Learner(self)
         self.scheduler: Scheduler | None = None
         self.voice = None
         self.notifier: Callable[[str, str], None] | None = None  # set by the desktop shell (tray toasts)
@@ -71,6 +83,7 @@ class Engine:
         files_tools.set_allowed_roots(self.config.settings.allowed_roots)
         files_tools.set_data_dir(self.config.root)
         self.accounts.sync_tools()
+        self.home.sync_tools()
 
     async def start(self) -> None:
         self._loop = asyncio.get_running_loop()
@@ -88,6 +101,9 @@ class Engine:
         if self.config.get_api_key():
             self._bg.append(asyncio.create_task(self._discover(), name="discover"))
         self._bg.append(asyncio.create_task(self._update_loop(), name="updates"))
+        self.proactive.start()
+        self.missions.recover()
+        self.learner.start()
         await self.start_voice()
         if self.config.settings.remote_enabled:
             try:
@@ -158,6 +174,8 @@ class Engine:
             await self.scheduler.stop()
         await self.connectors.stop_all()
         await self.remote.stop()
+        await self.proactive.stop()
+        await self.learner.stop()
         for t in self._bg:
             t.cancel()
         self.store.close()

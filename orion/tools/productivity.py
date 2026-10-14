@@ -157,3 +157,36 @@ def read_notes(last: int = 20, ctx: ToolContext = None) -> str:  # type: ignore[
         return "No notes yet."
     lines = path.read_text("utf-8").splitlines()
     return "\n".join(lines[-max(1, last):])
+
+
+@tool(category="missions", summary=lambda a: f"Start mission: {str(a.get('goal'))[:60]}")
+async def start_mission(goal: str, title: str = "", ctx: ToolContext = None) -> str:  # type: ignore[assignment]
+    """Start a long-running background MISSION (research, comparisons, reports, multi-step chores) that ORION works on
+    autonomously while the user does other things. Use when a job would take more than a few steps or the user says
+    "in the background" / "while I'm away". The user is notified when it finishes.
+
+    Args:
+        goal: A complete, self-contained description of what to achieve and what to deliver.
+        title: Short title (optional).
+    """
+    m = _engine(ctx).missions.start(goal, title or None)
+    return f"Mission started (id {m['id']}). I'll notify you when it's done — you can follow it under Missions."
+
+
+@tool(category="missions")
+def list_missions(ctx: ToolContext = None) -> list[dict]:  # type: ignore[assignment]
+    """List recent background missions and their status."""
+    return [{"id": m["id"], "title": m["title"], "status": m["status"], "summary": (m.get("summary") or "")[:200]}
+            for m in _engine(ctx).missions.list()[:10]]
+
+
+@tool(category="missions", summary=lambda a: f"Cancel mission {a.get('id')}")
+async def cancel_mission(id: str, ctx: ToolContext = None) -> str:  # type: ignore[assignment]
+    """Stop a running or queued mission.
+
+    Args:
+        id: Mission id from list_missions.
+    """
+    if not _engine(ctx).missions.cancel(id):
+        raise ToolError("No running mission with that id.")
+    return "Mission stopped."

@@ -151,7 +151,7 @@ class Store:
     def core_memories(self, limit: int = 8) -> list[dict]:
         """Profile-type memories are always included (name, preferences)."""
         return [dict(r) for r in self._q(
-            "SELECT * FROM memories WHERE kind='profile' ORDER BY created DESC LIMIT ?", (limit,))]
+            "SELECT * FROM memories WHERE kind IN ('profile','preference') ORDER BY created DESC LIMIT ?", (limit,))]
 
     # ── Tasks ──────────────────────────────────────────────────────────────
     def save_task(self, task: dict) -> None:

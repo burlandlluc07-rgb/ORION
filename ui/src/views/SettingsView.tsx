@@ -1,4 +1,4 @@
-import { Brain, FolderOpen, Info, KeyRound, Keyboard, Mic, Monitor, RefreshCw, ShieldCheck, Smartphone, Stethoscope, CheckCircle2, XCircle, MinusCircle, Loader2, Trash2, UserRound } from "lucide-react";
+import { Zap, Brain, FolderOpen, Info, KeyRound, Keyboard, Mic, Monitor, RefreshCw, ShieldCheck, Smartphone, Stethoscope, CheckCircle2, XCircle, MinusCircle, Loader2, Trash2, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Field, Modal, Toggle } from "../components/ui";
 import { api } from "../lib/api";
@@ -154,6 +154,23 @@ export function SettingsView() {
           </select>
         </Field>
         {voice?.devices.error && <div className="err" style={{ padding: "0 18px 12px" }}>Audio: {voice.devices.error}</div>}
+      </section>
+
+      <section className="settings-sec">
+        <h3><Zap size={16} /> Proactive & learning</h3>
+        <Field label="Proactive mode" hint="ORION speaks up on its own: low battery, a program hogging the PC, low disk space, finished downloads, upcoming meetings, internet drops. Runs locally — no AI quota used.">
+          <Toggle on={st.proactive} onChange={(v) => save({ proactive: v })} />
+        </Field>
+        <Field label="Say alerts out loud"><Toggle on={st.proactive_voice} onChange={(v) => save({ proactive_voice: v })} /></Field>
+        <Field label="Tell me when downloads finish"><Toggle on={st.proactive_downloads} onChange={(v) => save({ proactive_downloads: v })} /></Field>
+        <Field label="Quiet hours" hint="Only critical alerts (like a dying battery) interrupt you during these hours.">
+          <input type="time" className="input" style={{ width: 120 }} defaultValue={st.quiet_start} onBlur={(e) => save({ quiet_start: e.target.value })} />
+          <span className="muted">to</span>
+          <input type="time" className="input" style={{ width: 120 }} defaultValue={st.quiet_end} onBlur={(e) => save({ quiet_end: e.target.value })} />
+        </Field>
+        <Field label="Learn about me automatically" hint="After conversations, ORION saves lasting facts (people, projects, preferences) to Memory, where you can review or delete them. Uses a few requests a day at most.">
+          <Toggle on={st.auto_memory} onChange={(v) => save({ auto_memory: v })} />
+        </Field>
       </section>
 
       <section className="settings-sec">

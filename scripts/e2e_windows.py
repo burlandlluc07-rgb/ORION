@@ -172,6 +172,41 @@ def main() -> int:
     record("system check", True, "; ".join(f"{c['name']}={'ok' if c['ok'] else ('n/a' if c['ok'] is None else 'FAIL')}"
                                           for c in checks), checks=checks, failures=len(bad))
 
+    # ── Phone app: pair over the LAN server, then use it as a remote ───────
+    try:
+        rs = o.c.post("/api/remote", json={"enabled": True, "access": "lan"}).json()
+        pair_url = rs["pair_url"]
+        base = pair_url.split("/#/")[0].replace(rs["lan_url"].split("//")[1].split(":")[0], "127.0.0.1")
+        code = pair_url.rsplit("/", 1)[1]
+        ph = httpx.Client(base_url=base, timeout=30)
+        dev_tok = ph.post("/api/pair", json={"code": code, "name": "E2E phone"}).json()["token"]
+        ph.headers["x-orion-token"] = dev_tok
+        st_ok = ph.get("/api/state").status_code == 200
+        blocked = ph.patch("/api/settings", json={"user_name": "x"}).status_code == 403
+        scr = ph.get("/api/screen?w=800")
+        status = ph.post("/api/control/system_status", json={}).json()
+        app_page = ph.get("/").status_code == 200 and ph.get("/manifest.webmanifest").status_code == 200
+        record("phone app: pair + remote control", st_ok and blocked and scr.headers.get("content-type") == "image/jpeg"
+               and status.get("ok") and app_page,
+               f"paired; settings blocked={blocked}; screen {scr.headers.get('x-screen-size')}; control ok={status.get('ok')}")
+        (OUT / "phone_screen.jpg").write_bytes(scr.content)
+        shots.append("phone_screen")
+    except Exception as exc:
+        record("phone app: pair + remote control", False, repr(exc))
+
+    # ── Proactive mode: notices a finished download on its own ─────────────
+    dl = Path.home() / "Downloads"
+    dl.mkdir(exist_ok=True)
+    time.sleep(25)  # let the first scan record a baseline
+    (dl / "orion-e2e-download.zip").write_bytes(b"PK" + b"0" * 4096)
+    seen = None
+    for _ in range(30):
+        time.sleep(3)
+        seen = next((a for a in o.c.get("/api/alerts").json() if "orion-e2e-download.zip" in a["message"]), None)
+        if seen:
+            break
+    record("proactive: download finished alert", seen is not None, seen["message"] if seen else "no alert within 90s")
+
     # ── Gemini scenarios ───────────────────────────────────────────────────
     if HAS_KEY:
         o.conv = None
@@ -211,6 +246,23 @@ def main() -> int:
         record("gemini: web search answer", "web_search:done" in r["tools"] and len(r["reply"]) > 40,
                f"{r['reply'][:250]} | tools={r['tools']}", **r)
         shot("08_web_answer")
+
+        report = DESKTOP / "orion-mission.md"
+        m = o.c.post("/api/missions", json={"goal": "Find the current weather in London and the top 3 technology news "
+                      "headlines today, then save a short Markdown briefing as orion-mission.md on my desktop."}).json()
+        status = "queued"
+        t0 = time.time()
+        while time.time() - t0 < 300:
+            time.sleep(4)
+            mm = next(x for x in o.c.get("/api/missions").json() if x["id"] == m["id"])
+            status = mm["status"]
+            if status in ("done", "failed", "stopped"):
+                break
+        record("gemini: background mission", status == "done" and report.exists(),
+               f"{status} in {time.time() - t0:.0f}s; report={'yes' if report.exists() else 'no'}; "
+               f"{(mm.get('summary') or '')[:200]}", report=report.read_text('utf-8')[:1500] if report.exists() else None)
+        o.window("show")
+        shot("09_after_mission")
 
         q = o.c.get("/api/quota").json()["models"]
         record("free-tier usage", True, ", ".join(f"{m['model']}: {m['rpd_used']}/{m['rpd']} today" for m in q))

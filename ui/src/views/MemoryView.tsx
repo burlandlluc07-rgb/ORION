@@ -46,7 +46,7 @@ export function MemoryView() {
               {m.kind === "profile" ? <UserRound size={16} style={{ color: "var(--accent)" }} /> : <Brain size={16} className="muted" />}
               <div className="grow">
                 <div>{m.text}</div>
-                <div className="d">{m.kind === "profile" ? "core · " : ""}{timeAgo(m.created)}</div>
+                <div className="d">{m.kind === "profile" ? "core" : m.kind === "fact" ? "fact" : m.kind} · {timeAgo(m.created)}</div>
               </div>
               <button className="icon-btn" title="Forget" onClick={() => api.del(`/api/memories/${m.id}`).then(load)}><Trash2 size={15} /></button>
             </div>

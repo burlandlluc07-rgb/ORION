@@ -36,6 +36,7 @@ REMOTE_CONTROLS = {
     "media_control", "set_volume", "change_volume", "mute", "set_brightness", "lock_pc", "power", "cancel_shutdown",
     "take_screenshot", "open_app", "close_app", "list_installed_apps", "list_windows", "window_action",
     "mouse_click", "scroll", "press_keys", "type_text", "system_status", "open_website", "play_youtube", "play_spotify",
+    "home_control", "home_scene",
 }
 MAX_ATTACH = 15 * 1024 * 1024
 TEXT_EXT = {".txt", ".md", ".py", ".js", ".ts", ".json", ".csv", ".html", ".css", ".xml", ".yaml", ".yml", ".log",
@@ -181,6 +182,25 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
         if decision not in ("approve", "deny", "always"):
             raise HTTPException(400, "decision must be approve, deny or always")
         return {"ok": engine.approvals.respond(aid, decision)}
+
+    @app.get("/api/missions", dependencies=[A])
+    async def missions():
+        return engine.missions.list()
+
+    @app.post("/api/missions", dependencies=[A])
+    async def start_mission(body: dict = Body(...)):
+        goal = str(body.get("goal", "")).strip()
+        if len(goal) < 8:
+            raise HTTPException(400, "Describe the mission in a sentence or two.")
+        return engine.missions.start(goal, body.get("title") or None)
+
+    @app.post("/api/missions/{mid}/cancel", dependencies=[A])
+    async def cancel_mission(mid: str):
+        return {"ok": engine.missions.cancel(mid)}
+
+    @app.get("/api/alerts", dependencies=[A])
+    async def alerts():
+        return list(reversed(engine.proactive.alerts))
 
     @app.get("/api/tasks", dependencies=[A])
     async def tasks():
@@ -370,6 +390,42 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
             return await asyncio.to_thread(engine.accounts.configure_calendars, cals, body.get("add_events_via"))
         except ToolError as exc:
             raise HTTPException(400, str(exc)) from exc
+
+    # ── Smart home ─────────────────────────────────────────────────────────
+    @app.get("/api/home", dependencies=[X])
+    async def home_status():
+        return engine.home.public()
+
+    @app.put("/api/home/ha", dependencies=[X])
+    async def home_ha(body: dict = Body(...)):
+        try:
+            return await asyncio.to_thread(engine.home.connect_ha, str(body.get("url", "")), str(body.get("token", "")))
+        except ToolError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.get("/api/home/hue/discover", dependencies=[X])
+    async def hue_discover():
+        return {"bridges": await asyncio.to_thread(engine.home.discover_hue)}
+
+    @app.post("/api/home/hue/pair", dependencies=[X])
+    async def hue_pair(body: dict = Body(...)):
+        try:
+            return await asyncio.to_thread(engine.home.pair_hue, str(body.get("ip", "")).strip())
+        except ToolError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.delete("/api/home/{which}", dependencies=[X])
+    async def home_disconnect(which: str):
+        if which not in ("ha", "hue"):
+            raise HTTPException(404)
+        return engine.home.disconnect(which)
+
+    @app.get("/api/home/devices", dependencies=[A])
+    async def home_devices():
+        try:
+            return await asyncio.to_thread(engine.home._devices)
+        except ToolError as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     # ── System check ───────────────────────────────────────────────────────
     @app.post("/api/diagnostics", dependencies=[X])

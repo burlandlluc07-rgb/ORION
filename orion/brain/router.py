@@ -84,6 +84,21 @@ def match(text: str) -> Route | None:
     if m:
         return Route("set_brightness", {"level": _num(m.group(1))}, lambda r: r)
 
+    # ── Smart home (only used when a smart home is connected) ───────────────
+    m = re.fullmatch(r"(?:turn|switch|put) (on|off) (?:the |all the |all )?(.+?)", low) \
+        or re.fullmatch(r"(?:turn|switch) (?:the |all the |all )?(.+?) (on|off)", low)
+    if m:
+        a, b = m.groups()
+        state, target = (a, b) if a in ("on", "off") else (b, a)
+        if not _NOT_APPS.search(target.replace("the ", "")) or "light" in target or "lamp" in target:
+            return Route("home_control", {"target": target, "action": state}, lambda r: r)
+    m = re.fullmatch(r"(?:the |all )?(lights?|lamps?|[\w ]+? lights?) (on|off)", low)
+    if m:
+        return Route("home_control", {"target": m.group(1), "action": m.group(2)}, lambda r: r)
+    m = re.fullmatch(rf"dim (?:the )?(.+?) to {_NUM}", low) or re.fullmatch(rf"set (?:the )?(.+? lights?) to {_NUM}", low)
+    if m:
+        return Route("home_control", {"target": m.group(1), "action": "set", "brightness": _num(m.group(2))}, lambda r: r)
+
     # ── Media ───────────────────────────────────────────────────────────────
     if re.fullmatch(r"(pause|resume|play|unpause)( the)?( music| song| track| video| media| playback)?|play pause", low):
         return Route("media_control", {"action": "play_pause"}, "Done.")

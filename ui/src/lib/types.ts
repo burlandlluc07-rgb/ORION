@@ -101,6 +101,12 @@ export interface Settings {
   history_turns: number;
   onboarded: boolean;
   check_updates: boolean;
+  proactive: boolean;
+  proactive_voice: boolean;
+  proactive_downloads: boolean;
+  quiet_start: string;
+  quiet_end: string;
+  auto_memory: boolean;
   remote_enabled: boolean;
 }
 

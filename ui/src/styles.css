@@ -402,3 +402,4 @@ kbd { font: 11px var(--mono); color: var(--text-3); border: 1px solid var(--line
 .screen-bar { display: flex; align-items: center; gap: 8px; }
 .screen-img { width: 100%; border: 1px solid var(--line-2); border-radius: var(--radius-sm); background: #000; display: block; }
 .screen-img.clickable { outline: 2px solid var(--text); cursor: crosshair; }
+.md-box { background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 13px; max-height: 260px; overflow: auto; }

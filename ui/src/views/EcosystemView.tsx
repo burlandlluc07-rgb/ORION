@@ -1,5 +1,5 @@
 import {
-  Blocks, Cable, CalendarDays, FolderOpen, Loader2, Mail, Plug, Plus, Puzzle, RefreshCw, Sparkles, Trash2, UserRound, Wrench,
+  Blocks, Cable, CalendarDays, FolderOpen, Lightbulb, Loader2, Mail, Plug, Plus, Puzzle, RefreshCw, Sparkles, Trash2, UserRound, Wrench,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Markdown } from "../components/Markdown";
@@ -424,6 +424,72 @@ function AccountsTab() {
           {err.cal && <div className="err">{err.cal}</div>}
         </div>
       </section>
+
+      <SmartHomeSection />
     </>
+  );
+}
+
+// ── Smart home ────────────────────────────────────────────────────────────
+interface HomeInfo { ha_url: string | null; ha_connected: boolean; hue_ip: string | null; hue_connected: boolean; devices: number }
+
+function SmartHomeSection() {
+  const toast = useStore((s) => s.toast);
+  const [info, setInfo] = useState<HomeInfo | null>(null);
+  const [url, setUrl] = useState("http://homeassistant.local:8123");
+  const [token, setToken] = useState("");
+  const [bridges, setBridges] = useState<string[] | null>(null);
+  const [hueIp, setHueIp] = useState("");
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState("");
+  useEffect(() => { api.get<HomeInfo>("/api/home").then(setInfo).catch(() => {}); }, []);
+  if (!info) return null;
+  const run = async (key: string, fn: () => Promise<HomeInfo>, ok: string) => {
+    setBusy(key); setErr("");
+    try { setInfo(await fn()); toast({ title: ok, tone: "success" }); } catch (e) { setErr((e as Error).message); } finally { setBusy(""); }
+  };
+  return (
+    <section className="settings-sec">
+      <h3><Lightbulb size={16} /> Smart home</h3>
+      <div className="modal-body">
+        <div className="fh muted" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
+          Say “turn off the lights”, “dim the bedroom to 30%”, “movie night”. Locks and alarms always ask first.
+          {info.devices > 0 && <> Connected devices: <b>{info.devices}</b>.</>}
+        </div>
+        <div className="fl" style={{ fontWeight: 600 }}>Home Assistant <span className="muted" style={{ fontWeight: 400 }}>— works with thousands of brands (Tuya, IKEA, Shelly, Nest, Sonos…)</span></div>
+        {info.ha_connected ? (
+          <div className="row"><span className="dot ok" /><span className="grow">{info.ha_url}</span>
+            <button className="btn sm ghost" onClick={() => run("ha", () => api.del<HomeInfo>("/api/home/ha"), "Disconnected")}><Trash2 size={12} /> Disconnect</button></div>
+        ) : (
+          <>
+            <div className="row">
+              <input className="input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://homeassistant.local:8123" />
+              <input className="input" type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="Long-lived access token" />
+            </div>
+            <div className="fh muted" style={{ fontSize: 12 }}>In Home Assistant: your profile → Security → Long-lived access tokens → Create token.</div>
+            <div><button className="btn primary" disabled={!token || busy === "ha"} onClick={() => run("ha", () => api.put<HomeInfo>("/api/home/ha", { url, token }), "Home Assistant connected")}>
+              {busy === "ha" ? <><Loader2 size={13} className="spin" /> Connecting…</> : "Connect Home Assistant"}</button></div>
+          </>
+        )}
+        <div className="fl" style={{ fontWeight: 600, marginTop: 6 }}>Philips Hue</div>
+        {info.hue_connected ? (
+          <div className="row"><span className="dot ok" /><span className="grow">Bridge {info.hue_ip}</span>
+            <button className="btn sm ghost" onClick={() => run("hue", () => api.del<HomeInfo>("/api/home/hue"), "Disconnected")}><Trash2 size={12} /> Disconnect</button></div>
+        ) : (
+          <>
+            <div className="row" style={{ flexWrap: "wrap" }}>
+              <button className="btn" onClick={async () => { setBusy("disc"); const r = await api.get<{ bridges: string[] }>("/api/home/hue/discover").catch(() => ({ bridges: [] })); setBridges(r.bridges); if (r.bridges[0]) setHueIp(r.bridges[0]); setBusy(""); }}>
+                {busy === "disc" ? <Loader2 size={13} className="spin" /> : null} Find my bridge</button>
+              <input className="input" style={{ maxWidth: 200 }} value={hueIp} onChange={(e) => setHueIp(e.target.value)} placeholder="Bridge IP" />
+              <button className="btn primary" disabled={!hueIp || busy === "hue"} onClick={() => run("hue", () => api.post<HomeInfo>("/api/home/hue/pair", { ip: hueIp }), "Hue connected")}>Pair</button>
+            </div>
+            <div className="fh muted" style={{ fontSize: 12 }}>
+              {bridges && !bridges.length ? "No bridge found automatically — type its IP (see the Hue app → Settings → Bridges). " : ""}
+              Press the round button on top of the bridge, then click Pair within 30 seconds.</div>
+          </>
+        )}
+        {err && <div className="err">{err}</div>}
+      </div>
+    </section>
   );
 }

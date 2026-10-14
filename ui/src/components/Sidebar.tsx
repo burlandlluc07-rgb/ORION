@@ -1,6 +1,6 @@
 import {
   Blocks, Brain, CalendarClock, Download, ListChecks, MessageSquare, PanelLeftClose, PanelLeftOpen, Pin, PinOff, Plus,
-  Search, Settings as SettingsIcon, Trash2,
+  Search, Settings as SettingsIcon, Target, Trash2,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { api } from "../lib/api";
@@ -9,6 +9,7 @@ import { Orb } from "./Orb";
 
 const NAV: { id: View; label: string; icon: typeof MessageSquare }[] = [
   { id: "chat", label: "Chat", icon: MessageSquare },
+  { id: "missions", label: "Missions", icon: Target },
   { id: "tasks", label: "Tasks", icon: ListChecks },
   { id: "routines", label: "Routines", icon: CalendarClock },
   { id: "ecosystem", label: "Ecosystem", icon: Blocks },

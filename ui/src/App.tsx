@@ -10,6 +10,7 @@ import type { QuotaRow } from "./lib/types";
 import { ChatView } from "./views/ChatView";
 import { EcosystemView } from "./views/EcosystemView";
 import { MemoryView } from "./views/MemoryView";
+import { MissionsView } from "./views/MissionsView";
 import { Onboarding } from "./views/Onboarding";
 import { QuickBar } from "./views/QuickBar";
 import { PairView, PhoneApp } from "./views/PhoneApp";
@@ -87,6 +88,7 @@ export default function App() {
         {s.view === "chat" && <ChatView />}
         {s.view !== "chat" && (
           <div className="main">
+            {s.view === "missions" && <MissionsView />}
             {s.view === "tasks" && <TasksView />}
             {s.view === "routines" && <RoutinesView />}
             {s.view === "ecosystem" && <EcosystemView />}

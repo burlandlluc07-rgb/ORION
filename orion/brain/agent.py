@@ -19,7 +19,7 @@ import json
 import logging
 import re
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from google.genai import types
 
@@ -131,7 +131,8 @@ class Agent:
 
     # ── Main entry point ───────────────────────────────────────────────────
     async def handle(self, text: str, conv_id: str | None = None, *, source: str = "text", mode: str = "auto",
-                     attachments: list[dict] | None = None) -> dict:
+                     attachments: list[dict] | None = None, extra_system: str = "", max_rounds: int = MAX_ROUNDS,
+                     on_task: "Callable[[Task], None] | None" = None) -> dict:
         e = self.e
         text = text.strip()
         attachments = attachments or []
@@ -155,13 +156,16 @@ class Agent:
             text = m.group(2).strip() or f"Run the {sk.name} skill now."
 
         task = e.tracker.start(make_title(text), cid, source)
+        if on_task:
+            on_task(task)
         try:
-            if e.config.settings.fast_path and not skill_body and not attachments and mode != "smart":
+            if e.config.settings.fast_path and not skill_body and not attachments and mode != "smart" and not extra_system:
                 done = await self._fast_path(text, cid, task, source)
                 if done is not None:
                     return done
             return await self._llm(text, cid, task, source=source, mode=mode, skill_body=skill_body,
-                                   skill_tier=skill_tier, attachments=attachments)
+                                   skill_tier=skill_tier, attachments=attachments, extra_system=extra_system,
+                                   max_rounds=max_rounds)
         finally:
             if task.id in e.tracker.active:
                 e.tracker.finish(task, "stopped" if task.cancel.is_set() else "done")
@@ -233,11 +237,14 @@ class Agent:
                                    skills_index=e.skills.index_prompt(), extra=extra, voice=voice)
 
     async def _llm(self, text: str, cid: str, task: Task, *, source: str, mode: str, skill_body: str | None,
-                   skill_tier: str | None, attachments: list[dict]) -> dict:
+                   skill_tier: str | None, attachments: list[dict], extra_system: str = "",
+                   max_rounds: int = MAX_ROUNDS) -> dict:
         e = self.e
         s = e.config.settings
         tier = "smart" if mode == "smart" else ("fast" if mode == "fast" else (skill_tier or pick_tier(text, bool(attachments))))
         extra = f"ACTIVE SKILL — follow these instructions:\n{skill_body}" if skill_body else ""
+        if extra_system:
+            extra = f"{extra_system}\n\n{extra}".strip()
         system = self.system_prompt(text, voice=source == "voice", extra=extra)
 
         user_parts: list[types.Part] = []
@@ -258,7 +265,7 @@ class Agent:
         e.bus.emit("message.start", conv_id=cid, id=msg_id, task_id=task.id)
         speech = e.voice.stream_speech() if source == "voice" and e.voice is not None else None
         try:
-            for round_ in range(MAX_ROUNDS):
+            for round_ in range(max_rounds):
                 parts: list[types.Part] = []
                 calls: list[types.FunctionCall] = []
                 async for kind, val in e.brain.stream(contents, system=system, tools=tools, tier=tier):

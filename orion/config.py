@@ -88,6 +88,13 @@ class Settings(BaseModel):
     launch_on_startup: bool = False
     close_to_tray: bool = True
 
+    auto_memory: bool = True  # learn durable facts from conversations automatically
+    proactive: bool = True  # watch battery/CPU/disk/downloads/calendar/network and speak up
+    proactive_voice: bool = True
+    proactive_downloads: bool = True
+    quiet_start: str = "23:00"
+    quiet_end: str = "07:00"
+
     check_updates: bool = True
     update_repo: str = "burlandlluc07-rgb/ORION"  # GitHub "owner/repo" whose Releases ORION checks
 
