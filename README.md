@@ -26,6 +26,8 @@ a tray icon, global hotkeys, a Quick Bar over any app, an installer, and a modul
 | **Plugins** | Drop a Python file with an `@tool` function into the plugins folder and ORION can use it. |
 | **Email & calendar** | Connect any IMAP/SMTP mailbox with an app password (Gmail, iCloud, Yahoo, Outlook…) and your calendars' private iCal links. ORION reads, searches and sends email (sending asks first), lists your schedule including recurring events, and opens new events pre-filled. No Google Cloud setup needed. |
 | **Phone remote** | Turn it on in Settings, scan the QR code, and your phone gets a mobile ORION: chat, quick actions, live progress and approvals. It runs on its own token, can't change settings, and you can rotate the code any time. |
+| **Undo** | ORION journals every file change it makes and backs up anything it overwrites, so "undo that" restores it. |
+| **System check** | Settings → About → System check tests your key, models, microphone, speakers, voice, search and app control, and says how to fix anything broken. |
 | **Spoken approvals** | When a task you started by voice needs permission, ORION asks out loud ("Shall I go ahead?") and accepts yes or no. |
 
 ![Tasks and approvals](docs/screenshots/tasks-and-approvals.png)
@@ -44,7 +46,10 @@ requests as possible:
 4. **Lean context.** Only the last N turns are sent, plus the few memories relevant to the request (SQLite FTS5).
    Skills are loaded only when needed. Thinking is off by default for the lowest latency.
 5. **Free services for the rest.** Search, weather and Edge neural TTS cost no Gemini quota.
-6. **Live voice closes itself.** The Live session disconnects after 90 s of silence, and the wake word keeps the
+6. **Parallel lookups.** When Gemini asks for several read-only things at once (weather, news, calendar…), they run
+   concurrently, so a briefing takes as long as its slowest lookup.
+7. **Speech starts early.** In Classic voice mode, each sentence is spoken as soon as it's generated.
+8. **Live voice closes itself.** The Live session disconnects after 90 s of silence, and the wake word keeps the
    mic local until you need it.
 
 Default limits are deliberately conservative (Flash-Lite 15 RPM / 1000 RPD, Flash 10 RPM / 250 RPD). Google changes
@@ -149,8 +154,13 @@ python -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activ
 pip install -e ".[dev,docs]"
 python -m orion --headless --port 8765             # engine + API only
 cd ui && npm install && npm run dev                # hot-reloading UI on :5173 (proxies to 8765)
-python -m pytest                                   # 87 tests, including the agent loop against a scripted fake Gemini
+python -m pytest                                   # 98 tests, including the agent loop against a scripted fake Gemini
 ```
+
+`GEMINI_API_KEY=… python scripts/live_check.py` runs about 5 real Gemini requests. It checks the key, both models,
+that Google accepts every tool schema, tool calling, vision and the Live handshake. CI runs it automatically when the
+repository has a `GEMINI_API_KEY` secret. The release workflow also launches the frozen `ORION.exe` on Windows and
+smoke-tests its API and UI before it builds the installer.
 
 `python -m orion --browser` uses your normal browser instead of the native window. `--debug` turns on verbose
 logging (logs are in `%APPDATA%\ORION\logs`).
