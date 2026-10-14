@@ -381,7 +381,7 @@ def main() -> int:
                         "[System.Windows.Forms.SendKeys]::SendWait('ORION vision test 7381')"])
         time.sleep(1)
         r = o.ask("Look at my screen: what number is typed in Notepad?", 120)
-        record("gemini: screen vision", "7381" in r["reply"], f"{r['reply'][:200]} | tools={r['tools']}", **r)
+        record("gemini: screen vision", "7381" in r["reply"].replace(",", "").replace(".", ""), f"{r['reply'][:200]} | tools={r['tools']}", **r)
         subprocess.run(["taskkill", "/IM", "notepad.exe", "/F"], capture_output=True)
 
         o.conv = None

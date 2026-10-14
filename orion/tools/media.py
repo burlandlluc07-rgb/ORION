@@ -251,8 +251,9 @@ def download_file(url: str, folder: str = "downloads", filename: str = "", ctx: 
                         if time.monotonic() - last > 0.5:
                             ctx.progress(f"{_human(got)}" + (f" of {_human(total)}" if total else ""))
                             last = time.monotonic()
-            if total and got != total:
-                raise ToolError(f"Download incomplete ({_human(got)} of {_human(total)}).")
+            # Content-Length counts bytes on the wire, which are compressed when the server gzips the response.
+            if total and r.num_bytes_downloaded < total:
+                raise ToolError(f"Download incomplete ({_human(r.num_bytes_downloaded)} of {_human(total)}).")
             tmp.replace(dest)
         finally:
             if tmp.exists():

@@ -436,6 +436,10 @@ def parse_battery_report(xml_text: str) -> dict:
 def battery_health() -> dict:
     """Check the laptop battery's health: design vs current full-charge capacity (wear) and charge cycles."""
     _need_windows()
+    import psutil
+
+    if psutil.sensors_battery() is None:
+        raise ToolError("No battery found (this looks like a desktop PC).")
     out = Path(tempfile.gettempdir()) / f"orion-battery-{int(time.time())}.xml"
     try:
         rc, text = _oem_run(["powercfg", "/batteryreport", "/xml", "/output", str(out)], timeout=60)
