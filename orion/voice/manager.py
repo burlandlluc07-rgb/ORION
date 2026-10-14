@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from ..tasks.tracker import parse_yes_no
 from .audio import MIC_RATE, Microphone, Speaker, pcm_to_wav, rms_level
 from .live import LiveSession
 from .tts import TTS
@@ -75,6 +76,10 @@ class VoiceManager:
         self._classic_task: asyncio.Task | None = None
         self.available = True
         self.error: str | None = None
+        self._approval_id: str | None = None
+        self._approval_offset = 0
+        self._last_user_text = ""
+        engine.approvals.on_voice_request = self.on_approval
 
     # ── State ──────────────────────────────────────────────────────────────
     def set_state(self, state: str, detail: str = "") -> None:
@@ -249,6 +254,57 @@ class VoiceManager:
         finally:
             if self.state == "speaking":
                 self.set_state("standby")
+
+    # ── Spoken approvals ───────────────────────────────────────────────────
+    async def on_approval(self, info: dict) -> None:
+        """A voice-initiated task hit a risky step: ask out loud and accept "yes"/"no"."""
+        if not self.available or self.mode == "off":
+            return
+        self._approval_id = info["id"]
+        self._approval_offset = len(self._last_user_text)
+        label = info["label"].rstrip(".")
+        prompt = f"Before I do that: {label}. Shall I go ahead?"
+        if info["risk"] == "danger":
+            prompt = f"This one can't easily be undone: {label}. Are you sure?"
+        try:
+            await asyncio.wait_for(self.speaker.wait_done(), timeout=8)
+        except asyncio.TimeoutError:
+            pass
+        await self.tts.speak(prompt)
+        if self.mode != "classic" or self._approval_id != info["id"]:
+            return  # Live mode: the answer arrives through the session's transcription
+        for attempt in range(2):
+            self.set_state("listening", "Say yes or no")
+            pcm = await self._record_utterance(max_seconds=6, silence=0.7)
+            if self._approval_id != info["id"]:
+                return  # answered in the UI meanwhile
+            if len(pcm) < MIC_RATE * 2 * 0.2:
+                continue
+            answer = parse_yes_no(await self.e.brain.transcribe(pcm_to_wav(pcm)))
+            if answer is not None:
+                self._resolve_approval(answer)
+                return
+            if attempt == 0:
+                await self.tts.speak("Sorry — yes or no?")
+        self.set_state("working", "Waiting for approval on screen")
+
+    def check_spoken_approval(self, transcript: str) -> None:
+        if len(transcript) < self._approval_offset:
+            self._approval_offset = 0  # a new turn started
+        self._last_user_text = transcript
+        if not self._approval_id or self._approval_id not in self.e.approvals.pending:
+            self._approval_id = None
+            return
+        answer = parse_yes_no(transcript[self._approval_offset:])
+        if answer is not None:
+            self._resolve_approval(answer)
+
+    def _resolve_approval(self, approve: bool) -> None:
+        aid, self._approval_id = self._approval_id, None
+        if aid and self.e.approvals.respond(aid, "approve" if approve else "deny"):
+            self.e.bus.emit("voice.approval", id=aid, approved=approve)
+            if not approve:
+                self.tts.stop()
 
     # ── Live transcript persistence ────────────────────────────────────────
     async def commit_turn(self, user_text: str, model_text: str, task) -> None:

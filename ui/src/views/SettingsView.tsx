@@ -1,4 +1,4 @@
-import { Brain, FolderOpen, Info, KeyRound, Keyboard, Mic, Monitor, ShieldCheck, Trash2, UserRound } from "lucide-react";
+import { Brain, FolderOpen, Info, KeyRound, Keyboard, Mic, Monitor, RefreshCw, ShieldCheck, Smartphone, Trash2, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Field, Toggle } from "../components/ui";
 import { api } from "../lib/api";
@@ -179,6 +179,8 @@ export function SettingsView() {
         </Field>
       </section>
 
+      <PhoneRemote />
+
       <section className="settings-sec">
         <h3><Monitor size={16} /> App</h3>
         <Field label="Launch when Windows starts" hint="Starts quietly in the tray, ready for “Hey Jarvis” and your routines.">
@@ -207,5 +209,43 @@ export function SettingsView() {
         </Field>
       </section>
     </div></div>
+  );
+}
+
+interface RemoteStatus { enabled: boolean; running: boolean; port: number; ip: string; url?: string; qr_svg?: string; error?: string | null }
+
+function PhoneRemote() {
+  const toast = useStore((s) => s.toast);
+  const [st, setSt] = useState<RemoteStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api.get<RemoteStatus>("/api/remote").then(setSt).catch(() => {}); }, []);
+  const act = async (fn: () => Promise<RemoteStatus>) => {
+    setBusy(true);
+    try { setSt(await fn()); } catch (e) { toast({ title: "Phone remote", body: (e as Error).message, tone: "error" }); }
+    finally { setBusy(false); }
+  };
+  return (
+    <section className="settings-sec">
+      <h3><Smartphone size={16} /> Phone remote</h3>
+      <Field label="Control ORION from your phone" hint="Chat, quick actions (media, volume, lock), live task progress and approvals from any phone on the same Wi-Fi. The phone can't change settings. Windows may ask to allow ORION through the firewall — allow it for private networks.">
+        <Toggle on={!!st?.enabled} onChange={(v) => !busy && act(() => api.post<RemoteStatus>("/api/remote", { enabled: v }))} />
+      </Field>
+      {st?.running && st.url && (
+        <div className="field" style={{ gridTemplateColumns: "auto 1fr", alignItems: "start" }}>
+          {st.qr_svg ? <div className="remote-qr" dangerouslySetInnerHTML={{ __html: st.qr_svg }} /> : null}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div className="fl">Scan with your phone's camera</div>
+            <div className="fh">Then use “Add to Home Screen” for an app-like icon. Or open this link on the phone:</div>
+            <code style={{ fontSize: 11.5, wordBreak: "break-all", color: "var(--text-2)" }}>{st.url}</code>
+            <div className="row">
+              <button className="btn sm" onClick={() => { navigator.clipboard.writeText(st.url!); toast({ title: "Link copied", tone: "success" }); }}>Copy link</button>
+              <button className="btn sm" disabled={busy} onClick={() => act(() => api.post<RemoteStatus>("/api/remote/rotate"))}><RefreshCw size={12} /> New code</button>
+            </div>
+            <div className="fh">Lost a phone? “New code” disconnects every paired device. The link is plain HTTP — use it on networks you trust.</div>
+          </div>
+        </div>
+      )}
+      {st?.error && <div className="err" style={{ padding: "0 18px 12px" }}>{st.error}</div>}
+    </section>
   );
 }

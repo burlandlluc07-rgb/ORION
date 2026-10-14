@@ -66,3 +66,36 @@ async def test_ws_rejects_bad_token_and_origin(engine):
     with pytest.raises(WebSocketDisconnect):
         with client.websocket_connect("/ws?token=secret-token", headers={"origin": "https://evil.example"}) as ws:
             ws.receive_json()
+
+
+async def test_remote_api_is_restricted(engine):
+    app = create_app(engine, token="phone-token", remote=True)
+    client, h = TestClient(app), {"x-orion-token": "phone-token"}
+    assert client.get("/api/state", headers=h).status_code == 200
+    assert client.post("/api/chat", headers=h, json={"text": "what time is it"}).status_code == 200
+    for method, path, body in [("patch", "/api/settings", {"user_name": "x"}), ("post", "/api/key", {"key": "k" * 30}),
+                               ("put", "/api/connectors/x", {}), ("post", "/api/plugins/reload", {}),
+                               ("post", "/api/skills", {"name": "aa", "description": "b"}), ("get", "/api/remote", None),
+                               ("post", "/api/window/show", {})]:
+        r = getattr(client, method)(path, headers=h, **({"json": body} if body is not None else {}))
+        assert r.status_code == 403, path
+    # The desktop token must not work on the phone server.
+    assert client.get("/api/state", headers={"x-orion-token": "secret-token"}).status_code == 401
+
+
+async def test_remote_server_lifecycle(engine):
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        engine.config.settings.remote_port = s.getsockname()[1]
+    await engine.remote.start()
+    try:
+        st = engine.remote.status(with_qr=True)
+        assert st["running"] and st["url"].endswith("#/remote") and st["qr_svg"].startswith("<svg")
+        old = engine.remote.token
+        await engine.remote.rotate()
+        assert engine.remote.token != old and engine.remote.running
+    finally:
+        await engine.remote.stop()
+    assert not engine.remote.running

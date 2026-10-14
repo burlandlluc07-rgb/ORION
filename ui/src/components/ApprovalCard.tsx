@@ -1,10 +1,12 @@
 import { ShieldAlert, ShieldX } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { useStore } from "../lib/store";
 import type { Approval } from "../lib/types";
 
 export function ApprovalCard({ a, hotkey = false }: { a: Approval; hotkey?: boolean }) {
   const [busy, setBusy] = useState(false);
+  const voiceOn = useStore((s) => ["listening", "speaking", "thinking", "working"].includes(s.voice.state));
   const [left, setLeft] = useState(Math.max(0, Math.round(a.expires - Date.now() / 1000)));
   useEffect(() => {
     const t = setInterval(() => setLeft(Math.max(0, Math.round(a.expires - Date.now() / 1000))), 1000);
@@ -49,6 +51,7 @@ export function ApprovalCard({ a, hotkey = false }: { a: Approval; hotkey?: bool
         {a.risk !== "danger" && <button className="btn" disabled={busy} onClick={() => decide("always")}>Allow for this session</button>}
         <button className="btn ghost" disabled={busy} onClick={() => decide("deny")}>Deny</button>
         <span className="grow" />
+        {voiceOn && <span className="muted" style={{ fontSize: 12 }}>or say “yes” / “no”</span>}
         <span className="muted" style={{ fontSize: 12 }}>{left}s</span>
       </div>
     </div>

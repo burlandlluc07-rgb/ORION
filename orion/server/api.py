@@ -24,6 +24,7 @@ from ..ecosystem.connectors import CATALOG
 from ..engine import Engine
 from ..tasks.schedule import ScheduleError, describe, next_run
 from ..tools.platform import open_target
+from ..tools.registry import ToolError
 
 log = logging.getLogger("orion.api")
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -32,7 +33,8 @@ TEXT_EXT = {".txt", ".md", ".py", ".js", ".ts", ".json", ".csv", ".html", ".css"
             ".ini", ".toml", ".java", ".c", ".cpp", ".cs", ".go", ".rs", ".sql", ".sh", ".ps1", ".bat"}
 
 
-def create_app(engine: Engine, token: str | None = None, shell: Any = None) -> FastAPI:
+def create_app(engine: Engine, token: str | None = None, shell: Any = None, remote: bool = False) -> FastAPI:
+    """``remote=True`` builds the restricted phone API: chat, tasks and approvals, but no settings or ecosystem changes."""
     token = token or secrets.token_urlsafe(24)
     app = FastAPI(title="ORION", version=__version__, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.token = token
@@ -49,14 +51,20 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None) -> F
         if not hmac.compare_digest(supplied, token):
             raise HTTPException(401, "Bad token")
 
+    def admin(request: Request) -> None:
+        auth(request)
+        if remote:
+            raise HTTPException(403, "Not available from the phone remote.")
+
     A = Depends(auth)
+    X = Depends(admin)  # desktop-only endpoints
 
     # ── State & settings ───────────────────────────────────────────────────
     @app.get("/api/state", dependencies=[A])
     async def state():
         return engine.state()
 
-    @app.post("/api/key", dependencies=[A])
+    @app.post("/api/key", dependencies=[X])
     async def set_key(body: dict = Body(...)):
         key = str(body.get("key", "")).strip()
         if len(key) < 20:
@@ -71,7 +79,7 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None) -> F
             spawn(engine.voice.restart())
         return {"ok": True, "stored_in": where, "models": len(models)}
 
-    @app.patch("/api/settings", dependencies=[A])
+    @app.patch("/api/settings", dependencies=[X])
     async def patch_settings(patch: dict = Body(...)):
         try:
             engine.apply_settings(patch)
@@ -108,7 +116,7 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None) -> F
         engine.bus.emit("conversations.changed")
         return {"ok": True}
 
-    @app.delete("/api/conversations/{cid}", dependencies=[A])
+    @app.delete("/api/conversations/{cid}", dependencies=[X])
     async def delete_conversation(cid: str):
         engine.store.delete_conversation(cid)
         engine.bus.emit("conversations.changed")
@@ -204,7 +212,7 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None) -> F
         engine.bus.emit("memory.changed")
         return {"id": mid}
 
-    @app.delete("/api/memories/{mid}", dependencies=[A])
+    @app.delete("/api/memories/{mid}", dependencies=[X])
     async def delete_memory(mid: int):
         engine.store.forget(mid)
         engine.bus.emit("memory.changed")
@@ -222,7 +230,7 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None) -> F
             raise HTTPException(404)
         return s.to_dict(include_body=True)
 
-    @app.post("/api/skills", dependencies=[A])
+    @app.post("/api/skills", dependencies=[X])
     async def save_skill(body: dict = Body(...)):
         try:
             s = engine.skills.save_user_skill(body["name"], body.get("description", ""), body.get("body", ""),
@@ -232,13 +240,13 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None) -> F
         engine.bus.emit("ecosystem.changed")
         return s.to_dict(include_body=True)
 
-    @app.patch("/api/skills/{name}", dependencies=[A])
+    @app.patch("/api/skills/{name}", dependencies=[X])
     async def toggle_skill(name: str, body: dict = Body(...)):
         engine.set_skill_enabled(name, bool(body.get("enabled", True)))
         engine.bus.emit("ecosystem.changed")
         return {"ok": True}
 
-    @app.delete("/api/skills/{name}", dependencies=[A])
+    @app.delete("/api/skills/{name}", dependencies=[X])
     async def delete_skill(name: str):
         if not engine.skills.delete_user_skill(name):
             raise HTTPException(400, "Built-in skills can be disabled but not deleted.")
@@ -251,26 +259,26 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None) -> F
                  "source": t.source, "enabled": not engine.registry.is_disabled(t.name)}
                 for t in engine.registry.all(include_disabled=True)]
 
-    @app.patch("/api/tools/{name}", dependencies=[A])
+    @app.patch("/api/tools/{name}", dependencies=[X])
     async def toggle_tool(name: str, body: dict = Body(...)):
         engine.set_tool_enabled(name, bool(body.get("enabled", True)))
         return {"ok": True}
 
-    @app.get("/api/plugins", dependencies=[A])
+    @app.get("/api/plugins", dependencies=[X])
     async def plugins():
         return {"folder": str(engine.plugins.folder), "plugins": engine.plugins.list()}
 
-    @app.post("/api/plugins/reload", dependencies=[A])
+    @app.post("/api/plugins/reload", dependencies=[X])
     async def reload_plugins():
         engine.plugins.load_all()
         engine.bus.emit("ecosystem.changed")
         return engine.plugins.list()
 
-    @app.get("/api/connectors", dependencies=[A])
+    @app.get("/api/connectors", dependencies=[X])
     async def connectors():
         return {"connectors": engine.connectors.list(), "catalog": CATALOG}
 
-    @app.put("/api/connectors/{name}", dependencies=[A])
+    @app.put("/api/connectors/{name}", dependencies=[X])
     async def put_connector(name: str, body: dict = Body(...)):
         try:
             await engine.connectors.upsert(name, body)
@@ -278,7 +286,7 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None) -> F
             raise HTTPException(400, str(exc)) from exc
         return {"ok": True}
 
-    @app.delete("/api/connectors/{name}", dependencies=[A])
+    @app.delete("/api/connectors/{name}", dependencies=[X])
     async def delete_connector(name: str):
         await engine.connectors.remove(name)
         return {"ok": True}
@@ -293,7 +301,7 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None) -> F
                 "devices": await asyncio.to_thread(list_devices), "tts_voices": VOICES,
                 "live_voices": ["Charon", "Puck", "Kore", "Fenrir", "Aoede", "Orus", "Zephyr", "Leda"]}
 
-    @app.post("/api/voice/{action}", dependencies=[A])
+    @app.post("/api/voice/{action}", dependencies=[X])
     async def voice_action(action: str):
         v = engine.voice
         if v is None:
@@ -312,8 +320,56 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None) -> F
             raise HTTPException(404)
         return v.status()
 
+    # ── Accounts (email / calendar) ────────────────────────────────────────
+    @app.get("/api/accounts", dependencies=[X])
+    async def accounts():
+        return engine.accounts.public()
+
+    @app.put("/api/accounts/email", dependencies=[X])
+    async def put_email(body: dict = Body(...)):
+        try:
+            return await asyncio.to_thread(engine.accounts.configure_email, body)
+        except ToolError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.delete("/api/accounts/email", dependencies=[X])
+    async def delete_email():
+        engine.accounts.remove_email()
+        return engine.accounts.public()
+
+    @app.put("/api/accounts/calendars", dependencies=[X])
+    async def put_calendars(body: dict = Body(...)):
+        try:
+            cals = body.get("calendars")
+            if cals is None:  # {"add": [...]} appends to the stored feeds (their URLs never leave the engine)
+                cals = engine.accounts.data.get("calendars", []) + list(body.get("add", []))
+            return await asyncio.to_thread(engine.accounts.configure_calendars, cals, body.get("add_events_via"))
+        except ToolError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    # ── Phone remote ───────────────────────────────────────────────────────
+    @app.get("/api/remote", dependencies=[X])
+    async def remote_status():
+        return engine.remote.status(with_qr=True)
+
+    @app.post("/api/remote", dependencies=[X])
+    async def remote_toggle(body: dict = Body(...)):
+        enabled = bool(body.get("enabled"))
+        engine.apply_settings({"remote_enabled": enabled})
+        try:
+            await (engine.remote.start() if enabled else engine.remote.stop())
+        except OSError as exc:
+            engine.apply_settings({"remote_enabled": False})
+            raise HTTPException(409, f"Couldn't open the remote port: {exc}") from exc
+        return engine.remote.status(with_qr=True)
+
+    @app.post("/api/remote/rotate", dependencies=[X])
+    async def remote_rotate():
+        await engine.remote.rotate()
+        return engine.remote.status(with_qr=True)
+
     # ── Desktop shell ──────────────────────────────────────────────────────
-    @app.post("/api/open-folder/{which}", dependencies=[A])
+    @app.post("/api/open-folder/{which}", dependencies=[X])
     async def open_folder(which: str):
         target = {"data": engine.config.root, "plugins": engine.plugins.folder, "skills": engine.skills.user_dir}.get(which)
         if not target:
@@ -321,7 +377,7 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None) -> F
         open_target(str(target))
         return {"ok": True}
 
-    @app.post("/api/window/{action}", dependencies=[A])
+    @app.post("/api/window/{action}", dependencies=[X])
     async def window(action: str):
         if shell is None:
             return {"ok": False}
@@ -333,7 +389,9 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None) -> F
     async def ws(socket: WebSocket):
         supplied = socket.query_params.get("token", "")
         origin = socket.headers.get("origin", "")
-        if not hmac.compare_digest(supplied, token) or (origin and not origin.startswith(("http://127.0.0.1", "http://localhost"))):
+        same_host = origin.split("://", 1)[-1] == socket.headers.get("host", "")
+        local = origin.startswith(("http://127.0.0.1", "http://localhost"))
+        if not hmac.compare_digest(supplied, token) or (origin and not (local or (remote and same_host))):
             await socket.close(code=4401)
             return
         await socket.accept()

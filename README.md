@@ -24,6 +24,9 @@ a tray icon, global hotkeys, a Quick Bar over any app, an installer, and a modul
 | **Routines** | "Every weekday at 8:00, run my briefing." Timers and reminders persist and catch up after a restart. |
 | **Connectors** | **MCP** (Model Context Protocol), the same open standard Claude and Cowork use. Add GitHub, Notion, a real browser (Playwright), Home Assistant and more from a catalog, or any MCP server. |
 | **Plugins** | Drop a Python file with an `@tool` function into the plugins folder and ORION can use it. |
+| **Email & calendar** | Connect any IMAP/SMTP mailbox with an app password (Gmail, iCloud, Yahoo, Outlook…) and your calendars' private iCal links. ORION reads, searches and sends email (sending asks first), lists your schedule including recurring events, and opens new events pre-filled. No Google Cloud setup needed. |
+| **Phone remote** | Turn it on in Settings, scan the QR code, and your phone gets a mobile ORION: chat, quick actions, live progress and approvals. It runs on its own token, can't change settings, and you can rotate the code any time. |
+| **Spoken approvals** | When a task you started by voice needs permission, ORION asks out loud ("Shall I go ahead?") and accepts yes or no. |
 
 ![Tasks and approvals](docs/screenshots/tasks-and-approvals.png)
 
@@ -146,15 +149,14 @@ python -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activ
 pip install -e ".[dev,docs]"
 python -m orion --headless --port 8765             # engine + API only
 cd ui && npm install && npm run dev                # hot-reloading UI on :5173 (proxies to 8765)
-python -m pytest                                   # 65 tests, including the agent loop against a scripted fake Gemini
+python -m pytest                                   # 87 tests, including the agent loop against a scripted fake Gemini
 ```
 
 `python -m orion --browser` uses your normal browser instead of the native window. `--debug` turns on verbose
 logging (logs are in `%APPDATA%\ORION\logs`).
 
 ## Roadmap ideas
-- Phone companion: control ORION from your phone over the local network (the token-protected API makes this
-  straightforward)
-- Calendar and email connectors (Google and Microsoft) with OAuth in the app
+- Full Google and Microsoft OAuth (write access to calendars, labels and folders) as an alternative to app passwords
+- Voice from the phone remote (push-to-talk in the mobile page)
 - Local STT/LLM fallback (faster-whisper, Ollama) for offline use
 - Per-skill tool allowlists and a skill marketplace

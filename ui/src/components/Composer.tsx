@@ -11,7 +11,7 @@ export interface ComposerHandle {
 
 const MAX_FILE = 15 * 1024 * 1024;
 
-export const Composer = forwardRef<ComposerHandle, { busy: boolean }>(function Composer({ busy }, ref) {
+export const Composer = forwardRef<ComposerHandle, { busy: boolean; remote?: boolean }>(function Composer({ busy, remote = false }, ref) {
   const send = useStore((s) => s.send);
   const stop = useStore((s) => s.stop);
   const toast = useStore((s) => s.toast);
@@ -129,14 +129,14 @@ export const Composer = forwardRef<ComposerHandle, { busy: boolean }>(function C
           <input ref={fileInput} type="file" multiple hidden onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
           <button className="icon-btn" title="Attach files or images" onClick={() => fileInput.current?.click()}><Paperclip size={17} /></button>
           <span className="grow" />
-          <button
+          {!remote && <button
             className={`mic-btn ${voiceLive ? "live" : ""}`}
             disabled={voiceUnavailable}
             title={voiceUnavailable ? "Voice is off or unavailable — see Settings → Voice" : voiceLive ? "Stop listening (Ctrl+Alt+J)" : "Talk to ORION (Ctrl+Alt+J)"}
             onClick={() => api.post("/api/voice/toggle").catch((e) => toast({ title: "Voice", body: e.message, tone: "error" }))}
           >
             {voiceUnavailable ? <MicOff size={17} /> : <Mic size={17} />}
-          </button>
+          </button>}
           {busy ? (
             <button className="send-btn stop" onClick={stop} title="Stop (Esc)"><Square size={14} fill="currentColor" /></button>
           ) : (
@@ -144,9 +144,9 @@ export const Composer = forwardRef<ComposerHandle, { busy: boolean }>(function C
           )}
         </div>
       </div>
-      <div className="composer-hint">
+      {!remote && <div className="composer-hint">
         Enter to send · Shift+Enter new line · <kbd>/</kbd> skills · Esc stops · risky actions always ask first
-      </div>
+      </div>}
     </div>
   );
 });

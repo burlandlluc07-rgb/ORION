@@ -26,7 +26,7 @@ function greeting(name: string) {
   return name ? `${part}, ${name}.` : `${part}.`;
 }
 
-function MessageView({ m }: { m: Message }) {
+export function MessageView({ m }: { m: Message }) {
   const name = useStore((s) => s.engine?.settings.assistant_name ?? "ORION");
   const task = useStore((s) => (m.meta.task_id ? s.tasks[m.meta.task_id] : undefined));
   if (m.role === "user") {

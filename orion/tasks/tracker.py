@@ -8,10 +8,11 @@ ORION is doing, approve risky steps, and stop it at any moment.
 from __future__ import annotations
 
 import asyncio
+import re
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from ..events import EventBus
 from ..memory.store import Store, new_id
@@ -24,6 +25,7 @@ class Task:
     id: str
     title: str
     conv_id: str | None
+    source: str = "text"  # text | voice | routine
     status: str = "running"  # running | waiting | done | failed | stopped
     plan: list[dict] = field(default_factory=list)  # [{"text":…, "status": pending|active|done}]
     steps: list[dict] = field(default_factory=list)
@@ -42,8 +44,8 @@ class TaskTracker:
         self.store = store
         self.active: dict[str, Task] = {}
 
-    def start(self, title: str, conv_id: str | None) -> Task:
-        t = Task(id=new_id(), title=title[:90], conv_id=conv_id)
+    def start(self, title: str, conv_id: str | None, source: str = "text") -> Task:
+        t = Task(id=new_id(), title=title[:90], conv_id=conv_id, source=source)
         self.active[t.id] = t
         self._emit(t)
         return t
@@ -100,13 +102,30 @@ class TaskTracker:
         return n
 
 
+_YES = re.compile(r"\b(yes|yeah|yep|yup|sure|ok(?:ay)?|do it|go ahead|go for it|approved?|confirm(?:ed)?|"
+                  r"proceed|affirmative|allow it|please do|absolutely|of course)\b", re.I)
+_NO = re.compile(r"\b(no|nope|nah|don'?t|do not|cancel|stop|deny|denied|negative|abort|never ?mind|hold on|wait)\b", re.I)
+
+
+def parse_yes_no(text: str) -> bool | None:
+    """Interpret a spoken answer to "shall I…?". None when unclear (or both)."""
+    t = text.strip().lower()
+    if not t:
+        return None
+    yes, no = bool(_YES.search(t)), bool(_NO.search(t))
+    if yes == no:
+        return None
+    return yes
+
+
 class ApprovalBroker:
-    """Asks the UI to approve a risky step and waits for the answer."""
+    """Asks the UI (and, for voice tasks, the user's voice) to approve a risky step."""
 
     def __init__(self, bus: EventBus) -> None:
         self.bus = bus
         self.pending: dict[str, tuple[asyncio.Future, dict]] = {}
         self.session_allow: set[str] = set()
+        self.on_voice_request: Callable[[dict], Awaitable[None]] | None = None
 
     async def request(self, tool: str, label: str, risk: str, args: dict[str, Any], task: Task | None) -> bool:
         if tool in self.session_allow and risk != "danger":
@@ -117,6 +136,8 @@ class ApprovalBroker:
                 "task_id": task.id if task else None, "expires": time.time() + APPROVAL_TIMEOUT}
         self.pending[aid] = (fut, info)
         self.bus.emit("approval.request", approval=info)
+        if task is not None and task.source == "voice" and self.on_voice_request is not None:
+            asyncio.create_task(self.on_voice_request(info))
         try:
             while True:
                 try:
@@ -142,6 +163,11 @@ class ApprovalBroker:
             return False
         item[0].set_result(decision)
         return True
+
+    def voice_pending(self) -> dict | None:
+        """The most recent approval that can be answered by voice."""
+        items = [info for fut, info in self.pending.values() if not fut.done()]
+        return items[-1] if items else None
 
     def deny_all(self) -> None:
         for fut, _ in list(self.pending.values()):

@@ -1,5 +1,5 @@
 import {
-  Blocks, Cable, FolderOpen, Plug, Plus, Puzzle, RefreshCw, Sparkles, Trash2, Wrench,
+  Blocks, Cable, CalendarDays, FolderOpen, Loader2, Mail, Plug, Plus, Puzzle, RefreshCw, Sparkles, Trash2, UserRound, Wrench,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Markdown } from "../components/Markdown";
@@ -8,7 +8,7 @@ import { api } from "../lib/api";
 import { useStore } from "../lib/store";
 import type { CatalogEntry, ConnectorInfo, PluginInfo, Skill, ToolInfo } from "../lib/types";
 
-type Tab = "skills" | "connectors" | "plugins" | "tools";
+type Tab = "skills" | "accounts" | "connectors" | "plugins" | "tools";
 
 export function EcosystemView() {
   const [tab, setTab] = useState<Tab>("skills");
@@ -21,13 +21,14 @@ export function EcosystemView() {
         </div>
       </div>
       <div className="tabs" role="tablist">
-        {([["skills", Sparkles, "Skills"], ["connectors", Cable, "Connectors"], ["plugins", Puzzle, "Plugins"], ["tools", Wrench, "Tools"]] as const).map(([id, Icon, label]) => (
+        {([["skills", Sparkles, "Skills"], ["accounts", UserRound, "Accounts"], ["connectors", Cable, "Connectors"], ["plugins", Puzzle, "Plugins"], ["tools", Wrench, "Tools"]] as const).map(([id, Icon, label]) => (
           <button key={id} role="tab" aria-selected={tab === id} className={`tab ${tab === id ? "on" : ""}`} onClick={() => setTab(id)}>
             <Icon size={15} /> {label}
           </button>
         ))}
       </div>
       {tab === "skills" && <SkillsTab />}
+      {tab === "accounts" && <AccountsTab />}
       {tab === "connectors" && <ConnectorsTab />}
       {tab === "plugins" && <PluginsTab />}
       {tab === "tools" && <ToolsTab />}
@@ -291,6 +292,138 @@ function ToolsTab() {
           </div>
         </div>
       ))}
+    </>
+  );
+}
+
+// ── Accounts (email + calendar) ───────────────────────────────────────────
+interface AccountsInfo {
+  email: { preset: string; address: string; name: string; imap_host: string; imap_port: number; smtp_host: string; smtp_port: number } | null;
+  calendars: { name: string; host: string }[];
+  add_events_via: "google" | "outlook" | "ics";
+  presets: Record<string, { label: string; help: string }>;
+}
+
+function AccountsTab() {
+  const toast = useStore((s) => s.toast);
+  const [info, setInfo] = useState<AccountsInfo | null>(null);
+  const [preset, setPreset] = useState("gmail");
+  const [address, setAddress] = useState("");
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
+  const [imap, setImap] = useState("");
+  const [smtp, setSmtp] = useState("");
+  const [cals, setCals] = useState<{ name: string; url: string }[]>([]);
+  const [via, setVia] = useState<"google" | "outlook" | "ics">("google");
+  const [busy, setBusy] = useState<"" | "email" | "cal">("");
+  const [err, setErr] = useState<{ email?: string; cal?: string }>({});
+
+  const load = () => api.get<AccountsInfo>("/api/accounts").then((a) => {
+    setInfo(a);
+    setVia(a.add_events_via);
+    if (a.email) { setPreset(a.email.preset); setAddress(a.email.address); setName(a.email.name); }
+  });
+  useEffect(() => { load(); }, []);
+  if (!info) return null;
+
+  const saveEmail = async () => {
+    setBusy("email"); setErr({});
+    try {
+      const body: Record<string, unknown> = { preset, address, name, password };
+      if (preset === "custom") { const [ih, ip] = imap.split(":"); const [sh, sp] = smtp.split(":"); Object.assign(body, { imap_host: ih, imap_port: Number(ip) || 993, smtp_host: sh, smtp_port: Number(sp) || 587 }); }
+      setInfo(await api.put<AccountsInfo>("/api/accounts/email", body));
+      setPassword("");
+      toast({ title: "Email connected", body: address, tone: "success" });
+    } catch (e) { setErr({ email: (e as Error).message }); } finally { setBusy(""); }
+  };
+  const saveCals = async () => {
+    setBusy("cal"); setErr({});
+    try {
+      setInfo(await api.put<AccountsInfo>("/api/accounts/calendars", { add: cals.filter((c) => c.url.trim()), add_events_via: via }));
+      setCals([]);
+      toast({ title: "Calendar settings saved", tone: "success" });
+    } catch (e) { setErr({ cal: (e as Error).message }); } finally { setBusy(""); }
+  };
+
+  return (
+    <>
+      <div className="muted" style={{ fontSize: 13, marginBottom: 14, lineHeight: 1.55 }}>
+        Connect your mail and calendar so ORION can brief you, find emails, draft and send replies, and add events.
+        Everything stays on this PC; passwords go into Windows Credential Manager.
+      </div>
+
+      <section className="settings-sec">
+        <h3><Mail size={16} /> Email</h3>
+        {info.email ? (
+          <div className="field">
+            <div><div className="fl">{info.email.address}</div><div className="fh">{info.presets[info.email.preset]?.label} · {info.email.imap_host} · read, search and send (sending always asks first)</div></div>
+            <div className="fc"><button className="btn danger" onClick={() => api.del<AccountsInfo>("/api/accounts/email").then(setInfo)}><Trash2 size={13} /> Disconnect</button></div>
+          </div>
+        ) : (
+          <div className="modal-body">
+            <div className="row" style={{ flexWrap: "wrap" }}>
+              <div style={{ width: 200 }}><label className="lbl">Provider</label>
+                <select className="select" value={preset} onChange={(e) => setPreset(e.target.value)}>
+                  {Object.entries(info.presets).map(([k, p]) => <option key={k} value={k}>{p.label}</option>)}
+                </select></div>
+              <div className="grow"><label className="lbl">Email address</label><input className="input" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="you@gmail.com" /></div>
+            </div>
+            <div className="row" style={{ flexWrap: "wrap" }}>
+              <div className="grow"><label className="lbl">App password</label><input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></div>
+              <div className="grow"><label className="lbl">Your name (for “From”)</label><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></div>
+            </div>
+            {preset === "custom" && (
+              <div className="row">
+                <div className="grow"><label className="lbl">IMAP server:port</label><input className="input" value={imap} onChange={(e) => setImap(e.target.value)} placeholder="imap.example.com:993" /></div>
+                <div className="grow"><label className="lbl">SMTP server:port</label><input className="input" value={smtp} onChange={(e) => setSmtp(e.target.value)} placeholder="smtp.example.com:587" /></div>
+              </div>
+            )}
+            <div className="fh muted" style={{ fontSize: 12.5 }}>{info.presets[preset]?.help} Your normal password won't work — it must be an app password.</div>
+            {err.email && <div className="err">{err.email}</div>}
+            <div><button className="btn primary" disabled={!address || !password || busy === "email"} onClick={saveEmail}>
+              {busy === "email" ? <><Loader2 size={14} className="spin" /> Testing sign-in…</> : "Connect email"}</button></div>
+          </div>
+        )}
+      </section>
+
+      <section className="settings-sec">
+        <h3><CalendarDays size={16} /> Calendar</h3>
+        {info.calendars.map((c) => (
+          <div key={c.name + c.host} className="field">
+            <div><div className="fl">{c.name}</div><div className="fh">{c.host} · read-only iCal feed</div></div>
+            <div className="fc" />
+          </div>
+        ))}
+        {info.calendars.length > 0 && (
+          <div style={{ padding: "8px 18px 0" }}>
+            <button className="btn sm ghost" onClick={() => api.put<AccountsInfo>("/api/accounts/calendars", { calendars: [], add_events_via: via }).then(setInfo)}>
+              <Trash2 size={12} /> Disconnect all calendars</button>
+          </div>
+        )}
+        <div className="modal-body">
+          <div className="fh muted" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
+            Paste each calendar's <b>private iCal address</b>. Google Calendar: Settings → your calendar → “Secret address in iCal format”.
+            Outlook: Settings → Calendar → Shared calendars → Publish a calendar → ICS link.
+          </div>
+          {cals.map((c, i) => (
+            <div key={i} className="row">
+              <input className="input" style={{ width: 150 }} value={c.name} placeholder="Name" onChange={(e) => setCals(cals.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
+              <input className="input" value={c.url} placeholder="https://calendar.google.com/calendar/ical/…/basic.ics" onChange={(e) => setCals(cals.map((x, j) => j === i ? { ...x, url: e.target.value } : x))} />
+            </div>
+          ))}
+          <div className="row" style={{ flexWrap: "wrap" }}>
+            <button className="btn" onClick={() => setCals([...cals, { name: cals.length || info.calendars.length ? "" : "Personal", url: "" }])}><Plus size={13} /> Add calendar link</button>
+            <span className="grow" />
+            <span className="muted" style={{ fontSize: 12.5 }}>New events open in</span>
+            <select className="select" style={{ width: 190 }} value={via} onChange={(e) => setVia(e.target.value as typeof via)}>
+              <option value="google">Google Calendar (web)</option><option value="outlook">Outlook (web)</option><option value="ics">Default calendar app (.ics)</option>
+            </select>
+            <button className="btn primary" disabled={busy === "cal"} onClick={saveCals}>
+              {busy === "cal" ? <><Loader2 size={14} className="spin" /> Checking…</> : "Save"}</button>
+          </div>
+          {err.cal && <div className="err">{err.cal}</div>}
+        </div>
+      </section>
     </>
   );
 }

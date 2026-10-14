@@ -160,6 +160,7 @@ class LiveSession:
                             user_buf.append(sc.input_transcription.text)
                             vm.set_state("thinking")
                             self.e.bus.emit("voice.transcript", role="user", text="".join(user_buf), conv_id=vm.conv_id)
+                            vm.check_spoken_approval("".join(user_buf))
                         if sc.model_turn and sc.model_turn.parts:
                             for part in sc.model_turn.parts:
                                 if part.inline_data and part.inline_data.data:
@@ -179,7 +180,7 @@ class LiveSession:
                     if msg.tool_call and msg.tool_call.function_calls:
                         self.last_activity = time.monotonic()
                         if task is None:
-                            task = self.e.tracker.start("".join(user_buf)[:80] or "Voice command", vm.conv_id)
+                            task = self.e.tracker.start("".join(user_buf)[:80] or "Voice command", vm.conv_id, "voice")
                         vm.set_state("working")
                         responses = []
                         for fc in msg.tool_call.function_calls:

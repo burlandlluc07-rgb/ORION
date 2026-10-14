@@ -11,6 +11,7 @@ import { EcosystemView } from "./views/EcosystemView";
 import { MemoryView } from "./views/MemoryView";
 import { Onboarding } from "./views/Onboarding";
 import { QuickBar } from "./views/QuickBar";
+import { RemoteView } from "./views/RemoteView";
 import { RoutinesView } from "./views/RoutinesView";
 import { SettingsView } from "./views/SettingsView";
 import { TasksView } from "./views/TasksView";
@@ -31,6 +32,7 @@ function useTheme(theme: string | undefined) {
 export default function App() {
   const s = useStore();
   const quick = location.hash.startsWith("#/quick");
+  const remote = location.hash.startsWith("#/remote");
   useTheme(s.engine?.settings.theme);
 
   useEffect(() => {
@@ -64,13 +66,15 @@ export default function App() {
   if (!TOKEN) {
     return (
       <div className="onb"><div className="onb-card">
-        <h1>Open ORION from the app</h1>
-        <p>This page needs the secure link the ORION desktop app opens. Launch ORION from the Start menu or tray.</p>
+        <h1>{remote ? "Scan the QR code again" : "Open ORION from the app"}</h1>
+        <p>{remote ? "This phone isn't paired. On your PC open ORION → Settings → Phone remote and scan the QR code."
+          : "This page needs the secure link the ORION desktop app opens. Launch ORION from the Start menu or tray."}</p>
       </div></div>
     );
   }
 
   if (quick) return <><QuickBar /><Toasts /></>;
+  if (remote) return <><RemoteView /><Toasts /></>;
 
   return (
     <>

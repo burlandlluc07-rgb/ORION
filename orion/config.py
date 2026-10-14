@@ -88,6 +88,9 @@ class Settings(BaseModel):
     launch_on_startup: bool = False
     close_to_tray: bool = True
 
+    remote_enabled: bool = False
+    remote_port: int = 8790
+
     history_turns: int = 12
     onboarded: bool = False
 

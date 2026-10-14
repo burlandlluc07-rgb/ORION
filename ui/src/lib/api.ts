@@ -3,13 +3,16 @@
 
 const params = new URLSearchParams(location.search);
 const fromUrl = params.get("token");
+// The phone remote keeps its token across visits (bookmarks, home-screen icon); the desktop window doesn't.
+const isRemote = location.hash.startsWith("#/remote");
 if (fromUrl) {
   sessionStorage.setItem("orion.token", fromUrl);
+  if (isRemote) localStorage.setItem("orion.remoteToken", fromUrl);
   params.delete("token");
   const clean = location.pathname + (params.toString() ? `?${params}` : "") + location.hash;
   history.replaceState(null, "", clean);
 }
-export const TOKEN = sessionStorage.getItem("orion.token") ?? "";
+export const TOKEN = sessionStorage.getItem("orion.token") ?? (isRemote ? localStorage.getItem("orion.remoteToken") : null) ?? "";
 
 export class ApiError extends Error {
   status: number;

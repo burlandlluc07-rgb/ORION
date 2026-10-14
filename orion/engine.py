@@ -44,6 +44,11 @@ class Engine:
         self.plugins = PluginManager(self.config.root / "plugins", self.registry)
         self.connectors = ConnectorManager(self.config.root / "connectors.json", self.registry,
                                            lambda: self.bus.emit("ecosystem.changed"))
+        from .ecosystem.accounts import Accounts
+        from .server.remote import RemoteServer
+
+        self.accounts = Accounts(self.config.root, self.registry, lambda: self.bus.emit("ecosystem.changed"))
+        self.remote = RemoteServer(self)
         self.scheduler: Scheduler | None = None
         self.voice = None
         self.notifier: Callable[[str, str], None] | None = None  # set by the desktop shell (tray toasts)
@@ -63,6 +68,7 @@ class Engine:
             self.registry.set_enabled(name, False)
         self.skills.disabled = set(self.store.kv_get("disabled_skills", []))
         files_tools.set_allowed_roots(self.config.settings.allowed_roots)
+        self.accounts.sync_tools()
 
     async def start(self) -> None:
         self._loop = asyncio.get_running_loop()
@@ -80,6 +86,11 @@ class Engine:
         if self.config.get_api_key():
             self._bg.append(asyncio.create_task(self._discover(), name="discover"))
         await self.start_voice()
+        if self.config.settings.remote_enabled:
+            try:
+                await self.remote.start()
+            except OSError as exc:
+                log.warning("Phone remote couldn't start: %s", exc)
         log.info("ORION %s engine started (%d tools, %d skills)", __version__, len(self.registry.all()),
                  len(self.skills.skills))
 
@@ -109,6 +120,7 @@ class Engine:
         if self.scheduler:
             await self.scheduler.stop()
         await self.connectors.stop_all()
+        await self.remote.stop()
         for t in self._bg:
             t.cancel()
         self.store.close()

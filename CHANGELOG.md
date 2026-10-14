@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.0
+- Spoken approvals: voice-started tasks ask "Shall I go ahead?" out loud and accept yes or no (Live and Classic).
+- Phone remote: a restricted mobile UI on your LAN with QR pairing, a rotatable token, quick actions and approvals.
+- Accounts: email over IMAP/SMTP (inbox, search, read, send with approval) and calendars via private iCal links
+  (recurring events expanded; new events open pre-filled in Google, Outlook or the default calendar app).
+- The morning briefing now includes today's calendar and important unread email when those are connected.
+
 ## 2.0.0 — complete rewrite
 
 ORION 2.0 replaces the 1.x "LIV Edition" prototype (a PyQt HUD built on a CC BY-NC third-party base) with an

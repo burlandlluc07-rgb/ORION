@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "orion-assistant"
-version = "2.0.0"
+version = "2.1.0"
 description = "O.R.I.O.N. — a fast, voice-first desktop AI assistant for your PC, powered by Gemini."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -34,6 +34,9 @@ dependencies = [
   "pyautogui>=0.9,<1",
   "send2trash>=1.8,<2",
   "mcp>=1.9,<3",
+  "qrcode>=7,<9",
+  "icalendar>=5,<8",
+  "recurring-ical-events>=2.1,<4",
   "pywinauto>=0.6; sys_platform == 'win32'",
   "pycaw>=20230407; sys_platform == 'win32'",
   "comtypes>=1.2; sys_platform == 'win32'",

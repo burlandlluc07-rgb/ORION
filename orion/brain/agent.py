@@ -154,7 +154,7 @@ class Agent:
             skill_body, skill_tier = sk.body, sk.tier
             text = m.group(2).strip() or f"Run the {sk.name} skill now."
 
-        task = e.tracker.start(make_title(text), cid)
+        task = e.tracker.start(make_title(text), cid, source)
         try:
             if e.config.settings.fast_path and not skill_body and not attachments and mode != "smart":
                 done = await self._fast_path(text, cid, task, source)
