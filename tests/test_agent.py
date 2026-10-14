@@ -22,8 +22,8 @@ class FakeBrain:
         yield "usage", 0
 
 
-def call(name, **args):
-    return types.Part(function_call=types.FunctionCall(name=name, args=args, id=f"id-{name}"))
+def call(fn_name, **args):
+    return types.Part(function_call=types.FunctionCall(name=fn_name, args=args, id=f"id-{fn_name}"))
 
 
 def add_probe(engine, risk="safe"):
@@ -242,3 +242,48 @@ async def test_fast_path_hardware_error_is_reported_not_sent_to_gemini(engine, m
     res = await engine.agent.handle("volume 30")
     assert "can't reach the speakers" in res["reply"] and engine.brain.calls == []
     _ = system
+
+
+def add_kit_tool(engine, name="make_sheet", kit="documents"):
+    def fn() -> str:
+        """Kit tool."""
+        return "made"
+
+    from orion.tools.registry import schema_for
+
+    schema, _, desc = schema_for(fn)
+    engine.registry.add(Tool(name=name, description=desc, parameters=schema, fn=fn, kit=kit))
+
+
+def _names(decls):
+    return {d["name"] for d in decls}
+
+
+async def test_toolkits_load_by_keyword_and_on_demand(engine):
+    add_kit_tool(engine)
+    engine.brain = FakeBrain([[types.Part(text="Sure.")]])
+    res = await engine.agent.handle("what's a good name for a cat?")
+    first = _names(engine.brain.calls[0]["tools"])
+    assert "make_sheet" not in first and "open_toolkit" in first
+
+    # The model asks for the toolkit mid-task; the next round offers its tools.
+    engine.brain = FakeBrain([[call("open_toolkit", name="documents")], [call("make_sheet")], [types.Part(text="Done.")]])
+    await engine.agent.handle("now organise that for me", res["conv_id"])
+    assert "make_sheet" not in _names(engine.brain.calls[0]["tools"])
+    assert "make_sheet" in _names(engine.brain.calls[1]["tools"])
+    assert engine.store.list_tasks()[0]["steps"][-1]["status"] == "done"
+
+    # Mentioning the subject preloads it in a new conversation.
+    engine.brain = FakeBrain([[types.Part(text="Ok.")]])
+    await engine.agent.handle("make me an Excel spreadsheet of my budget")
+    assert "make_sheet" in _names(engine.brain.calls[0]["tools"])
+
+
+def test_select_kits():
+    from orion.tools.kits import select_kits
+
+    assert select_kits("reply to the last email from Sam") == {"email"}
+    assert "documents" in select_kits("turn this into a PowerPoint deck")
+    assert "browser" in select_kits("log in to my bank website and download the statement")
+    assert "windows" in select_kits("turn on dark mode and connect to wifi")
+    assert select_kits("what time is it") == set()

@@ -22,6 +22,10 @@ HOW YOU WORK
 - Chain tools yourself (e.g. search_files → read_file → write_file). Don't ask for confirmation in chat; risky tools trigger an approval prompt automatically.
 - If a tool fails, read the error, adapt, and try a sensible alternative once. Never claim success without a tool result that shows it.
 - For long jobs (research, comparisons, reports, multi-step chores) or when the user says "in the background", use start_mission so it runs autonomously and they're notified when done.
+- TOOLKITS: extra tools for documents (Word/Excel/PowerPoint/PDF/images/zip), the web browser, email, Windows settings and the smart home load on demand. If a task needs tools you don't see, call open_toolkit — never say you can't before checking.
+- Files you create: save in Documents unless told otherwise, then give the path and offer to open it (open_path). Prefer real .docx/.xlsx/.pptx/.pdf over .txt when the user asks for a document, sheet, deck or PDF.
+- Browser: use browser_* to DO things on websites (forms, bookings, shopping, accounts); look at the page again after each step. Never type passwords or card details: ask the user to enter them in the browser window. Confirm with the user before the final buy/book/submit/send.
+- Email: find addresses with email_find_contact; show the draft first unless the user dictated it exactly.
 - Smart home: use home_devices/home_control/home_scene when available; never touch locks or alarms unless asked explicitly.
 - Use web_search for anything current (news, prices, scores, releases) — your knowledge may be outdated.
 - Remember durable facts the user shares about themselves with remember(); don't store trivia or secrets.
@@ -38,11 +42,14 @@ def build_system_prompt(*, persona: str, assistant: str, user: str, memories: li
     head = PERSONAS.get(persona, PERSONAS["jarvis"]).format(name=assistant, user=user or "the user")
     ctx = (f"CONTEXT\n- Now: {now:%A %d %B %Y, %H:%M}\n- OS: {platform.system()} {platform.release()}"
            f"\n- User: {user or 'unknown (ask their name naturally at some point and remember it)'}")
-    parts = [head, CORE_RULES.strip(), ctx]
-    if memories:
-        parts.append("WHAT YOU REMEMBER ABOUT THE USER\n" + "\n".join(f"- {m}" for m in memories))
+    # Stable text first, changing text (time, recalled memories) last: Gemini reuses the cached prefix of
+    # identical prompts, which makes replies start sooner.
+    parts = [head, CORE_RULES.strip()]
     if skills_index:
         parts.append(skills_index)
+    parts.append(ctx)
+    if memories:
+        parts.append("WHAT YOU REMEMBER ABOUT THE USER\n" + "\n".join(f"- {m}" for m in memories))
     if voice:
         parts.append("VOICE MODE: you are speaking. Never read out URLs, code or long lists; summarise and offer "
                      "to show details on screen. Keep each reply under ~25 words unless asked for more.")

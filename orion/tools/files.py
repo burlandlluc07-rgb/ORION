@@ -174,7 +174,19 @@ def read_text_any(p: Path) -> str:
             import docx  # type: ignore
         except ImportError as exc:
             raise ToolError("Word support needs 'python-docx' (pip install python-docx).") from exc
-        return "\n".join(par.text for par in docx.Document(str(p)).paragraphs)
+        d = docx.Document(str(p))
+        text = "\n".join(par.text for par in d.paragraphs)
+        for t in d.tables:
+            text += "\n" + "\n".join(" | ".join(c.text for c in row.cells) for row in t.rows)
+        return text
+    if suffix in (".xlsx", ".xlsm"):
+        from .office import read_spreadsheet_text
+
+        return read_spreadsheet_text(p)
+    if suffix == ".pptx":
+        from .office import read_presentation_text
+
+        return read_presentation_text(p)
     data = p.read_bytes()[: TEXT_LIMIT * 4]
     if b"\x00" in data[:4096]:
         raise ToolError(f"{p.name} is a binary file ({_human(p.stat().st_size)}); it can't be read as text.")
@@ -183,7 +195,7 @@ def read_text_any(p: Path) -> str:
 
 @tool(category="files")
 def read_file(path: str) -> str:
-    """Read a text, code, Markdown, CSV, PDF or Word file.
+    """Read a text, code, Markdown, CSV, PDF, Word, Excel or PowerPoint file.
 
     Args:
         path: File path or friendly path like "desktop/todo.txt".

@@ -124,7 +124,7 @@ class SmartHome:
         ):
             schema, _, desc = schema_for(fn)
             self.registry.add(Tool(name=fn.__name__, description=desc, parameters=schema, fn=fn, risk=risk,  # type: ignore[arg-type]
-                                   category="smart home", source="home", summarize=summary))
+                                   category="smart home", source="home", summarize=summary, kit="home"))
 
     # ── backends ───────────────────────────────────────────────────────────
     def _ha(self, method: str, path: str, json_body: dict | None = None) -> Any:

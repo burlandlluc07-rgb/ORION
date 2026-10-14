@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from google.genai import types
 
 from ..tasks.tracker import Task
+from ..tools.kits import open_toolkit_declaration, select_kits
 from ..tools.registry import ToolContext, ToolError
 from . import router
 from .gemini import NotConfigured, friendly_error
@@ -82,6 +83,14 @@ def make_title(text: str) -> str:
 class Agent:
     def __init__(self, engine: "Engine") -> None:
         self.e = engine
+        self._kits: dict[str, set[str]] = {}  # conversation → toolkits loaded so far
+
+    def tool_declarations(self, cid: str) -> list[dict]:
+        """Core tools + the toolkits this conversation has loaded, plus open_toolkit for the rest."""
+        reg = self.e.registry
+        loaded = self._kits.get(cid, set())
+        rest = [k for k in reg.kits() if k not in loaded]
+        return reg.declarations(kits=loaded) + BUILTIN_DECLS + ([open_toolkit_declaration(rest)] if rest else [])
 
     # ── Tool execution (shared with the Live voice session) ────────────────
     async def run_tool(self, name: str, args: dict, task: Task, conv_id: str | None) -> tuple[bool, str]:
@@ -255,7 +264,9 @@ class Agent:
                 user_parts.append(types.Part(text=f"[Attached file {a.get('name')}]\n{a['text']}"))
         user_parts.append(types.Part(text=text))
         contents = self._history(cid, s.history_turns) + [types.Content(role="user", parts=user_parts)]
-        tools = e.registry.declarations() + BUILTIN_DECLS
+        kits = self._kits.setdefault(cid, set())
+        kits |= set(e.registry.kits()) if source == "mission" else select_kits(f"{text}\n{skill_body or ''}")
+        tools = self.tool_declarations(cid)
 
         msg_id = f"a{int(time.time() * 1000)}"
         full_text = ""
@@ -298,6 +309,7 @@ class Agent:
                     full_text += "\n\n"
                     e.bus.emit("message.delta", conv_id=cid, id=msg_id, delta="\n\n")
                 contents.append(types.Content(role="user", parts=responses))
+                tools = self.tool_declarations(cid)  # open_toolkit may have added tools for the next round
                 if task.cancel.is_set():
                     full_text += "*(stopped)*"
                     break
@@ -326,7 +338,7 @@ class Agent:
         return {"ok": True, "conv_id": cid, "reply": reply, "model": model_used}
 
     def _parallel_safe(self, name: str) -> bool:
-        if name in ("update_plan", "use_skill"):
+        if name in ("update_plan", "use_skill", "open_toolkit"):
             return False  # cheap, and their order matters for the UI
         tool = self.e.registry.get(name)
         return tool is not None and not self.needs_approval(tool.risk, name) and tool.risk == "safe"
@@ -379,6 +391,13 @@ class Agent:
             for i in range(len(task.plan)):
                 e.tracker.mark_plan(task, i, "done" if i < done else ("active" if i == done else "pending"))
             return True, "Plan shown to the user."
+        if name == "open_toolkit":
+            kit = str(args.get("name", ""))
+            names = e.registry.kit_tools(kit)
+            if not names:
+                return False, "No such toolkit. Available: " + ", ".join(e.registry.kits())
+            self._kits.setdefault(cid, set()).add(kit)
+            return True, f"Toolkit '{kit}' loaded. You can now call: " + ", ".join(names)
         if name == "use_skill":
             sk = e.skills.get(str(args.get("name", "")))
             if not sk:

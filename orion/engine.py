@@ -26,7 +26,7 @@ from .tools.registry import Registry, decorated_tools
 
 log = logging.getLogger("orion.engine")
 
-CORE_TOOL_MODULES = ["system", "apps", "files", "web", "screen", "productivity", "shell"]
+CORE_TOOL_MODULES = ["system", "apps", "files", "web", "screen", "productivity", "shell", "office", "media", "browser", "windows"]
 
 
 class Engine:
@@ -176,6 +176,13 @@ class Engine:
         await self.remote.stop()
         await self.proactive.stop()
         await self.learner.stop()
+        from .tools.browser import BROWSER
+
+        if BROWSER._ctx is not None:
+            try:
+                await asyncio.wait_for(asyncio.to_thread(BROWSER.call, BROWSER.close, 10), 12)
+            except Exception:
+                pass
         for t in self._bg:
             t.cancel()
         self.store.close()

@@ -38,6 +38,12 @@ dependencies = [
   "pywebpush>=2,<3",
   "icalendar>=5,<8",
   "recurring-ical-events>=2.1,<4",
+  "pypdf>=4,<7",
+  "python-docx>=1.1,<2",
+  "openpyxl>=3.1,<4",
+  "python-pptx>=1.0,<2",
+  "fpdf2>=2.8,<3",
+  "playwright>=1.45,<2",
   "pywinauto>=0.6; sys_platform == 'win32'",
   "pycaw>=20230407; sys_platform == 'win32'",
   "comtypes>=1.2; sys_platform == 'win32'",
@@ -46,7 +52,7 @@ dependencies = [
 
 [project.optional-dependencies]
 wakeword = ["openwakeword>=0.6"]
-docs = ["pypdf>=4", "python-docx>=1.1"]
+docs = []  # kept for older install commands; documents support is now built in
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "pyinstaller>=6.5", "ruff>=0.5"]
 
 [project.scripts]

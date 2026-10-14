@@ -23,8 +23,10 @@ def run(cmd: list[str] | str, timeout: float = 15, shell: bool = False, check: b
     )
 
 
-def powershell(script: str, timeout: float = 20) -> str:
-    exe = shutil.which("pwsh") or shutil.which("powershell") or "powershell"
+def powershell(script: str, timeout: float = 20, legacy: bool = False) -> str:
+    """Run a PowerShell script. ``legacy`` forces Windows PowerShell 5.1, which WinRT interop needs."""
+    exe = (shutil.which("powershell") or "powershell") if legacy else \
+        (shutil.which("pwsh") or shutil.which("powershell") or "powershell")
     res = run([exe, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script], timeout=timeout)
     if res.returncode != 0 and res.stderr.strip():
         raise RuntimeError(res.stderr.strip()[:500])

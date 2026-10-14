@@ -54,6 +54,7 @@ class Tool:
     source: str = "core"  # core | plugin:<name> | mcp:<server>
     summarize: Callable[[dict], str] | None = None
     wants_context: str | None = None
+    kit: str | None = None  # None = core (always offered); otherwise the toolkit it belongs to (see kits.py)
 
     def declaration(self) -> dict:
         return {"name": self.name, "description": self.description, "parameters_json_schema": self.parameters}
@@ -190,8 +191,17 @@ class Registry:
     def all(self, include_disabled: bool = False) -> list[Tool]:
         return [t for n, t in self._tools.items() if include_disabled or n not in self._disabled]
 
-    def declarations(self, names: set[str] | None = None) -> list[dict]:
-        return [t.declaration() for t in self.all() if names is None or t.name in names]
+    def declarations(self, names: set[str] | None = None, kits: set[str] | None = None) -> list[dict]:
+        """Declarations to send to Gemini. ``kits=None`` means every tool; otherwise core tools plus those kits."""
+        return [t.declaration() for t in self.all()
+                if (names is None or t.name in names) and (kits is None or t.kit is None or t.kit in kits)]
+
+    def kits(self) -> list[str]:
+        """Toolkits that currently have at least one enabled tool."""
+        return sorted({t.kit for t in self.all() if t.kit})
+
+    def kit_tools(self, kit: str) -> list[str]:
+        return [t.name for t in self.all() if t.kit == kit]
 
     def is_disabled(self, name: str) -> bool:
         return name in self._disabled
@@ -207,6 +217,7 @@ def tool(
     category: str = "general",
     name: str | None = None,
     summary: Callable[[dict], str] | None = None,
+    kit: str | None = None,
 ):
     def wrap(fn: Callable) -> Callable:
         schema, ctx_param, description = schema_for(fn)
@@ -219,6 +230,7 @@ def tool(
             category=category,
             summarize=summary,
             wants_context=ctx_param,
+            kit=kit,
         )
         _DECORATED.append(t)
         fn.__orion_tool__ = t  # type: ignore[attr-defined]

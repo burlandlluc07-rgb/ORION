@@ -115,6 +115,120 @@ def procs(name: str) -> int:
     return sum(1 for p in psutil.process_iter(["name"]) if (p.info["name"] or "").lower() == name)
 
 
+def run_tool(o: "Orion", name: str, timeout: float = 300, **args) -> dict:
+    try:
+        return o.c.post(f"/api/tools/{name}/run", json={"args": args, "timeout": timeout}, timeout=timeout + 30).json()
+    except Exception as exc:
+        return {"ok": False, "result": repr(exc)}
+
+
+def toolkit_checks(o: "Orion") -> None:
+    """Every new toolkit, called directly on the real PC (no Gemini quota). Effects are verified on disk/OS."""
+    docs = Path.home() / "Documents"
+    md = "# Test report\n\nRevenue grew **12%**.\n\n- One\n- Two\n\n| Region | Sales |\n|---|---|\n| North | 120 |"
+    r1 = run_tool(o, "create_document", path="documents/ORION e2e.docx", content=md, title="E2E", overwrite=True)
+    r2 = run_tool(o, "create_document", path="documents/ORION e2e.pdf", content=md + "\n\nCafé ✓ €", overwrite=True)
+    r3 = run_tool(o, "create_spreadsheet", path="documents/ORION e2e.xlsx", overwrite=True, chart="bar",
+                  rows=[["Item", "Cost"], ["Rent", "1200"], ["Food", "350"], ["Total", "=SUM(B2:B3)"]])
+    r4 = run_tool(o, "create_presentation", path="documents/ORION e2e.pptx", title="ORION", overwrite=True,
+                  outline="# Why\n- Fast\n- Free\n# Next\n- Ship it")
+    back = run_tool(o, "read_file", path="documents/ORION e2e.xlsx")
+    files_ok = all((docs / f"ORION e2e.{x}").exists() for x in ("docx", "pdf", "xlsx", "pptx"))
+    record("documents: Word, PDF, Excel (formula + chart), PowerPoint", files_ok and all(r["ok"] for r in (r1, r2, r3, r4))
+           and "=SUM(B2:B3)" in str(back.get("result")),
+           " | ".join(str(r["result"])[:90] for r in (r1, r2, r3, r4)))
+
+    r = run_tool(o, "combine_pdfs", files=["documents/ORION e2e.pdf", "documents/ORION e2e.pdf"],
+                 output="documents/ORION combined.pdf")
+    z = run_tool(o, "zip_files", paths=["documents/ORION e2e.docx", "documents/ORION e2e.xlsx"],
+                 output="documents/ORION e2e.zip")
+    x = run_tool(o, "extract_archive", path="documents/ORION e2e.zip", destination="documents/ORION unzip")
+    shot_path = Path.home() / "Pictures" / "orion-e2e.png"
+    shot_path.parent.mkdir(exist_ok=True)
+    ImageGrab.grab().save(shot_path)
+    im = run_tool(o, "edit_images", path=str(shot_path), width=640, convert_to="jpg", quality=70)
+    dl = run_tool(o, "download_file", url="https://raw.githubusercontent.com/github/gitignore/main/Python.gitignore",
+                  folder="downloads")
+    srch = run_tool(o, "search_inside_files", text="Revenue grew", folder="documents")
+    record("files: PDF merge, zip/unzip, image convert, download, search inside documents",
+           all(t["ok"] for t in (r, z, x, im, dl, srch)) and "ORION e2e" in str(srch["result"]),
+           " | ".join(str(t["result"])[:70] for t in (r, z, x, im, dl)))
+
+    b1 = run_tool(o, "browser_open", url="https://example.com")
+    b2 = run_tool(o, "browser_click", text="Learn more") if b1.get("ok") else b1
+    if not b2.get("ok"):
+        b2 = run_tool(o, "browser_click", text="More information")
+    time.sleep(1)
+    shot("10_browser")
+    bt = run_tool(o, "browser_tabs")
+    record("browser: opens Edge, reads the page, clicks a link", b1.get("ok") and "Example Domain" in str(b1["result"])
+           and b2.get("ok") and "iana" in str(b2["result"]).lower(),
+           f"{str(b1['result'])[:120]} → {str(b2.get('result'))[:120]} | tabs={str(bt.get('result'))[:80]}")
+    run_tool(o, "browser_close")
+
+    th = run_tool(o, "set_theme", mode="dark")
+    time.sleep(2)
+    shot("11_dark_mode")
+    run_tool(o, "set_theme", mode="light")
+    wp_img = Path.home() / "Pictures" / "orion-wallpaper.png"
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGB", (1280, 720), (12, 12, 12))
+    ImageDraw.Draw(img).text((560, 340), "ORION", fill=(240, 240, 240))
+    img.save(wp_img)
+    wp = run_tool(o, "set_wallpaper", image=str(wp_img))
+    record("windows: dark/light mode and wallpaper (read back)", th["ok"] and wp["ok"],
+           f"{th['result']} | {wp['result']}")
+
+    pp = run_tool(o, "power_plan")
+    plans = pp.get("result")
+    sw = run_tool(o, "power_plan", plan="high performance")
+    back_plan = run_tool(o, "power_plan", plan="balanced")
+    record("windows: power plans", pp["ok"] and sw["ok"] and back_plan["ok"], f"{str(plans)[:160]} | {sw['result']}")
+
+    ni = run_tool(o, "network_info")
+    pg = run_tool(o, "ping", host="1.1.1.1", count=3)
+    sp = run_tool(o, "internet_speed_test", timeout=120)
+    record("windows: network info, ping, speed test", ni["ok"] and pg["ok"] and sp["ok"] and "download_mbps" in str(sp["result"]),
+           f"{str(ni['result'])[:120]} | {str(pg['result'])[:100]} | {sp['result']}")
+
+    dh = run_tool(o, "drive_health")
+    su = run_tool(o, "startup_apps")
+    ct = run_tool(o, "clean_temp_files")
+    rb = run_tool(o, "empty_recycle_bin")
+    record("windows: drive health, startup apps, temp cleanup, recycle bin", all(t["ok"] for t in (dh, su, ct, rb)),
+           f"{str(dh['result'])[:140]} | {str(su['result'])[:80]} | {ct['result']} | {rb['result']}")
+
+    wifi = run_tool(o, "wifi")
+    bt_ = run_tool(o, "bluetooth")
+    bat = run_tool(o, "battery_health")
+    honest = all((t["ok"] or any(w in str(t["result"]) for w in ("no ", "No ", "desktop"))) for t in (wifi, bt_, bat))
+    record("windows: Wi-Fi / Bluetooth / battery answer honestly (runner has none)", honest,
+           f"{wifi['result']} | {bt_['result']} | {bat['result']}")
+
+    subprocess.Popen(["notepad.exe"])
+    time.sleep(2)
+    aw = run_tool(o, "arrange_window", title="Notepad", position="left", second_title="ORION")
+    time.sleep(1)
+    shot("12_side_by_side")
+    record("windows: snap windows side by side", aw["ok"], str(aw["result"]))
+    subprocess.run(["taskkill", "/IM", "notepad.exe", "/F"], capture_output=True)
+    o.window("maximize")
+
+    wg = run_tool(o, "find_app_to_install", query="7zip")
+    record("windows: winget catalog search", wg["ok"] and "7zip" in str(wg["result"]).lower()
+           or "isn't available" in str(wg["result"]), str(wg["result"])[:200])
+
+    td = run_tool(o, "todo", action="add", item="Buy milk", list_name="shopping")
+    tl = run_tool(o, "todo", action="list", list_name="shopping")
+    cc = run_tool(o, "convert_currency", amount=10, from_currency="USD", to_currency="EUR")
+    record("productivity: to-do lists and currency", td["ok"] and "Buy milk" in str(tl["result"]) and cc["ok"],
+           f"{td['result']} | {cc['result']}")
+
+    wu = run_tool(o, "check_windows_updates", timeout=280)
+    record("windows: Windows Update check", wu["ok"], str(wu["result"])[:200])
+
+
 def main() -> int:
     HOME.mkdir(parents=True, exist_ok=True)
     (HOME / "settings.json").write_text(json.dumps({"user_name": "Lluc", "onboarded": True, "voice": {"mode": "classic"}}))
@@ -207,6 +321,13 @@ def main() -> int:
             break
     record("proactive: download finished alert", seen is not None, seen["message"] if seen else "no alert within 90s")
 
+    # ── New toolkits, called directly ──────────────────────────────────────
+    try:
+        toolkit_checks(o)
+    except Exception as exc:
+        record("toolkit checks", False, repr(exc))
+        o.window("maximize")
+
     # ── Gemini scenarios ───────────────────────────────────────────────────
     if HAS_KEY:
         o.conv = None
@@ -247,6 +368,24 @@ def main() -> int:
                and not r["reply"].lstrip().startswith("⚠"),
                f"{r['reply'][:250]} | tools={r['tools']}", **r)
         shot("08_web_answer")
+
+        o.conv = None
+        sheet = DESKTOP / "orion-budget.xlsx"
+        r = o.ask("Make an Excel spreadsheet on my desktop called orion-budget.xlsx with rent 1200 and food 350, "
+                  "plus a total row that uses a formula.", 180)
+        formula = False
+        if sheet.exists():
+            from openpyxl import load_workbook
+
+            formula = any(str(c.value).startswith("=") for row in load_workbook(sheet).active.iter_rows() for c in row)
+        record("gemini: makes a real Excel file (documents toolkit)", sheet.exists() and formula,
+               f"{r['reply'][:200]} | tools={r['tools']}", **r)
+
+        o.conv = None
+        r = o.ask("Use the browser to open example.com and tell me the main heading on the page.", 180)
+        record("gemini: drives the browser (browser toolkit)", any(t.startswith("browser_") for t in r["tools"])
+               and "example domain" in r["reply"].lower(), f"{r['reply'][:200]} | tools={r['tools']}", **r)
+        run_tool(o, "browser_close")
 
         report = DESKTOP / "orion-mission.md"
         m = o.c.post("/api/missions", json={"goal": "Find the current weather in London and the top 3 technology news "

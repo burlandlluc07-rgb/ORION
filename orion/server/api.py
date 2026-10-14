@@ -306,6 +306,23 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
                  "source": t.source, "enabled": not engine.registry.is_disabled(t.name)}
                 for t in engine.registry.all(include_disabled=True)]
 
+    @app.post("/api/tools/{name}/run", dependencies=[X])
+    async def run_tool_direct(name: str, body: dict = Body(default={})):
+        """Run one tool directly (PC app only). Same path as the assistant uses: risky tools still ask for approval."""
+        if engine.registry.get(name) is None:
+            raise HTTPException(404, "Unknown or disabled tool.")
+        task = engine.tracker.start(f"Run {name.replace('_', ' ')}", None, "app")
+        try:
+            ok, result = await asyncio.wait_for(engine.agent.run_tool(name, body.get("args") or {}, task, None),
+                                                float(body.get("timeout", 300)))
+        except asyncio.TimeoutError:
+            task.cancel.set()
+            ok, result = False, "Timed out."
+        finally:
+            if task.id in engine.tracker.active:
+                engine.tracker.finish(task, "done")
+        return {"ok": ok, "result": result}
+
     @app.patch("/api/tools/{name}", dependencies=[X])
     async def toggle_tool(name: str, body: dict = Body(...)):
         engine.set_tool_enabled(name, bool(body.get("enabled", True)))
