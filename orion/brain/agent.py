@@ -189,18 +189,36 @@ class Agent:
 
     def _history(self, cid: str, limit: int) -> list[types.Content]:
         msgs = self.e.store.messages(cid, limit=limit * 2 + 1)[:-1]  # exclude the just-stored user message
+        # Recent assistant turns carry a compact log of the actions they took, so follow-ups like
+        # "undo that" or "open the file you made" work without replaying full tool transcripts.
+        recent_with_tasks = [m["id"] for m in msgs if m["role"] == "assistant" and m["meta"].get("task_id")][-4:]
         out: list[types.Content] = []
         for msg in msgs:
-            if not msg["content"].strip() or msg["role"] not in ("user", "assistant"):
+            text = msg["content"]
+            if not text.strip() or msg["role"] not in ("user", "assistant"):
                 continue
+            if msg["id"] in recent_with_tasks:
+                log_line = self._action_log(msg["meta"]["task_id"])
+                if log_line:
+                    text = f"{log_line}\n{text}"
             role = "model" if msg["role"] == "assistant" else "user"
             if out and out[-1].role == role:  # merge consecutive turns from the same side
-                out[-1].parts.append(types.Part(text=msg["content"]))
+                out[-1].parts.append(types.Part(text=text))
             else:
-                out.append(types.Content(role=role, parts=[types.Part(text=msg["content"])]))
+                out.append(types.Content(role=role, parts=[types.Part(text=text)]))
         while out and out[0].role != "user":
             out.pop(0)
         return out
+
+    def _action_log(self, task_id: str) -> str:
+        task = self.e.store.get_task(task_id)
+        if not task or not task["steps"]:
+            return ""
+        items = []
+        for st in task["steps"][-6:]:
+            res = (st.get("result") or "").replace("\n", " ")
+            items.append(f"{st['label']} → {st['status']}" + (f" ({res[:90]})" if res and st["status"] == "done" else ""))
+        return ("[Actions I took: " + "; ".join(items) + "]")[:700]
 
     def system_prompt(self, query: str, voice: bool = False, extra: str = "") -> str:
         e = self.e

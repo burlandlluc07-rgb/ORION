@@ -68,6 +68,7 @@ class Engine:
             self.registry.set_enabled(name, False)
         self.skills.disabled = set(self.store.kv_get("disabled_skills", []))
         files_tools.set_allowed_roots(self.config.settings.allowed_roots)
+        files_tools.set_data_dir(self.config.root)
         self.accounts.sync_tools()
 
     async def start(self) -> None:

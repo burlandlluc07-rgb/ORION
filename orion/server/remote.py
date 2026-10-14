@@ -68,7 +68,7 @@ class RemoteServer:
             probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             probe.bind(("0.0.0.0", self.port))
         app = create_app(self.e, self.token, shell=None, remote=True)
-        cfg = uvicorn.Config(app, host="0.0.0.0", port=self.port, log_level="warning", access_log=False, lifespan="off")
+        cfg = uvicorn.Config(app, host="0.0.0.0", port=self.port, log_level="warning", access_log=False, log_config=None, lifespan="off")
         self._server = uvicorn.Server(cfg)
         self._server.install_signal_handlers = lambda: None  # type: ignore[method-assign]
         self._task = asyncio.create_task(self._server.serve(), name="remote-server")

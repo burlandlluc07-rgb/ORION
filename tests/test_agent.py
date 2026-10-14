@@ -217,3 +217,14 @@ async def test_safe_calls_run_in_parallel_and_keep_order(engine):
     assert time.perf_counter() - t0 < 0.8  # 3 × 0.3 s would be ~0.9 s sequentially
     responses = [p.function_response.response["result"] for p in engine.brain.calls[1]["contents"][-1].parts]
     assert responses == ["read a", "read b", "read c"]
+
+
+async def test_history_includes_compact_action_log(engine):
+    add_probe(engine)
+    engine.brain = FakeBrain([[call("probe", x="report.txt")], [types.Part(text="Made it.")], [types.Part(text="Undone.")]])
+    res = await engine.agent.handle("make the report file please now")
+    await engine.agent.handle("now undo that", res["conv_id"])
+    history = engine.brain.calls[2]["contents"]
+    model_turn = next(c for c in history if c.role == "model")
+    joined = " ".join(p.text for p in model_turn.parts)
+    assert "[Actions I took: Probe: “report.txt” → done (probed report.txt)]" in joined

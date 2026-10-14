@@ -25,6 +25,47 @@ SKIP_DIRS = {"node_modules", ".git", "__pycache__", "AppData", "$Recycle.Bin", "
              "Library", "site-packages", "Windows", "Program Files", "Program Files (x86)"}
 
 _extra_roots: list[Path] = []
+_data_dir: Path | None = None
+JOURNAL_MAX = 50
+
+
+def set_data_dir(root: Path) -> None:
+    """Where the change journal and backups for undo live."""
+    global _data_dir
+    _data_dir = root
+    (root / "backups").mkdir(parents=True, exist_ok=True)
+
+
+def _journal_path() -> Path | None:
+    return _data_dir / "changes.json" if _data_dir else None
+
+
+def _journal() -> list[dict]:
+    import json
+
+    p = _journal_path()
+    try:
+        return json.loads(p.read_text("utf-8")) if p and p.exists() else []
+    except ValueError:
+        return []
+
+
+def _record(entry: dict) -> None:
+    import json
+
+    p = _journal_path()
+    if not p:
+        return
+    items = (_journal() + [{**entry, "ts": time.time()}])[-JOURNAL_MAX:]
+    p.write_text(json.dumps(items, indent=1), "utf-8")
+
+
+def _backup(path: Path) -> str | None:
+    if not (_data_dir and path.is_file()) or path.stat().st_size > 50 * 2**20:
+        return None
+    dest = _data_dir / "backups" / f"{int(time.time() * 1000)}_{path.name}"
+    shutil.copy2(path, dest)
+    return str(dest)
 
 
 def set_allowed_roots(paths: list[str]) -> None:
@@ -168,6 +209,8 @@ def write_file(path: str, content: str, append: bool = False) -> str:
     p = resolve_path(path)
     _check_writable(p)
     p.parent.mkdir(parents=True, exist_ok=True)
+    existed = p.exists()
+    backup = _backup(p) if existed else None
     before = p.read_bytes() if (append and p.exists()) else b""
     with open(p, "a" if append else "w", encoding="utf-8", newline="") as f:
         f.write(content)
@@ -175,6 +218,7 @@ def write_file(path: str, content: str, append: bool = False) -> str:
     expected = before + content.encode("utf-8")
     if after != expected:
         raise ToolError(f"Wrote {p} but the read-back check did not match.")
+    _record({"op": "write", "path": str(p), "backup": backup} if existed else {"op": "create", "path": str(p)})
     return f"Saved and verified {p} ({_human(len(after))})."
 
 
@@ -187,7 +231,10 @@ def create_folder(path: str) -> str:
     """
     p = resolve_path(path)
     _check_writable(p)
+    existed = p.exists()
     p.mkdir(parents=True, exist_ok=True)
+    if not existed:
+        _record({"op": "mkdir", "path": str(p)})
     if not p.is_dir():
         raise ToolError("Folder creation could not be verified.")
     return f"Folder ready: {p}"
@@ -230,6 +277,7 @@ def move_or_copy(source: str, destination: str, operation: str = "move") -> str:
         raise ToolError("Content check failed after the operation.")
     if operation != "copy" and src.exists():
         raise ToolError("The original is still present after the move.")
+    _record({"op": "copy", "path": str(dst)} if operation == "copy" else {"op": "move", "src": str(src), "dst": str(dst)})
     return f"{operation.title()} complete and verified: {dst}"
 
 
@@ -249,6 +297,7 @@ def delete_path(path: str) -> str:
     if p in (home().resolve(), *(Path(x).resolve() for x in ("/", "C:\\"))):
         raise ToolError("Refusing to delete a root or home folder.")
     send2trash(str(p))
+    _record({"op": "trash", "path": str(p)})
     return f"Moved {p.name} to the Recycle Bin."
 
 
@@ -293,3 +342,69 @@ def disk_usage(folder: str = "downloads", top: int = 15) -> dict:
         sizes.append((total, child.name + ("/" if child.is_dir() else "")))
     sizes.sort(reverse=True)
     return {"folder": str(root), "largest": [{"name": n, "size": _human(s)} for s, n in sizes[:top]]}
+
+
+def _describe(c: dict) -> str:
+    return {"write": f"Overwrote {c.get('path')}", "create": f"Created {c.get('path')}", "mkdir": f"Created folder {c.get('path')}",
+            "copy": f"Copied to {c.get('path')}", "move": f"Moved {c.get('src')} → {c.get('dst')}",
+            "trash": f"Deleted {c.get('path')} (in the Recycle Bin)"}.get(c["op"], c["op"])
+
+
+@tool(category="files")
+def recent_file_changes(limit: int = 10) -> list[dict]:
+    """List the most recent file changes ORION made (newest first), which undo_last_change can reverse.
+
+    Args:
+        limit: How many to show.
+    """
+    items = _journal()[-max(1, min(limit, JOURNAL_MAX)):]
+    return [{"change": _describe(c), "when": time.strftime("%H:%M", time.localtime(c["ts"]))} for c in reversed(items)] \
+        or [{"change": "No file changes recorded yet."}]
+
+
+@tool(risk="confirm", category="files", summary=lambda a: "Undo ORION's last file change")
+def undo_last_change() -> str:
+    """Reverse the most recent file change ORION made (restore an overwritten file, move a file back, remove a file it created)."""
+    import json
+
+    from send2trash import send2trash
+
+    items = _journal()
+    if not items:
+        raise ToolError("There's nothing to undo.")
+    c = items.pop()
+    op = c["op"]
+    if op == "write":
+        if not c.get("backup") or not Path(c["backup"]).exists():
+            raise ToolError("No backup exists for that change (file was too large).")
+        shutil.copy2(c["backup"], c["path"])
+        msg = f"Restored the previous version of {c['path']}."
+    elif op in ("create", "copy"):
+        target = Path(c["path"])
+        if target.exists():
+            send2trash(str(target))
+        msg = f"Removed {target.name} (it's in the Recycle Bin if you need it)."
+    elif op == "mkdir":
+        target = Path(c["path"])
+        if target.exists() and any(target.iterdir()):
+            raise ToolError(f"{target} isn't empty any more; not removing it.")
+        if target.exists():
+            target.rmdir()
+        msg = f"Removed the folder {target}."
+    elif op == "move":
+        src, dst = Path(c["src"]), Path(c["dst"])
+        if not dst.exists():
+            raise ToolError(f"{dst} no longer exists.")
+        if src.exists():
+            raise ToolError(f"Something already exists at {src}; not overwriting it.")
+        src.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(dst), str(src))
+        msg = f"Moved it back to {src}."
+    elif op == "trash":
+        msg = f"{Path(c['path']).name} is in the Recycle Bin — open the Recycle Bin and choose Restore."
+    else:
+        raise ToolError(f"Can't undo '{op}'.")
+    p = _journal_path()
+    if p:
+        p.write_text(json.dumps(items, indent=1), "utf-8")
+    return msg

@@ -124,6 +124,9 @@ def match(text: str) -> Route | None:
     if re.fullmatch(r"(system|pc|computer) (status|stats|health|report)|how(?:'s| is) my (pc|computer|system)( doing)?", low):
         return Route("system_status", {}, _format_status)
 
+    if re.fullmatch(r"undo( that| it| this| the last (change|thing|action)| what you (just )?did)?", low):
+        return Route("undo_last_change", {}, lambda r: r)
+
     # ── Timers & reminders ──────────────────────────────────────────────────
     m = re.fullmatch(r"(?:set |start )?(?:a )?timer (?:for )?(.+)", low) or re.fullmatch(r"(.+?) timer", low)
     if m and re.search(r"\d|one|two|three|five|ten", m.group(1)):

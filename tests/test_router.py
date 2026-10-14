@@ -26,6 +26,7 @@ from orion.brain import router
     ("remind me in 20 minutes to check the oven", "set_reminder", {"message": "check the oven", "when": "in 20 minutes"}),
     ("close discord", "close_app", {"name": "discord"}),
     ("how's my pc doing", "system_status", {}),
+    ("undo that", "undo_last_change", {}),
 ])
 def test_matches(text, tool, args):
     r = router.match(text)

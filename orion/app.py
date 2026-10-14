@@ -29,7 +29,7 @@ def setup_logging(root: Path, debug: bool) -> None:
     handlers: list[logging.Handler] = [
         logging.handlers.RotatingFileHandler(logs / "orion.log", maxBytes=2_000_000, backupCount=3, encoding="utf-8")
     ]
-    if sys.stderr is not None:
+    if sys.stderr is not None and getattr(sys.stderr, "name", "") != os.devnull:
         handlers.append(logging.StreamHandler())
     logging.basicConfig(level=logging.DEBUG if debug else logging.INFO, handlers=handlers,
                         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s")
@@ -91,7 +91,7 @@ class ServerThread(threading.Thread):
         self.engine = Engine(self.config)
         await self.engine.start()
         app = create_app(self.engine, self.token, self.shell)
-        cfg = uvicorn.Config(app, host="127.0.0.1", port=self.port, log_level="warning", access_log=False,
+        cfg = uvicorn.Config(app, host="127.0.0.1", port=self.port, log_level="warning", access_log=False, log_config=None,
                              ws_ping_interval=20, lifespan="off")
         self._server = uvicorn.Server(cfg)
         self._server.install_signal_handlers = lambda: None  # type: ignore[method-assign]
@@ -113,7 +113,16 @@ class ServerThread(threading.Thread):
             self._server.should_exit = True
 
 
+def _ensure_std_streams() -> None:
+    """A windowed .exe has no console: sys.stdout/stderr are None and libraries that
+    write to them (or call .isatty()) would crash. Point them at the null device."""
+    for name in ("stdout", "stderr"):
+        if getattr(sys, name) is None:
+            setattr(sys, name, open(os.devnull, "w", encoding="utf-8"))
+
+
 def main(argv: list[str] | None = None) -> int:
+    _ensure_std_streams()
     ap = argparse.ArgumentParser(prog="orion", description="O.R.I.O.N. desktop assistant")
     ap.add_argument("--minimized", action="store_true", help="start in the tray")
     ap.add_argument("--browser", action="store_true", help="use the default browser instead of a native window")

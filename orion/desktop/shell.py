@@ -58,7 +58,20 @@ class DesktopShell:
         self._start_tray()
         self._start_hotkeys()
         storage = self.config.root / "webview"
-        webview.start(gui=None, private_mode=False, storage_path=str(storage), debug="--debug" in sys.argv)
+        try:
+            webview.start(gui=None, private_mode=False, storage_path=str(storage), debug="--debug" in sys.argv)
+        except Exception:
+            # e.g. the Microsoft Edge WebView2 runtime is missing: keep ORION usable in the browser.
+            log.exception("Native window failed; falling back to the default browser")
+            import webbrowser
+
+            self.window = self.quick = None
+            webbrowser.open(self.url)
+            self.notify("ORION", "Opened in your browser. Install the Microsoft Edge WebView2 Runtime for the app window.")
+            import time
+
+            while not self._quitting and self.server.is_alive():
+                time.sleep(0.5)
         self._cleanup()
 
     def _on_closing(self) -> bool:
