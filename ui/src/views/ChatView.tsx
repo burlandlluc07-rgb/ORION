@@ -76,7 +76,8 @@ export function ChatView() {
     Object.values(s.tasks).some((t) => t.conv_id === s.activeId && (t.status === "running" || t.status === "waiting")),
   [s.messages, s.tasks, s.activeId]);
 
-  const approvals = s.approvals.filter((a) => !a.task_id || s.tasks[a.task_id]?.conv_id === s.activeId || !s.tasks[a.task_id]);
+  // Approvals from other conversations are shown by the ApprovalDock instead.
+  const approvals = s.approvals.filter((a) => !a.task_id || !s.tasks[a.task_id]?.conv_id || s.tasks[a.task_id]?.conv_id === s.activeId);
 
   useEffect(() => {
     const el = scroller.current;

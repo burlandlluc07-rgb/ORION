@@ -1,5 +1,6 @@
 import { WifiOff } from "lucide-react";
 import { useEffect } from "react";
+import { ApprovalDock } from "./components/ApprovalDock";
 import { RightPanel } from "./components/RightPanel";
 import { Sidebar } from "./components/Sidebar";
 import { Toasts } from "./components/ui";
@@ -95,6 +96,7 @@ export default function App() {
       {!s.connected && s.engine && (
         <div className="toasts"><div className="toast warn"><div className="tt"><WifiOff size={13} /> Reconnecting to the ORION engine…</div></div></div>
       )}
+      <ApprovalDock />
       {s.onboarding && s.engine && <Onboarding />}
       <Toasts />
     </>

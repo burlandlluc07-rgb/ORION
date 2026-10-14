@@ -36,8 +36,22 @@ def web_search(query: str, max_results: int = 6, kind: Literal["web", "news"] = 
         kind: "web" for general results, "news" for recent news articles.
     """
     n = max(1, min(max_results, 10))
-    with _ddgs() as d:
-        raw = list(d.news(query, max_results=n) if kind == "news" else d.text(query, max_results=n))
+    raw: list[dict] = []
+    # News often has no hits for broad queries: fall back to a normal web search instead of failing.
+    for k in ([kind, "web"] if kind == "news" else [kind]):
+        for attempt in range(2):
+            try:
+                with _ddgs() as d:
+                    raw = list(d.news(query, max_results=n) if k == "news" else d.text(query, max_results=n))
+                break
+            except Exception as exc:  # ddgs raises on "no results" and on transient backend errors
+                if "no results" in str(exc).lower():
+                    break
+                if attempt == 1:
+                    raise ToolError(f"Web search is unavailable right now ({exc}).") from exc
+        if raw:
+            kind = k  # type: ignore[assignment]
+            break
     out = []
     for r in raw:
         out.append({

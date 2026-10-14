@@ -166,19 +166,34 @@ class GeminiBrain:
 
     async def generate_text(self, prompt: str | list, *, system: str | None = None, tier: str = "fast",
                             json_mode: bool = False) -> str:
+        """One-shot request with the same resilience as streaming: on overload (503), rate limits or
+        server errors it retries once and then falls back to the other model in the tier chain."""
         contents = prompt if isinstance(prompt, list) else [types.Content(role="user", parts=[types.Part(text=prompt)])]
-        model = await self.governor.acquire(tier)
         extra = {"response_mime_type": "application/json"} if json_mode else {}
-        try:
-            r = await self.client.aio.models.generate_content(
-                model=model, contents=contents, config=self._config(system, None, model, **extra))
-        except errors.APIError as exc:
-            if exc.code == 429:
-                self.governor.cool_down(model, str(exc))
-            raise
-        finally:
-            self.governor.record(model)
-        return r.text or ""
+        tried: set[str] = set()
+        last_exc: BaseException | None = None
+        for attempt in range(3):
+            model = await self.governor.acquire(tier, exclude=tried)
+            try:
+                r = await self.client.aio.models.generate_content(
+                    model=model, contents=contents, config=self._config(system, None, model, **extra))
+                return r.text or ""
+            except errors.APIError as exc:
+                last_exc = exc
+                if exc.code == 429:
+                    self.governor.cool_down(model, str(exc))
+                if exc.code not in RETRYABLE | {404}:
+                    raise
+                log.warning("Model %s failed (%s); %s", model, exc.code, "retrying" if attempt == 0 else "falling back")
+                if attempt == 0 and exc.code in (500, 502, 503, 504):
+                    await asyncio.sleep(1.0)  # transient overload: one quick retry on the same model first
+                else:
+                    tried.add(model)
+            except QuotaExhausted:
+                raise
+            finally:
+                self.governor.record(model)
+        raise last_exc or BrainError("All models failed.")
 
     async def vision(self, question: str, data: bytes, mime: str) -> str:
         contents = [types.Content(role="user", parts=[types.Part.from_bytes(data=data, mime_type=mime),

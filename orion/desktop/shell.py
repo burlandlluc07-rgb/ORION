@@ -46,13 +46,14 @@ class DesktopShell:
     def run(self, start_hidden: bool = False) -> None:
         import webview
 
+        width, height = self._initial_size()
         self.window = webview.create_window(
-            "ORION", self.url, width=1320, height=860, min_size=(860, 600), background_color="#05070c",
+            "ORION", self.url, width=width, height=height, min_size=(760, 520), background_color="#000000",
             hidden=start_hidden, text_select=True,
         )
         self.quick = webview.create_window(
             "ORION Quick", self.url + "#/quick", width=720, height=440, frameless=True, on_top=True,
-            hidden=True, background_color="#05070c", easy_drag=True, resizable=False,
+            hidden=True, background_color="#000000", easy_drag=True, resizable=False,
         )
         self.window.events.closing += self._on_closing
         self._start_tray()
@@ -73,6 +74,17 @@ class DesktopShell:
             while not self._quitting and self.server.is_alive():
                 time.sleep(0.5)
         self._cleanup()
+
+    @staticmethod
+    def _initial_size() -> tuple[int, int]:
+        """Fit the window to the screen (seen on a 1024×768 VM: a fixed 1320 px window was cut off)."""
+        try:
+            import webview
+
+            scr = webview.screens[0]
+            return min(1320, int(scr.width * 0.9)), min(860, int(scr.height * 0.88))
+        except Exception:
+            return 1200, 780
 
     def _on_closing(self) -> bool:
         if self._quitting or not self.config.settings.close_to_tray or self.tray is None:
