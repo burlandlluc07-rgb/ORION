@@ -38,7 +38,7 @@ public static class OrionWake {
   static void Say(string s) { Console.Out.WriteLine(s); Console.Out.Flush(); }
   static string F(double d) { return d.ToString("0.000", CultureInfo.InvariantCulture); }
   static GrammarBuilder B(CultureInfo c) { var g = new GrammarBuilder(); g.Culture = c; return g; }
-  static double PhraseConfidence(RecognitionResult r) {
+  static double PhraseConfidence(RecognizedPhrase r) {
     var words = r.Words.Where(w => w.Text != "..." && !string.IsNullOrEmpty(w.Text)).ToList();
     return words.Count == 0 ? r.Confidence : words.Min(w => (double)w.Confidence);  // the weakest wake word decides
   }
