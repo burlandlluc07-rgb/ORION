@@ -11,7 +11,6 @@ Optional engine: openWakeWord's pre-trained models (hey_jarvis, alexa…) when t
 from __future__ import annotations
 
 import base64
-import json
 import logging
 import os
 import subprocess
@@ -81,7 +80,8 @@ public static class OrionWake {
 }
 '@
 try { Add-Type -TypeDefinition $src -ReferencedAssemblies System.Speech, System.Core } catch { Say ('ERR:COMPILE ' + $_.Exception.Message); exit 5 }
-$list = [string[]]@([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Phrases)) | ConvertFrom-Json)
+# One phrase per line (ConvertFrom-Json in PowerShell 5.1 would hand back the whole array as a single item).
+$list = [string[]]@(([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Phrases)) -split "`n") | Where-Object { $_.Trim() } | ForEach-Object { $_.Trim() })
 exit [OrionWake]::Run($Culture, $list, $Wav)
 """
 
@@ -119,7 +119,7 @@ def _script_path() -> Path:
 def _command(phrases: list[str], culture: str = "", wav: str = "") -> list[str]:
     exe = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "WindowsPowerShell", "v1.0",
                        "powershell.exe")
-    b64 = base64.b64encode(json.dumps(phrases).encode()).decode()
+    b64 = base64.b64encode("\n".join(phrases).encode()).decode()
     cmd = [exe, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(_script_path()),
            "-Phrases", b64]
     if culture:
