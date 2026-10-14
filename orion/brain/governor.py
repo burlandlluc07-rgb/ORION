@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from ..config import Config, ModelLimits
 from ..memory.store import Store
 
-MAX_SLOT_WAIT = 6.0  # seconds we're willing to wait for an RPM slot before trying another model
+MAX_SLOT_WAIT = 30.0  # interactive requests: a short wait for an RPM slot beats an error
 
 
 def quota_day() -> str:

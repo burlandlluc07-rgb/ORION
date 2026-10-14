@@ -134,7 +134,7 @@ class GeminiBrain:
         tried: set[str] = set()
         last_exc: BaseException | None = None
         for _ in range(6):
-            model = await self.governor.acquire(tier, exclude=tried, max_wait=180 if patient else 6)
+            model = await self.governor.acquire(tier, exclude=tried, max_wait=180 if patient else 30)
             tried.add(model)
             yielded = False
             try:
@@ -182,7 +182,7 @@ class GeminiBrain:
         tried: set[str] = set()
         last_exc: BaseException | None = None
         for attempt in range(6):
-            model = await self.governor.acquire(tier, exclude=tried, max_wait=180 if patient else 6)
+            model = await self.governor.acquire(tier, exclude=tried, max_wait=180 if patient else 30)
             try:
                 r = await self.client.aio.models.generate_content(
                     model=model, contents=contents, config=self._config(system, None, model, **extra))

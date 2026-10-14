@@ -30,6 +30,7 @@
   parsers work with translated Windows output.
 - **To-do and shopping lists** with due-time reminders; **currency conversion** (ECB rates, with a fallback).
 - Faster replies: the stable part of the prompt comes first, so Gemini can reuse its cache.
+- Chat waits up to 30 s for a free-tier per-minute slot instead of failing after 6 s.
 - A local-only API runs one tool directly, with approvals still enforced.
 - The Windows end-to-end test exercises every new toolkit on a real PC.
 
