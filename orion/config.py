@@ -89,6 +89,9 @@ class Settings(BaseModel):
     launch_on_startup: bool = False
     close_to_tray: bool = True
 
+    vault_path: str = ""  # Obsidian vault for ORION's memory ("" = Documents/ORION Brain)
+    memory_review_day: int = 6  # weekly short-term review: 0 = Monday … 6 = Sunday
+    memory_review_hour: int = 20
     auto_memory: bool = True  # learn durable facts from conversations automatically
     proactive: bool = True  # watch battery/CPU/disk/downloads/calendar/network and speak up
     proactive_voice: bool = True

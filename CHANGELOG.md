@@ -1,6 +1,15 @@
 # Changelog
 
 ## 2.4.0
+- **Second brain in Obsidian.** Memory moved from a hidden database into an Obsidian vault of Markdown notes on
+  the PC (`Documents\ORION Brain`, or a folder inside your own vault). Permanent notes are `About me`
+  (profile + preferences), `People/<name>`, `Projects/<name>`, `Plans & dates` and `Facts`, linked from `Home`.
+  Passing details go to `Short-term/This week`. A weekly review (default Sunday 20:00, catches up if the PC was
+  off) keeps, carries over or deletes each item and logs every decision. If the review can't run, nothing is
+  deleted. The auto-learner chooses permanent or short-term itself. Edits made in Obsidian are re-indexed
+  automatically (SQLite FTS stays the fast search index), and existing memories move into the vault on first
+  start. Memory page: Permanent / This week tabs, grouped by note, Open in Obsidian (registers the vault), Get
+  Obsidian, Review now.
 - **Toolkits.** Tools are grouped into toolkits (documents, browser, email, Windows, smart home). A toolkit's tools
   are sent to Gemini only when a request needs them, picked up from the wording or loaded mid-task. That keeps
   requests small and tool choice accurate as ORION grows.

@@ -237,10 +237,15 @@ class Agent:
 
     def system_prompt(self, query: str, voice: bool = False, extra: str = "") -> str:
         e = self.e
+        try:
+            e.vault.sync()  # pick up edits made in Obsidian
+        except OSError:
+            pass
         mems = [m["text"] for m in e.store.core_memories()]
         for m in e.store.recall(query, limit=5):
-            if m["text"] not in mems:
-                mems.append(m["text"])
+            text = m["text"] + (" (short-term)" if m.get("tier") == "short" else "")
+            if text not in mems and m["text"] not in mems:
+                mems.append(text)
         s = e.config.settings
         return build_system_prompt(persona=s.persona, assistant=s.assistant_name, user=s.user_name, memories=mems,
                                    skills_index=e.skills.index_prompt(), extra=extra, voice=voice)

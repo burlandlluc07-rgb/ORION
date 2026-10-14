@@ -97,39 +97,50 @@ def cancel_scheduled(id_or_name: str, ctx: ToolContext = None) -> str:  # type: 
 
 
 @tool(category="memory", summary=lambda a: f"Remember: {a.get('fact')}")
-def remember(fact: str, about_user: bool = False, ctx: ToolContext = None) -> str:  # type: ignore[assignment]
-    """Save a durable fact to long-term memory (preferences, names, projects, recurring details).
+def remember(fact: str, kind: Literal["profile", "preference", "person", "project", "plan", "fact"] = "fact",
+             permanent: bool = True, subject: str = "", ctx: ToolContext = None) -> str:  # type: ignore[assignment]
+    """Save something about the user in ORION's memory vault (Obsidian notes on this PC).
+    Permanent: lasting facts (who they are, people, projects, preferences, key dates). Short-term (permanent=false):
+    passing details for the coming days; they're reviewed and cleared weekly.
 
     Args:
-        fact: A self-contained statement, e.g. "User's sister is named Maya".
-        about_user: True for core profile facts that should always be known.
+        fact: A self-contained statement, e.g. "Lluc's sister Maya lives in Barcelona".
+        kind: What it's about. profile/preference go to "About me", person/project get their own note.
+        permanent: False for short-term details.
+        subject: For person/project: the person's or project's name (names the note).
     """
-    mid = _engine(ctx).store.remember(fact, "profile" if about_user else "fact")
-    _engine(ctx).bus.emit("memory.changed")
-    return f"Remembered (#{mid})."
+    e = _engine(ctx)
+    try:
+        m = e.vault.add(fact, kind, "permanent" if permanent else "short", subject)
+    except ValueError as exc:
+        raise ToolError(str(exc)) from exc
+    where = m.get("note") or "the vault"
+    return f"Remembered in {where}" + ("" if permanent else " (short-term, reviewed this week)") + "."
 
 
 @tool(category="memory")
 def recall(query: str, ctx: ToolContext = None) -> list[dict]:  # type: ignore[assignment]
-    """Search long-term memory.
+    """Search ORION's memory vault (permanent notes and this week's short-term memory).
 
     Args:
-        query: Keywords to look for.
+        query: What to look for.
     """
-    hits = _engine(ctx).store.recall(query, limit=10)
-    return [{"id": h["id"], "fact": h["text"]} for h in hits] or [{"fact": "Nothing relevant remembered."}]
+    e = _engine(ctx)
+    e.vault.sync()
+    hits = e.store.recall(query, limit=10)
+    return [{"id": h["id"], "memory": h["text"], "note": h.get("note"), "tier": h.get("tier")} for h in hits] \
+        or [{"note": "Nothing relevant remembered."}]
 
 
 @tool(risk="confirm", category="memory", summary=lambda a: f"Forget memory #{a.get('memory_id')}")
 def forget(memory_id: int, ctx: ToolContext = None) -> str:  # type: ignore[assignment]
-    """Delete a memory by id (use recall to find ids).
+    """Delete a memory (removes the line from its note in the vault). Use recall to find ids.
 
     Args:
-        memory_id: The memory's id.
+        memory_id: The memory id.
     """
-    if not _engine(ctx).store.forget(int(memory_id)):
+    if not _engine(ctx).vault.remove(int(memory_id)):
         raise ToolError("No memory with that id.")
-    _engine(ctx).bus.emit("memory.changed")
     return "Forgotten."
 
 

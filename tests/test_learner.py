@@ -14,8 +14,8 @@ async def test_learns_new_facts_from_idle_conversations_and_dedupes(engine, monk
     async def fake_generate(prompt, **kw):
         prompts.append(prompt)
         return json.dumps({"facts": [
-            {"text": "User's sister is named Maya", "kind": "person"},
-            {"text": "User is building ORION, a JARVIS-style desktop assistant", "kind": "project"},
+            {"text": "User's sister is named Maya", "kind": "person", "subject": "Maya", "importance": "permanent"},
+            {"text": "Maya is visiting next week", "kind": "plan", "importance": "short-term"},
             {"text": "User's name is Lluc.", "kind": "profile"},  # duplicate of a known fact
             {"text": "x", "kind": "fact"},  # too short
         ]})
@@ -23,8 +23,11 @@ async def test_learns_new_facts_from_idle_conversations_and_dedupes(engine, monk
     monkeypatch.setattr(engine.brain, "generate_text", fake_generate)
     assert await engine.learner.scan(now=time.time()) == 0  # not idle yet
     assert await engine.learner.scan(now=time.time() + 600) == 2
-    kinds = {m["text"]: m["kind"] for m in engine.store.list_memories()}
-    assert kinds["User's sister is named Maya"] == "person" and "User's name is Lluc" in prompts[0]
+    mems = {m["text"]: m for m in engine.store.list_memories()}
+    assert mems["User's sister is named Maya"]["kind"] == "person"
+    assert mems["User's sister is named Maya"]["note"] == "People/Maya.md"
+    assert mems["Maya is visiting next week"]["tier"] == "short"
+    assert "User's name is Lluc" in prompts[0]
     assert await engine.learner.scan(now=time.time() + 1200) == 0  # nothing new since
     assert len(prompts) == 1
 

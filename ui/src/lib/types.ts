@@ -108,6 +108,9 @@ export interface Settings {
   quiet_start: string;
   quiet_end: string;
   auto_memory: boolean;
+  vault_path: string;
+  memory_review_day: number;
+  memory_review_hour: number;
   remote_enabled: boolean;
 }
 
@@ -184,6 +187,17 @@ export interface Memory {
   text: string;
   kind: string;
   created: number;
+  tier: "permanent" | "short";
+  note: string | null;
+}
+
+export interface VaultStatus {
+  path: string;
+  permanent: number;
+  short: number;
+  last_review: number | null;
+  next_review: number;
+  obsidian: boolean;
 }
 
 export interface ConnectorInfo {

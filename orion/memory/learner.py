@@ -1,4 +1,4 @@
-"""Deep memory: ORION learns durable facts from conversations by itself.
+"""Deep memory: ORION learns facts from conversations by itself and files them in the vault.
 
 When a conversation goes quiet, the fast model reads what's new and extracts
 lasting facts (people, projects, preferences, plans). Near-duplicates are
@@ -9,7 +9,6 @@ in Memory where it can be deleted.
 from __future__ import annotations
 
 import asyncio
-import difflib
 import json
 import logging
 import time
@@ -18,16 +17,22 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..engine import Engine
 
+from .vault import is_duplicate
+
 log = logging.getLogger("orion.learner")
 IDLE_SECONDS = 180
 DAILY_CAP = 40
 KINDS = {"profile", "person", "project", "preference", "fact", "plan"}
 
-PROMPT = """You maintain the long-term memory of a personal assistant.
-From the NEW conversation lines below, extract facts about the user worth remembering for months:
-their name, people in their life (with relationship), projects/work/studies, preferences and habits,
-important dates and plans, devices and setup. Ignore one-off requests, small talk, anything temporary,
-and anything already known. Never store passwords, keys or financial/medical identifiers.
+PROMPT = """You maintain the memory of a personal assistant.
+From the NEW conversation lines below, extract facts about the user worth remembering: their name, people in their
+life (with relationship), projects/work/studies, preferences and habits, important dates and plans, devices and
+setup. Ignore one-off requests, small talk and anything already known. Never store passwords, keys or
+financial/medical identifiers.
+
+For each fact choose "importance":
+- "permanent": lasting for months (identity, people, ongoing projects, stable preferences, birthdays, key dates).
+- "short-term": passing details that may matter in the next days (this week's plans, a temporary situation).
 
 Already known:
 {known}
@@ -35,13 +40,10 @@ Already known:
 New conversation lines:
 {lines}
 
-Return JSON: {{"facts": [{{"text": "<self-contained statement about the user>", "kind": "profile|person|project|preference|plan|fact"}}]}}
-Return at most 5 facts; return {{"facts": []}} if nothing new and durable."""
-
-
-def is_duplicate(text: str, known: list[str]) -> bool:
-    t = text.lower().strip(" .")
-    return any(difflib.SequenceMatcher(None, t, k.lower().strip(" .")).ratio() > 0.82 for k in known)
+Return JSON: {{"facts": [{{"text": "<self-contained statement about the user>",
+"kind": "profile|person|project|preference|plan|fact", "importance": "permanent|short-term",
+"subject": "<person or project name, for person/project facts>"}}]}}
+Return at most 5 facts; return {{"facts": []}} if nothing new is worth keeping."""
 
 
 class Learner:
@@ -60,10 +62,13 @@ class Learner:
         await asyncio.sleep(30)
         while True:
             try:
+                self.e.vault.sync()
                 if self.e.config.settings.auto_memory and self.e.config.get_api_key():
                     await self.scan()
+                if self.e.config.get_api_key() and self.e.vault.review_due():
+                    await self.e.vault.review()
             except Exception:
-                log.exception("Memory learning failed")
+                log.exception("Memory learning/review failed")
             await asyncio.sleep(60)
 
     def _budget_ok(self) -> bool:
@@ -115,7 +120,12 @@ class Learner:
             kind = f.get("kind") if f.get("kind") in KINDS else "fact"
             if len(text) < 8 or is_duplicate(text, known):
                 continue
-            self.e.store.remember(text, kind)
+            tier = "short" if str(f.get("importance", "")).startswith("short") else "permanent"
+            try:
+                self.e.vault.add(text, kind, tier, str(f.get("subject") or ""))
+            except (OSError, ValueError) as exc:
+                log.warning("Couldn't save a learned fact: %s", exc)
+                continue
             known.append(text)
             added += 1
         if added:

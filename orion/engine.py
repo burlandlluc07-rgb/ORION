@@ -62,6 +62,9 @@ class Engine:
         from .memory.learner import Learner
 
         self.learner = Learner(self)
+        from .memory.vault import Vault
+
+        self.vault = Vault(self)
         self.scheduler: Scheduler | None = None
         self.voice = None
         self.notifier: Callable[[str, str], None] | None = None  # set by the desktop shell (tray toasts)
@@ -103,6 +106,12 @@ class Engine:
         self._bg.append(asyncio.create_task(self._update_loop(), name="updates"))
         self.proactive.start()
         self.missions.recover()
+        try:
+            self.vault.ensure()
+            self.vault.migrate()
+            self.vault.sync(force=True)
+        except OSError as exc:
+            log.warning("Memory vault unavailable at %s: %s", self.vault.root, exc)
         self.learner.start()
         await self.start_voice()
         if self.config.settings.remote_enabled:

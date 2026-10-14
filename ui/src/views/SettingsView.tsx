@@ -171,8 +171,21 @@ export function SettingsView() {
           <span className="muted">to</span>
           <input type="time" className="input" style={{ width: 120 }} defaultValue={st.quiet_end} onBlur={(e) => save({ quiet_end: e.target.value })} />
         </Field>
-        <Field label="Learn about me automatically" hint="After conversations, ORION saves lasting facts (people, projects, preferences) to Memory, where you can review or delete them. Uses a few requests a day at most.">
+        <Field label="Learn about me automatically" hint="After conversations, ORION files what it learned in its memory vault: lasting facts in permanent notes, passing details in This week. Uses a few requests a day at most.">
           <Toggle on={st.auto_memory} onChange={(v) => save({ auto_memory: v })} />
+        </Field>
+        <Field label="Memory vault folder" hint="Where ORION keeps its Obsidian notes. Leave empty for Documents\ORION Brain. Point it at your own Obsidian vault and ORION uses an “ORION Brain” folder inside it.">
+          <input className="input" defaultValue={st.vault_path} placeholder="Documents\ORION Brain" onBlur={(e) => e.target.value !== st.vault_path && save({ vault_path: e.target.value.trim() })} />
+        </Field>
+        <Field label="Weekly memory review" hint="When ORION goes through This week's short-term memory: keep what matters, delete the rest. If the PC is off then, it runs next time it's on.">
+          <div className="row" style={{ gap: 8 }}>
+            <select className="select" value={st.memory_review_day} onChange={(e) => save({ memory_review_day: Number(e.target.value) })}>
+              {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((d, i) => <option key={d} value={i}>{d}</option>)}
+            </select>
+            <select className="select" value={st.memory_review_hour} onChange={(e) => save({ memory_review_hour: Number(e.target.value) })}>
+              {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>)}
+            </select>
+          </div>
         </Field>
       </section>
 

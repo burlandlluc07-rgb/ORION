@@ -251,19 +251,55 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
     # ── Memory ─────────────────────────────────────────────────────────────
     @app.get("/api/memories", dependencies=[A])
     async def memories():
+        await asyncio.to_thread(engine.vault.sync)
         return engine.store.list_memories()
 
     @app.post("/api/memories", dependencies=[A])
     async def add_memory(body: dict = Body(...)):
-        mid = engine.store.remember(str(body["text"]), "profile" if body.get("profile") else "fact")
+        kind = str(body.get("kind") or ("profile" if body.get("profile") else "fact"))
+        tier = "permanent" if body.get("permanent", True) else "short"
+        try:
+            m = await asyncio.to_thread(engine.vault.add, str(body["text"]), kind, tier, str(body.get("subject") or ""))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
         engine.bus.emit("memory.changed")
-        return {"id": mid}
+        return m
 
     @app.delete("/api/memories/{mid}", dependencies=[X])
     async def delete_memory(mid: int):
-        engine.store.forget(mid)
+        await asyncio.to_thread(engine.vault.remove, mid)
         engine.bus.emit("memory.changed")
         return {"ok": True}
+
+    @app.get("/api/memory/vault", dependencies=[A])
+    async def vault_status():
+        return engine.vault.status()
+
+    @app.post("/api/memory/review", dependencies=[X])
+    async def vault_review():
+        try:
+            return await engine.vault.review()
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
+
+    @app.post("/api/memory/open", dependencies=[X])
+    async def vault_open(body: dict = Body(default={})):
+        """Open the vault: in Obsidian if it's installed (obsidian:// link), otherwise in File Explorer."""
+        import urllib.parse
+
+        from ..tools.platform import open_target
+
+        root = engine.vault.root
+        engine.vault.ensure()
+        note = str(body.get("note") or "Home.md")
+        if body.get("obsidian") and engine.vault.status()["obsidian"]:
+            from ..memory.vault import register_with_obsidian
+
+            register_with_obsidian(root)
+            open_target("obsidian://open?path=" + urllib.parse.quote(str(root / note)))
+        else:
+            open_target(str(root))
+        return {"ok": True, "path": str(root)}
 
     # ── Ecosystem: skills, tools, plugins, connectors ──────────────────────
     @app.get("/api/skills", dependencies=[A])

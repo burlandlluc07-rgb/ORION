@@ -65,6 +65,10 @@ class Store:
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.executescript(SCHEMA)
+        cols = {r["name"] for r in self._db.execute("PRAGMA table_info(memories)").fetchall()}
+        for col, ddl in (("tier", "TEXT NOT NULL DEFAULT 'permanent'"), ("note", "TEXT"), ("key", "TEXT")):
+            if col not in cols:  # databases from before the Obsidian vault
+                self._db.execute(f"ALTER TABLE memories ADD COLUMN {col} {ddl}")
 
     def _q(self, sql: str, args: tuple = ()) -> list[sqlite3.Row]:
         with self._lock:
@@ -151,7 +155,35 @@ class Store:
     def core_memories(self, limit: int = 8) -> list[dict]:
         """Profile-type memories are always included (name, preferences)."""
         return [dict(r) for r in self._q(
-            "SELECT * FROM memories WHERE kind IN ('profile','preference') ORDER BY created DESC LIMIT ?", (limit,))]
+            "SELECT * FROM memories WHERE kind IN ('profile','preference') AND tier='permanent' "
+            "ORDER BY created DESC LIMIT ?", (limit,))]
+
+    def get_memory(self, memory_id: int) -> dict | None:
+        rows = self._q("SELECT * FROM memories WHERE id=?", (memory_id,))
+        return dict(rows[0]) if rows else None
+
+    def sync_memories(self, entries: list[dict]) -> bool:
+        """Mirror the vault into the index. Entries carry a stable ``key``; unchanged ones keep their id."""
+        with self._lock:
+            # Only rows that came from the vault are managed here; legacy rows (no key) wait for migration.
+            have = {r["key"]: r["id"] for r in self._q("SELECT id, key FROM memories WHERE key IS NOT NULL")}
+            want = {e["key"]: e for e in entries}
+            stale = [mid for key, mid in have.items() if key not in want]
+            new = [e for key, e in want.items() if key not in have]
+            if not stale and not new:
+                return False
+            self._db.execute("BEGIN")
+            try:
+                for mid in stale:
+                    self._db.execute("DELETE FROM memories WHERE id=?", (mid,))
+                for e in new:
+                    self._db.execute("INSERT INTO memories(text, kind, created, tier, note, key) VALUES (?,?,?,?,?,?)",
+                                     (e["text"], e["kind"], e["created"], e["tier"], e["note"], e["key"]))
+                self._db.execute("COMMIT")
+            except Exception:
+                self._db.execute("ROLLBACK")
+                raise
+            return True
 
     # ── Tasks ──────────────────────────────────────────────────────────────
     def save_task(self, task: dict) -> None:

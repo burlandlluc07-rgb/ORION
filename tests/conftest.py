@@ -14,7 +14,9 @@ from orion.engine import Engine  # noqa: E402
 def config(tmp_path, monkeypatch):
     monkeypatch.setenv("ORION_HOME", str(tmp_path))
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    return Config(tmp_path)
+    cfg = Config(tmp_path)
+    cfg.settings.vault_path = str(tmp_path / "vault")  # never touch the real Documents folder
+    return cfg
 
 
 @pytest.fixture

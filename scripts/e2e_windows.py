@@ -229,6 +229,28 @@ def toolkit_checks(o: "Orion") -> None:
     record("windows: Windows Update check", wu["ok"], str(wu["result"])[:200])
 
 
+def memory_checks(o: "Orion") -> None:
+    """The Obsidian vault: created in Documents, permanent notes + short-term file, weekly review."""
+    root = Path.home() / "Documents" / "ORION Brain"
+    o.c.post("/api/memories", json={"text": "Sarah Lane is Lluc's manager at Acme", "kind": "person",
+                                    "subject": "Sarah Lane", "permanent": True})
+    o.c.post("/api/memories", json={"text": "Prefers metric units", "kind": "preference", "permanent": True})
+    o.c.post("/api/memories", json={"text": "Ordered a pizza for tonight", "permanent": False})
+    o.c.post("/api/memories", json={"text": "Lluc's sister Maya starts a new job at Google on Monday", "permanent": False})
+    st = o.c.get("/api/memory/vault").json()
+    people = root / "People" / "Sarah Lane.md"
+    ok = (root / "Home.md").exists() and people.exists() and "Prefers metric units" in (root / "About me.md").read_text("utf-8") \
+        and "pizza" in (root / "Short-term" / "This week.md").read_text("utf-8") and st["short"] >= 2
+    record("memory vault: Obsidian notes in Documents/ORION Brain", ok,
+           f"path={st['path']} permanent={st['permanent']} short={st['short']}")
+    if HAS_KEY:
+        r = o.c.post("/api/memory/review", timeout=240)
+        res = r.json() if r.status_code == 200 else {"error": r.text}
+        short = (root / "Short-term" / "This week.md").read_text("utf-8")
+        record("memory vault: weekly review with Gemini", r.status_code == 200 and "pizza" not in short,
+               json.dumps(res)[:300])
+
+
 def main() -> int:
     HOME.mkdir(parents=True, exist_ok=True)
     (HOME / "settings.json").write_text(json.dumps({"user_name": "Lluc", "onboarded": True, "voice": {"mode": "classic"}}))
@@ -320,6 +342,12 @@ def main() -> int:
         if seen:
             break
     record("proactive: download finished alert", seen is not None, seen["message"] if seen else "no alert within 90s")
+
+    # ── Memory vault ───────────────────────────────────────────────────────
+    try:
+        memory_checks(o)
+    except Exception as exc:
+        record("memory vault", False, repr(exc))
 
     # ── New toolkits, called directly ──────────────────────────────────────
     try:
