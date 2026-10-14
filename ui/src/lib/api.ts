@@ -1,18 +1,21 @@
-// Thin client for the local engine API. The per-launch token arrives in the URL
-// (?token=…) from the desktop shell and is kept in sessionStorage.
+// Thin client for the local engine API.
+// Desktop window: a per-launch token arrives in the URL (?token=…) and lives in sessionStorage.
+// Phone app: a long-lived per-device token from pairing lives in localStorage.
 
+export const IS_PHONE = location.hash.startsWith("#/remote") || location.hash.startsWith("#/pair");
 const params = new URLSearchParams(location.search);
 const fromUrl = params.get("token");
-// The phone remote keeps its token across visits (bookmarks, home-screen icon); the desktop window doesn't.
-const isRemote = location.hash.startsWith("#/remote");
 if (fromUrl) {
   sessionStorage.setItem("orion.token", fromUrl);
-  if (isRemote) localStorage.setItem("orion.remoteToken", fromUrl);
   params.delete("token");
   const clean = location.pathname + (params.toString() ? `?${params}` : "") + location.hash;
   history.replaceState(null, "", clean);
 }
-export const TOKEN = sessionStorage.getItem("orion.token") ?? (isRemote ? localStorage.getItem("orion.remoteToken") : null) ?? "";
+export const TOKEN = IS_PHONE ? localStorage.getItem("orion.device") ?? "" : sessionStorage.getItem("orion.token") ?? "";
+
+export function saveDeviceToken(token: string) {
+  localStorage.setItem("orion.device", token);
+}
 
 export class ApiError extends Error {
   status: number;

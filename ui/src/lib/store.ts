@@ -220,6 +220,7 @@ export const useStore = create<Store>((set, get) => ({
         get().toast({ title: "Stopped", body: ev.count ? `Halted ${ev.count} running task(s).` : "Nothing was running.", tone: "warn" });
         break;
       case "memory.changed":
+      case "remote.changed":
       case "ecosystem.changed":
       case "routines.changed":
         bump(ev.type);

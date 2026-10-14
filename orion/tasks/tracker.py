@@ -126,6 +126,7 @@ class ApprovalBroker:
         self.pending: dict[str, tuple[asyncio.Future, dict]] = {}
         self.session_allow: set[str] = set()
         self.on_voice_request: Callable[[dict], Awaitable[None]] | None = None
+        self.on_request: Callable[[dict], None] | None = None  # e.g. push the approval to paired phones
 
     async def request(self, tool: str, label: str, risk: str, args: dict[str, Any], task: Task | None) -> bool:
         if tool in self.session_allow and risk != "danger":
@@ -136,6 +137,11 @@ class ApprovalBroker:
                 "task_id": task.id if task else None, "expires": time.time() + APPROVAL_TIMEOUT}
         self.pending[aid] = (fut, info)
         self.bus.emit("approval.request", approval=info)
+        if self.on_request is not None:
+            try:
+                self.on_request(info)
+            except Exception:
+                pass
         if task is not None and task.source == "voice" and self.on_voice_request is not None:
             asyncio.create_task(self.on_voice_request(info))
         try:

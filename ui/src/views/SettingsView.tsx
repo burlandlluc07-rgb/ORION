@@ -218,40 +218,94 @@ export function SettingsView() {
   );
 }
 
-interface RemoteStatus { enabled: boolean; running: boolean; port: number; ip: string; url?: string; qr_svg?: string; error?: string | null }
+interface RemoteStatus {
+  enabled: boolean; running: boolean; port: number; lan_url: string; access: "lan" | "tailscale" | "cloudflare"; secure: boolean;
+  tunnel: { mode: string; url: string | null; state: string; detail: string; tailscale_installed: boolean; cloudflared_installed: boolean };
+  devices: { id: string; name: string; created: number; last_seen: number; push: boolean }[];
+  pair_url?: string; qr_svg?: string; error?: string | null;
+}
 
 function PhoneRemote() {
   const toast = useStore((s) => s.toast);
+  const bump = useStore((s) => s.bump["remote.changed"]);
   const [st, setSt] = useState<RemoteStatus | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { api.get<RemoteStatus>("/api/remote").then(setSt).catch(() => {}); }, []);
-  const act = async (fn: () => Promise<RemoteStatus>) => {
+  const load = () => api.get<RemoteStatus>("/api/remote").then(setSt).catch(() => {});
+  useEffect(() => { load(); }, [bump]);
+  useEffect(() => {  // poll while a tunnel is starting
+    if (st?.tunnel.state !== "starting") return;
+    const t = setInterval(load, 2000);
+    return () => clearInterval(t);
+  }, [st?.tunnel.state]);
+  const act = async (body: Record<string, unknown>) => {
     setBusy(true);
-    try { setSt(await fn()); } catch (e) { toast({ title: "Phone remote", body: (e as Error).message, tone: "error" }); }
+    try { setSt(await api.post<RemoteStatus>("/api/remote", body)); } catch (e) { toast({ title: "Phone app", body: (e as Error).message, tone: "error" }); }
     finally { setBusy(false); }
   };
+  if (!st) return null;
+  const MODES = [
+    { id: "lan", name: "Home Wi-Fi", desc: "Phone and PC on the same network. Simplest; no voice or notifications (needs HTTPS)." },
+    { id: "tailscale", name: "Anywhere · Tailscale", desc: "Recommended. Free, private and encrypted, with a stable address. Install Tailscale on this PC and your phone and sign in with the same account." },
+    { id: "cloudflare", name: "Anywhere · Instant link", desc: "No account needed. HTTPS link via Cloudflare; it changes when ORION restarts (your phone gets a one-tap re-pair notification)." },
+  ] as const;
   return (
     <section className="settings-sec">
-      <h3><Smartphone size={16} /> Phone remote</h3>
-      <Field label="Control ORION from your phone" hint="Chat, quick actions (media, volume, lock), live task progress and approvals from any phone on the same Wi-Fi. The phone can't change settings. Windows may ask to allow ORION through the firewall — allow it for private networks.">
-        <Toggle on={!!st?.enabled} onChange={(v) => !busy && act(() => api.post<RemoteStatus>("/api/remote", { enabled: v }))} />
+      <h3><Smartphone size={16} /> Phone app</h3>
+      <Field label="Control ORION from your phone" hint="Chat and talk to ORION, see and control your screen, run media and apps, approve actions and get notifications — like a remote for your PC. The phone can't change settings or accounts.">
+        <Toggle on={st.enabled} onChange={(v) => !busy && act({ enabled: v })} />
       </Field>
-      {st?.running && st.url && (
-        <div className="field" style={{ gridTemplateColumns: "auto 1fr", alignItems: "start" }}>
-          {st.qr_svg ? <div className="remote-qr" dangerouslySetInnerHTML={{ __html: st.qr_svg }} /> : null}
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <div className="fl">Scan with your phone's camera</div>
-            <div className="fh">Then use “Add to Home Screen” for an app-like icon. Or open this link on the phone:</div>
-            <code style={{ fontSize: 11.5, wordBreak: "break-all", color: "var(--text-2)" }}>{st.url}</code>
-            <div className="row">
-              <button className="btn sm" onClick={() => { navigator.clipboard.writeText(st.url!); toast({ title: "Link copied", tone: "success" }); }}>Copy link</button>
-              <button className="btn sm" disabled={busy} onClick={() => act(() => api.post<RemoteStatus>("/api/remote/rotate"))}><RefreshCw size={12} /> New code</button>
+      {st.enabled && (
+        <>
+          <div className="field" style={{ gridTemplateColumns: "1fr" }}>
+            <div className="fl">How your phone connects</div>
+            <div className="list">
+              {MODES.map((m) => (
+                <button key={m.id} className="item" style={{ textAlign: "left", cursor: "pointer", borderColor: st.access === m.id ? "var(--text-2)" : undefined }}
+                  disabled={busy} onClick={() => act({ access: m.id })}>
+                  <span className={`dot ${st.access === m.id ? "ok" : ""}`} />
+                  <div className="grow"><div className="t">{m.name}</div><div className="d">{m.desc}</div></div>
+                </button>
+              ))}
             </div>
-            <div className="fh">Lost a phone? “New code” disconnects every paired device. The link is plain HTTP — use it on networks you trust.</div>
+            {st.access !== "lan" && (
+              <div className={st.tunnel.state === "error" ? "err" : "muted"} style={{ fontSize: 12.5 }}>
+                {st.tunnel.state === "starting" && <Loader2 size={12} className="spin" />} {st.tunnel.detail || st.tunnel.state}
+                {st.access === "tailscale" && !st.tunnel.tailscale_installed && <> — <a href="https://tailscale.com/download" target="_blank" rel="noreferrer">download Tailscale</a></>}
+              </div>
+            )}
           </div>
-        </div>
+          {st.running && st.pair_url && (
+            <div className="field" style={{ gridTemplateColumns: "auto 1fr", alignItems: "start" }}>
+              {st.qr_svg ? <div className="remote-qr" dangerouslySetInnerHTML={{ __html: st.qr_svg }} /> : null}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div className="fl">Pair a phone</div>
+                <div className="fh">1. Scan with the phone's camera (code works once, for 10 minutes).<br />
+                  2. In the browser menu choose <b>Add to Home Screen</b> / <b>Install app</b>.<br />
+                  3. Open ORION from your home screen and tap Activity → Enable notifications.</div>
+                <code style={{ fontSize: 11, wordBreak: "break-all", color: "var(--text-3)" }}>{st.pair_url}</code>
+                <div className="row">
+                  <button className="btn sm" onClick={load}><RefreshCw size={12} /> New code</button>
+                  <button className="btn sm" onClick={() => { navigator.clipboard.writeText(st.pair_url!); toast({ title: "Pairing link copied", tone: "success" }); }}>Copy link</button>
+                </div>
+                {!st.secure && <div className="fh">This connection isn't HTTPS, so voice and notifications won't work on the phone. Choose an “Anywhere” option to enable them.</div>}
+              </div>
+            </div>
+          )}
+          <div className="field" style={{ gridTemplateColumns: "1fr" }}>
+            <div className="row"><div className="fl grow">Paired phones</div>
+              {st.devices.some((d) => d.push) && <button className="btn sm" onClick={() => api.post<{ sent: number }>("/api/push/test").then((r) => toast({ title: `Test sent to ${r.sent} phone(s)`, tone: "success" }))}>Send test notification</button>}
+            </div>
+            {st.devices.length === 0 ? <div className="fh">None yet.</div> : st.devices.map((d) => (
+              <div key={d.id} className="row" style={{ fontSize: 13 }}>
+                <Smartphone size={14} className="muted" />
+                <span className="grow">{d.name} <span className="muted">· last seen {new Date(d.last_seen * 1000).toLocaleString()}{d.push ? " · notifications on" : ""}</span></span>
+                <button className="btn sm ghost" onClick={() => api.del<RemoteStatus>(`/api/devices/${d.id}`).then(setSt)}><Trash2 size={12} /> Remove</button>
+              </div>
+            ))}
+          </div>
+        </>
       )}
-      {st?.error && <div className="err" style={{ padding: "0 18px 12px" }}>{st.error}</div>}
+      {st.error && <div className="err" style={{ padding: "0 18px 12px" }}>{st.error}</div>}
     </section>
   );
 }

@@ -93,6 +93,7 @@ class Settings(BaseModel):
 
     remote_enabled: bool = False
     remote_port: int = 8790
+    remote_access: str = "lan"  # lan | tailscale | cloudflare
 
     history_turns: int = 12
     onboarded: bool = False

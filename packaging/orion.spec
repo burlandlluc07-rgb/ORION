@@ -13,7 +13,7 @@ hidden = (
     + collect_submodules("pystray")
     + collect_submodules("keyring.backends")
     + ["pycaw.pycaw", "comtypes.stream", "pywinauto", "screen_brightness_control", "miniaudio", "edge_tts", "ddgs",
-       "mcp.client.stdio", "mcp.client.streamable_http", "qrcode.image.svg", "icalendar", "recurring_ical_events", "openwakeword", "pypdf", "docx"]
+       "mcp.client.stdio", "mcp.client.streamable_http", "qrcode.image.svg", "pywebpush", "py_vapid", "icalendar", "recurring_ical_events", "openwakeword", "pypdf", "docx"]
 )
 datas = [
     (str(ROOT / "orion" / "web"), "orion/web"),

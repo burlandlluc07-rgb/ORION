@@ -12,7 +12,7 @@ import { EcosystemView } from "./views/EcosystemView";
 import { MemoryView } from "./views/MemoryView";
 import { Onboarding } from "./views/Onboarding";
 import { QuickBar } from "./views/QuickBar";
-import { RemoteView } from "./views/RemoteView";
+import { PairView, PhoneApp } from "./views/PhoneApp";
 import { RoutinesView } from "./views/RoutinesView";
 import { SettingsView } from "./views/SettingsView";
 import { TasksView } from "./views/TasksView";
@@ -34,6 +34,7 @@ export default function App() {
   const s = useStore();
   const quick = location.hash.startsWith("#/quick");
   const remote = location.hash.startsWith("#/remote");
+  const pairCode = location.hash.startsWith("#/pair/") ? location.hash.slice("#/pair/".length) : null;
   useTheme(s.engine?.settings.theme);
 
   useEffect(() => {
@@ -64,18 +65,20 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [s]);
 
+  if (pairCode) return <><PairView code={pairCode} /><Toasts /></>;
+
   if (!TOKEN) {
     return (
       <div className="onb"><div className="onb-card">
-        <h1>{remote ? "Scan the QR code again" : "Open ORION from the app"}</h1>
-        <p>{remote ? "This phone isn't paired. On your PC open ORION → Settings → Phone remote and scan the QR code."
+        <h1>{remote ? "Pair this phone" : "Open ORION from the app"}</h1>
+        <p>{remote ? "On your PC open ORION → Settings → Phone app and scan the QR code with this phone's camera."
           : "This page needs the secure link the ORION desktop app opens. Launch ORION from the Start menu or tray."}</p>
       </div></div>
     );
   }
 
   if (quick) return <><QuickBar /><Toasts /></>;
-  if (remote) return <><RemoteView /><Toasts /></>;
+  if (remote) return <><PhoneApp /><Toasts /></>;
 
   return (
     <>

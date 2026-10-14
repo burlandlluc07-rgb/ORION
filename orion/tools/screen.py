@@ -116,16 +116,21 @@ def press_keys(keys: str, times: int = 1) -> str:
 
 
 @tool(risk="confirm", category="input", summary=lambda a: f"Click at ({a.get('x')}, {a.get('y')})")
-def mouse_click(x: int, y: int, button: str = "left", double: bool = False) -> str:
+def mouse_click(x: float, y: float, button: str = "left", double: bool = False, relative: bool = False) -> str:
     """Click the mouse at screen coordinates.
 
     Args:
-        x: Horizontal pixel position.
-        y: Vertical pixel position.
+        x: Horizontal pixel position (or 0-1 fraction of the screen width when relative is true).
+        y: Vertical pixel position (or 0-1 fraction of the screen height when relative is true).
         button: left, right or middle.
         double: Double-click.
+        relative: Treat x/y as fractions of the primary screen (used by the phone's tap-to-click).
     """
     g = _gui()
+    if relative:
+        w, h = g.size()
+        x, y = max(0.0, min(1.0, float(x))) * (w - 1), max(0.0, min(1.0, float(y))) * (h - 1)
+    x, y = int(round(float(x))), int(round(float(y)))
     g.click(x=x, y=y, button=button, clicks=2 if double else 1, interval=0.08)
     return f"Clicked at {x},{y}."
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hmac
+import mimetypes
 import logging
 import secrets
 from pathlib import Path
@@ -28,6 +29,14 @@ from ..tools.registry import ToolError
 
 log = logging.getLogger("orion.api")
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+mimetypes.add_type("application/manifest+json", ".webmanifest")
+mimetypes.add_type("text/javascript", ".js")
+# What the phone's Control and Screen tabs may run directly (the user's own button presses).
+REMOTE_CONTROLS = {
+    "media_control", "set_volume", "change_volume", "mute", "set_brightness", "lock_pc", "power", "cancel_shutdown",
+    "take_screenshot", "open_app", "close_app", "list_installed_apps", "list_windows", "window_action",
+    "mouse_click", "scroll", "press_keys", "type_text", "system_status", "open_website", "play_youtube", "play_spotify",
+}
 MAX_ATTACH = 15 * 1024 * 1024
 TEXT_EXT = {".txt", ".md", ".py", ".js", ".ts", ".json", ".csv", ".html", ".css", ".xml", ".yaml", ".yml", ".log",
             ".ini", ".toml", ".java", ".c", ".cpp", ".cs", ".go", ".rs", ".sql", ".sh", ".ps1", ".bat"}
@@ -46,10 +55,25 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
         bg.add(t)
         t.add_done_callback(bg.discard)
 
+    def check_token(supplied: str, ip: str) -> dict | None:
+        """Desktop: the per-launch token. Phone server: a paired device's token (throttled per IP)."""
+        if not remote:
+            return {"id": "desktop"} if supplied and hmac.compare_digest(supplied, token) else None
+        devices = engine.remote.devices
+        if devices.blocked(ip):
+            raise HTTPException(429, "Too many failed attempts. Try again in 15 minutes.")
+        dev = devices.authenticate(supplied)
+        if dev is None:
+            devices.record_failure(ip)
+        return dev
+
     def auth(request: Request) -> None:
         supplied = request.headers.get("x-orion-token") or request.query_params.get("token") or ""
-        if not hmac.compare_digest(supplied, token):
-            raise HTTPException(401, "Bad token")
+        ip = request.client.host if request.client else "?"
+        dev = check_token(supplied, ip)
+        if dev is None:
+            raise HTTPException(401, "Not paired" if remote else "Bad token")
+        request.state.device = dev
 
     def admin(request: Request) -> None:
         auth(request)
@@ -354,26 +378,128 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
 
         return await run_all(engine, include_generation=bool(body.get("generate", True)))
 
-    # ── Phone remote ───────────────────────────────────────────────────────
+    # ── Phone app: management (desktop only) ───────────────────────────────
     @app.get("/api/remote", dependencies=[X])
     async def remote_status():
         return engine.remote.status(with_qr=True)
 
     @app.post("/api/remote", dependencies=[X])
-    async def remote_toggle(body: dict = Body(...)):
-        enabled = bool(body.get("enabled"))
-        engine.apply_settings({"remote_enabled": enabled})
+    async def remote_configure(body: dict = Body(...)):
+        patch = {}
+        if "enabled" in body:
+            patch["remote_enabled"] = bool(body["enabled"])
+        if body.get("access") in ("lan", "tailscale", "cloudflare"):
+            patch["remote_access"] = body["access"]
+        engine.apply_settings(patch)
         try:
-            await (engine.remote.start() if enabled else engine.remote.stop())
+            if engine.config.settings.remote_enabled:
+                await engine.remote.start()
+            else:
+                await engine.remote.stop()
         except OSError as exc:
             engine.apply_settings({"remote_enabled": False})
-            raise HTTPException(409, f"Couldn't open the remote port: {exc}") from exc
+            raise HTTPException(409, f"Couldn't open the phone port: {exc}") from exc
         return engine.remote.status(with_qr=True)
 
-    @app.post("/api/remote/rotate", dependencies=[X])
-    async def remote_rotate():
-        await engine.remote.rotate()
+    @app.delete("/api/devices/{device_id}", dependencies=[X])
+    async def revoke_device(device_id: str):
+        engine.remote.devices.revoke(device_id)
+        engine.bus.emit("remote.changed")
         return engine.remote.status(with_qr=True)
+
+    @app.post("/api/push/test", dependencies=[X])
+    async def push_test():
+        n = await asyncio.to_thread(engine.remote.push.send, "ORION", "Notifications are working.", {}, "orion-test")
+        return {"sent": n}
+
+    # ── Phone app: pairing, push, voice, screen, direct control ────────────
+    @app.post("/api/pair")
+    async def pair(request: Request, body: dict = Body(...)):
+        if not remote:
+            raise HTTPException(404)
+        ip = request.client.host if request.client else "?"
+        if engine.remote.devices.blocked(ip):
+            raise HTTPException(429, "Too many attempts. Try again later.")
+        tok = engine.remote.devices.pair(str(body.get("code", "")), str(body.get("name", "Phone")))
+        if not tok:
+            engine.remote.devices.record_failure(ip)
+            raise HTTPException(400, "This pairing code has expired. Show a new QR code in ORION → Settings → Phone app.")
+        engine.bus.emit("remote.changed")
+        engine.notify("Phone paired", f"{body.get('name', 'A phone')} can now control ORION.")
+        return {"token": tok}
+
+    @app.get("/api/push/key")
+    async def push_key():
+        return {"key": engine.remote.push.keys()["public"]}
+
+    @app.post("/api/push/subscribe", dependencies=[A])
+    async def push_subscribe(request: Request, body: dict = Body(...)):
+        if not remote:
+            raise HTTPException(404)
+        engine.remote.devices.set_push(request.state.device["id"], body.get("subscription"))
+        return {"ok": True}
+
+    @app.get("/api/screen", dependencies=[A])
+    async def screen(w: int = 1280, q: int = 70):
+        from fastapi.responses import Response
+
+        from ..tools.screen import capture
+
+        try:
+            jpeg, size = await asyncio.to_thread(capture, 1, max(320, min(w, 1920)))
+        except Exception as exc:
+            raise HTTPException(503, f"Screen capture unavailable: {exc}") from exc
+        return Response(jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store", "X-Screen-Size": f"{size[0]}x{size[1]}"})
+
+    @app.post("/api/phone/voice", dependencies=[A])
+    async def voice_ask(body: dict = Body(...)):
+        """Phone push-to-talk: WAV in → transcript, then ORION handles it like a typed request."""
+        wav = base64.b64decode(body.get("wav_b64", ""))
+        if len(wav) < 2000:
+            raise HTTPException(400, "Too short — hold the button while you speak.")
+        if len(wav) > MAX_ATTACH:
+            raise HTTPException(413, "Recording too long.")
+        try:
+            text = await engine.brain.transcribe(wav)
+        except Exception as exc:
+            from ..brain.gemini import friendly_error
+
+            raise HTTPException(502, friendly_error(exc)) from exc
+        if not text:
+            return {"text": "", "conv_id": body.get("conv_id")}
+        cid = body.get("conv_id")
+        if not cid or not engine.store.get_conversation(cid):
+            from ..brain.agent import make_title
+
+            conv = engine.store.create_conversation(make_title(text))
+            engine.bus.emit("conversation.created", conversation=conv)
+            cid = conv["id"]
+        spawn(engine.agent.handle(text, cid, source="phone"))
+        return {"text": text, "conv_id": cid}
+
+    @app.post("/api/control/{name}", dependencies=[A])
+    async def control(name: str, body: dict = Body(default={})):
+        """Direct remote control from the phone (buttons, taps, typing). These are the user's own actions,
+        so they don't need AI-approval prompts — but they're still recorded as a task for the audit trail."""
+        if name not in REMOTE_CONTROLS:
+            raise HTTPException(403, "That control isn't available remotely.")
+        task = engine.tracker.start(f"Phone: {name.replace('_', ' ')}", None, "phone")
+        tool = engine.registry.get(name)
+        if tool is None:
+            engine.tracker.finish(task, "failed")
+            raise HTTPException(404, "Unknown control.")
+        from ..tools.registry import ToolContext
+
+        step = engine.tracker.add_step(task, name, tool.describe_call(body), tool.risk)
+        try:
+            result = await asyncio.wait_for(tool.run(body, ToolContext(engine=engine, cancel=task.cancel)), 60)
+            engine.tracker.update_step(task, step, "done", result)
+            engine.tracker.finish(task)
+            return {"ok": True, "result": result}
+        except Exception as exc:
+            engine.tracker.update_step(task, step, "failed", str(exc))
+            engine.tracker.finish(task, "failed")
+            return {"ok": False, "error": str(exc)}
 
     # ── Desktop shell ──────────────────────────────────────────────────────
     @app.post("/api/open-folder/{which}", dependencies=[X])
@@ -398,7 +524,12 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
         origin = socket.headers.get("origin", "")
         same_host = origin.split("://", 1)[-1] == socket.headers.get("host", "")
         local = origin.startswith(("http://127.0.0.1", "http://localhost"))
-        if not hmac.compare_digest(supplied, token) or (origin and not (local or (remote and same_host))):
+        ip = socket.client.host if socket.client else "?"
+        try:
+            ok = check_token(supplied, ip) is not None
+        except HTTPException:
+            ok = False
+        if not ok or (origin and not (local or (remote and same_host))):
             await socket.close(code=4401)
             return
         await socket.accept()
@@ -429,7 +560,8 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
         async def spa(path: str):
             f = (WEB_DIR / path).resolve()
             if path and f.is_file() and WEB_DIR.resolve() in f.parents:
-                return FileResponse(f)
+                headers = {"Cache-Control": "no-cache"} if path in ("sw.js", "manifest.webmanifest") else None
+                return FileResponse(f, headers=headers)
             return FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-store"})
 
     return app

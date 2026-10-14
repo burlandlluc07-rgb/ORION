@@ -49,6 +49,7 @@ class Engine:
 
         self.accounts = Accounts(self.config.root, self.registry, lambda: self.bus.emit("ecosystem.changed"))
         self.remote = RemoteServer(self)
+        self.approvals.on_request = self._push_approval
         self.scheduler: Scheduler | None = None
         self.voice = None
         self.notifier: Callable[[str, str], None] | None = None  # set by the desktop shell (tray toasts)
@@ -175,8 +176,23 @@ class Engine:
                 pass
 
     # ── Actions used by the API / tools ────────────────────────────────────
-    def notify(self, title: str, message: str) -> None:
+    def _push(self, title: str, body: str, data: dict | None = None, tag: str | None = None) -> None:
+        """Send a push notification to paired phones without blocking the engine."""
+        if not any(d.get("push") for d in self.remote.devices.list()):
+            return
+        loop = self._loop
+        job = lambda: self.remote.push.send(title, body, data, tag)  # noqa: E731
+        if loop and loop.is_running():
+            loop.run_in_executor(None, job)
+
+    def _push_approval(self, info: dict) -> None:
+        self._push("ORION needs your OK", info["label"], {"approval_id": info["id"], "risk": info["risk"]},
+                   f"approval-{info['id']}")
+
+    def notify(self, title: str, message: str, push: bool = True) -> None:
         self.bus.emit("notify", title=title, message=message)
+        if push:
+            self._push(title, message, {}, None)
         if self.notifier:
             try:
                 self.notifier(title, message)
