@@ -1,0 +1,159 @@
+"""Timers, reminders, routines, notes and long-term memory."""
+
+from __future__ import annotations
+
+import datetime as dt
+import time
+
+from ..tasks.schedule import ScheduleError, describe, next_run, parse_when
+from .registry import ToolContext, ToolError, tool
+
+NOTIFY_PREFIX = "!notify:"
+
+
+def _engine(ctx: ToolContext):
+    if ctx is None or ctx.engine is None:
+        raise ToolError("Engine unavailable.")
+    return ctx.engine
+
+
+@tool(category="productivity", summary=lambda a: f"Timer: {a.get('duration')}")
+def set_timer(duration: str, label: str = "Timer", ctx: ToolContext = None) -> str:  # type: ignore[assignment]
+    """Start a countdown timer, e.g. "5 minutes", "90s", "1h 15m".
+
+    Args:
+        duration: How long.
+        label: What the timer is for.
+    """
+    try:
+        when = parse_when(duration if duration.strip().lower().startswith("in ") else f"in {duration}")
+    except ScheduleError as exc:
+        raise ToolError(str(exc)) from exc
+    r = _engine(ctx).scheduler.add_once(f"⏱ {label}", NOTIFY_PREFIX + f"{label} — time's up!", when)
+    secs = int((when - dt.datetime.now()).total_seconds())
+    return f"Timer “{label}” set for {secs // 60} min {secs % 60} s (id {r['id']})."
+
+
+@tool(category="productivity", summary=lambda a: f"Remind “{a.get('message')}” {a.get('when')}")
+def set_reminder(message: str, when: str, ctx: ToolContext = None) -> str:  # type: ignore[assignment]
+    """Remind the user about something at a time: "in 20 minutes", "at 5pm", "tomorrow 9:00", or ISO time.
+
+    Args:
+        message: What to remind them about.
+        when: When to fire.
+    """
+    try:
+        at = parse_when(when)
+    except ScheduleError as exc:
+        raise ToolError(str(exc)) from exc
+    r = _engine(ctx).scheduler.add_once(f"🔔 {message[:40]}", NOTIFY_PREFIX + message, at)
+    return f"Reminder set for {at.strftime('%a %d %b at %H:%M')} (id {r['id']})."
+
+
+@tool(risk="confirm", category="productivity", summary=lambda a: f"Create routine “{a.get('name')}” ({a.get('schedule')})")
+def create_routine(name: str, prompt: str, schedule: str, ctx: ToolContext = None) -> str:  # type: ignore[assignment]
+    """Schedule ORION to run a prompt automatically, e.g. a morning briefing every weekday.
+
+    Args:
+        name: Short routine name.
+        prompt: The instruction ORION will execute each time (as if the user typed it).
+        schedule: "daily 08:00", "weekdays 07:30", "weekly mon 09:00", "every 2h" or "once 2026-01-31T18:00".
+    """
+    try:
+        next_run(schedule)
+    except (ScheduleError, ValueError) as exc:
+        raise ToolError(str(exc)) from exc
+    r = _engine(ctx).scheduler.add(name, prompt, schedule)
+    return f"Routine “{name}” created — {describe(schedule)}. Next run {time.strftime('%a %H:%M', time.localtime(r['next_run']))}."
+
+
+@tool(category="productivity")
+def list_scheduled(ctx: ToolContext = None) -> list[dict]:  # type: ignore[assignment]
+    """List active timers, reminders and routines."""
+    out = []
+    for r in _engine(ctx).store.list_routines():
+        out.append({
+            "id": r["id"], "name": r["name"], "schedule": describe(r["schedule"]), "enabled": r["enabled"],
+            "next": time.strftime("%a %d %b %H:%M", time.localtime(r["next_run"])) if r["next_run"] else None,
+        })
+    return out
+
+
+@tool(category="productivity", summary=lambda a: f"Cancel scheduled item {a.get('id_or_name')}")
+def cancel_scheduled(id_or_name: str, ctx: ToolContext = None) -> str:  # type: ignore[assignment]
+    """Cancel a timer, reminder or routine by id or (part of) its name.
+
+    Args:
+        id_or_name: The id from list_scheduled, or part of the name.
+    """
+    eng = _engine(ctx)
+    q = id_or_name.lower()
+    for r in eng.store.list_routines():
+        if r["id"] == id_or_name or q in r["name"].lower():
+            eng.scheduler.remove(r["id"])
+            return f"Cancelled “{r['name']}”."
+    raise ToolError("Nothing scheduled matches that.")
+
+
+@tool(category="memory", summary=lambda a: f"Remember: {a.get('fact')}")
+def remember(fact: str, about_user: bool = False, ctx: ToolContext = None) -> str:  # type: ignore[assignment]
+    """Save a durable fact to long-term memory (preferences, names, projects, recurring details).
+
+    Args:
+        fact: A self-contained statement, e.g. "User's sister is named Maya".
+        about_user: True for core profile facts that should always be known.
+    """
+    mid = _engine(ctx).store.remember(fact, "profile" if about_user else "fact")
+    _engine(ctx).bus.emit("memory.changed")
+    return f"Remembered (#{mid})."
+
+
+@tool(category="memory")
+def recall(query: str, ctx: ToolContext = None) -> list[dict]:  # type: ignore[assignment]
+    """Search long-term memory.
+
+    Args:
+        query: Keywords to look for.
+    """
+    hits = _engine(ctx).store.recall(query, limit=10)
+    return [{"id": h["id"], "fact": h["text"]} for h in hits] or [{"fact": "Nothing relevant remembered."}]
+
+
+@tool(risk="confirm", category="memory", summary=lambda a: f"Forget memory #{a.get('memory_id')}")
+def forget(memory_id: int, ctx: ToolContext = None) -> str:  # type: ignore[assignment]
+    """Delete a memory by id (use recall to find ids).
+
+    Args:
+        memory_id: The memory's id.
+    """
+    if not _engine(ctx).store.forget(int(memory_id)):
+        raise ToolError("No memory with that id.")
+    _engine(ctx).bus.emit("memory.changed")
+    return "Forgotten."
+
+
+@tool(category="productivity", summary=lambda a: "Add a note")
+def add_note(text: str, ctx: ToolContext = None) -> str:  # type: ignore[assignment]
+    """Append a quick note to the user's ORION notebook (notes.md in the ORION data folder).
+
+    Args:
+        text: The note.
+    """
+    path = _engine(ctx).config.root / "notes.md"
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(f"- [{dt.datetime.now():%Y-%m-%d %H:%M}] {text.strip()}\n")
+    return "Noted."
+
+
+@tool(category="productivity")
+def read_notes(last: int = 20, ctx: ToolContext = None) -> str:  # type: ignore[assignment]
+    """Read the most recent notes from the ORION notebook.
+
+    Args:
+        last: How many recent notes.
+    """
+    path = _engine(ctx).config.root / "notes.md"
+    if not path.exists():
+        return "No notes yet."
+    lines = path.read_text("utf-8").splitlines()
+    return "\n".join(lines[-max(1, last):])

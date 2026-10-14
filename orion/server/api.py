@@ -1,0 +1,370 @@
+"""Local API + WebSocket event stream between the engine and the UI.
+
+Bound to 127.0.0.1 only and protected by a random per-launch token, so other
+programs or websites on the machine can't drive ORION's tools.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import hmac
+import logging
+import secrets
+from pathlib import Path
+from typing import Any
+
+from fastapi import Body, Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+
+from .. import __version__
+from ..brain.gemini import GeminiBrain
+from ..ecosystem.connectors import CATALOG
+from ..engine import Engine
+from ..tasks.schedule import ScheduleError, describe, next_run
+from ..tools.platform import open_target
+
+log = logging.getLogger("orion.api")
+WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+MAX_ATTACH = 15 * 1024 * 1024
+TEXT_EXT = {".txt", ".md", ".py", ".js", ".ts", ".json", ".csv", ".html", ".css", ".xml", ".yaml", ".yml", ".log",
+            ".ini", ".toml", ".java", ".c", ".cpp", ".cs", ".go", ".rs", ".sql", ".sh", ".ps1", ".bat"}
+
+
+def create_app(engine: Engine, token: str | None = None, shell: Any = None) -> FastAPI:
+    token = token or secrets.token_urlsafe(24)
+    app = FastAPI(title="ORION", version=__version__, docs_url=None, redoc_url=None, openapi_url=None)
+    app.state.token = token
+    app.state.shell = shell
+    bg: set[asyncio.Task] = set()
+
+    def spawn(coro) -> None:
+        t = asyncio.create_task(coro)
+        bg.add(t)
+        t.add_done_callback(bg.discard)
+
+    def auth(request: Request) -> None:
+        supplied = request.headers.get("x-orion-token") or request.query_params.get("token") or ""
+        if not hmac.compare_digest(supplied, token):
+            raise HTTPException(401, "Bad token")
+
+    A = Depends(auth)
+
+    # ── State & settings ───────────────────────────────────────────────────
+    @app.get("/api/state", dependencies=[A])
+    async def state():
+        return engine.state()
+
+    @app.post("/api/key", dependencies=[A])
+    async def set_key(body: dict = Body(...)):
+        key = str(body.get("key", "")).strip()
+        if len(key) < 20:
+            raise HTTPException(400, "That doesn't look like a Gemini API key.")
+        ok, msg, models = await GeminiBrain.validate_key(key)
+        if not ok:
+            return JSONResponse({"ok": False, "error": msg}, status_code=400)
+        where = engine.config.set_api_key(key)
+        engine.brain.reset()
+        spawn(engine._discover())
+        if engine.voice and engine.voice.state in ("error", "off"):
+            spawn(engine.voice.restart())
+        return {"ok": True, "stored_in": where, "models": len(models)}
+
+    @app.patch("/api/settings", dependencies=[A])
+    async def patch_settings(patch: dict = Body(...)):
+        try:
+            engine.apply_settings(patch)
+        except Exception as exc:
+            raise HTTPException(400, str(exc)) from exc
+        if shell is not None and "launch_on_startup" in patch:
+            shell.set_autostart(bool(patch["launch_on_startup"]))
+        return engine.config.settings.model_dump()
+
+    @app.get("/api/quota", dependencies=[A])
+    async def quota():
+        return {"models": engine.governor.snapshot(), "available": engine.store.kv_get("models", [])}
+
+    # ── Conversations & chat ───────────────────────────────────────────────
+    @app.get("/api/conversations", dependencies=[A])
+    async def conversations():
+        return engine.store.list_conversations()
+
+    @app.get("/api/conversations/{cid}", dependencies=[A])
+    async def conversation(cid: str):
+        conv = engine.store.get_conversation(cid)
+        if not conv:
+            raise HTTPException(404)
+        tasks = {t["id"]: t for t in engine.store.list_tasks(200) if t["conv_id"] == cid}
+        tasks.update({t.id: t.to_dict() for t in engine.tracker.active.values() if t.conv_id == cid})
+        return {"conversation": conv, "messages": engine.store.messages(cid), "tasks": list(tasks.values())}
+
+    @app.patch("/api/conversations/{cid}", dependencies=[A])
+    async def edit_conversation(cid: str, body: dict = Body(...)):
+        if "title" in body:
+            engine.store.rename_conversation(cid, str(body["title"]))
+        if "pinned" in body:
+            engine.store.pin_conversation(cid, bool(body["pinned"]))
+        engine.bus.emit("conversations.changed")
+        return {"ok": True}
+
+    @app.delete("/api/conversations/{cid}", dependencies=[A])
+    async def delete_conversation(cid: str):
+        engine.store.delete_conversation(cid)
+        engine.bus.emit("conversations.changed")
+        return {"ok": True}
+
+    @app.post("/api/chat", dependencies=[A])
+    async def chat(body: dict = Body(...)):
+        text = str(body.get("text", ""))
+        cid = body.get("conv_id")
+        attachments = []
+        for a in body.get("attachments") or []:
+            raw = base64.b64decode(a.get("b64", ""))
+            if len(raw) > MAX_ATTACH:
+                raise HTTPException(413, f"{a.get('name')} is larger than 15 MB.")
+            name = str(a.get("name", "file"))
+            mime = str(a.get("mime") or "application/octet-stream")
+            if Path(name).suffix.lower() in TEXT_EXT or mime.startswith("text/"):
+                attachments.append({"name": name, "text": raw.decode("utf-8", errors="replace")[:100_000]})
+            else:
+                attachments.append({"name": name, "mime": mime, "data": raw})
+        if not cid or not engine.store.get_conversation(cid):
+            from ..brain.agent import make_title
+
+            conv = engine.store.create_conversation(make_title(text or "Attachment"))
+            engine.bus.emit("conversation.created", conversation=conv)
+            cid = conv["id"]
+        spawn(engine.agent.handle(text, cid, mode=str(body.get("mode", "auto")), attachments=attachments,
+                                  source=str(body.get("source", "text"))))
+        return {"conv_id": cid}
+
+    @app.post("/api/stop", dependencies=[A])
+    async def stop():
+        return {"stopped": engine.stop_everything()}
+
+    @app.post("/api/approvals/{aid}", dependencies=[A])
+    async def approve(aid: str, body: dict = Body(...)):
+        decision = body.get("decision")
+        if decision not in ("approve", "deny", "always"):
+            raise HTTPException(400, "decision must be approve, deny or always")
+        return {"ok": engine.approvals.respond(aid, decision)}
+
+    @app.get("/api/tasks", dependencies=[A])
+    async def tasks():
+        active = [t.to_dict() for t in engine.tracker.active.values()]
+        return {"active": active, "history": engine.store.list_tasks(60)}
+
+    # ── Routines ───────────────────────────────────────────────────────────
+    def _routine_view(r: dict) -> dict:
+        return {**r, "schedule_text": describe(r["schedule"]), "kind": "reminder" if r["prompt"].startswith("!notify:") else "routine",
+                "prompt": r["prompt"].removeprefix("!notify:")}
+
+    @app.get("/api/routines", dependencies=[A])
+    async def routines():
+        return [_routine_view(r) for r in engine.store.list_routines()]
+
+    @app.post("/api/routines", dependencies=[A])
+    async def create_routine(body: dict = Body(...)):
+        try:
+            next_run(body["schedule"])
+            r = engine.scheduler.add(str(body["name"])[:80], str(body["prompt"]), str(body["schedule"]))
+        except (KeyError, ScheduleError, ValueError) as exc:
+            raise HTTPException(400, f"Invalid routine: {exc}") from exc
+        return _routine_view(r)
+
+    @app.patch("/api/routines/{rid}", dependencies=[A])
+    async def edit_routine(rid: str, body: dict = Body(...)):
+        try:
+            r = engine.scheduler.update(rid, body)
+        except (ScheduleError, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        if not r:
+            raise HTTPException(404)
+        return _routine_view(r)
+
+    @app.delete("/api/routines/{rid}", dependencies=[A])
+    async def delete_routine(rid: str):
+        engine.scheduler.remove(rid)
+        return {"ok": True}
+
+    @app.post("/api/routines/{rid}/run", dependencies=[A])
+    async def run_routine(rid: str):
+        spawn(engine.scheduler.run_now(rid))
+        return {"ok": True}
+
+    # ── Memory ─────────────────────────────────────────────────────────────
+    @app.get("/api/memories", dependencies=[A])
+    async def memories():
+        return engine.store.list_memories()
+
+    @app.post("/api/memories", dependencies=[A])
+    async def add_memory(body: dict = Body(...)):
+        mid = engine.store.remember(str(body["text"]), "profile" if body.get("profile") else "fact")
+        engine.bus.emit("memory.changed")
+        return {"id": mid}
+
+    @app.delete("/api/memories/{mid}", dependencies=[A])
+    async def delete_memory(mid: int):
+        engine.store.forget(mid)
+        engine.bus.emit("memory.changed")
+        return {"ok": True}
+
+    # ── Ecosystem: skills, tools, plugins, connectors ──────────────────────
+    @app.get("/api/skills", dependencies=[A])
+    async def skills():
+        return [s.to_dict() for s in engine.skills.skills.values()]
+
+    @app.get("/api/skills/{name}", dependencies=[A])
+    async def skill(name: str):
+        s = engine.skills.skills.get(name)
+        if not s:
+            raise HTTPException(404)
+        return s.to_dict(include_body=True)
+
+    @app.post("/api/skills", dependencies=[A])
+    async def save_skill(body: dict = Body(...)):
+        try:
+            s = engine.skills.save_user_skill(body["name"], body.get("description", ""), body.get("body", ""),
+                                              body.get("tier", "fast"), body.get("icon", "sparkles"))
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        engine.bus.emit("ecosystem.changed")
+        return s.to_dict(include_body=True)
+
+    @app.patch("/api/skills/{name}", dependencies=[A])
+    async def toggle_skill(name: str, body: dict = Body(...)):
+        engine.set_skill_enabled(name, bool(body.get("enabled", True)))
+        engine.bus.emit("ecosystem.changed")
+        return {"ok": True}
+
+    @app.delete("/api/skills/{name}", dependencies=[A])
+    async def delete_skill(name: str):
+        if not engine.skills.delete_user_skill(name):
+            raise HTTPException(400, "Built-in skills can be disabled but not deleted.")
+        engine.bus.emit("ecosystem.changed")
+        return {"ok": True}
+
+    @app.get("/api/tools", dependencies=[A])
+    async def tools():
+        return [{"name": t.name, "description": t.description, "risk": t.risk, "category": t.category,
+                 "source": t.source, "enabled": not engine.registry.is_disabled(t.name)}
+                for t in engine.registry.all(include_disabled=True)]
+
+    @app.patch("/api/tools/{name}", dependencies=[A])
+    async def toggle_tool(name: str, body: dict = Body(...)):
+        engine.set_tool_enabled(name, bool(body.get("enabled", True)))
+        return {"ok": True}
+
+    @app.get("/api/plugins", dependencies=[A])
+    async def plugins():
+        return {"folder": str(engine.plugins.folder), "plugins": engine.plugins.list()}
+
+    @app.post("/api/plugins/reload", dependencies=[A])
+    async def reload_plugins():
+        engine.plugins.load_all()
+        engine.bus.emit("ecosystem.changed")
+        return engine.plugins.list()
+
+    @app.get("/api/connectors", dependencies=[A])
+    async def connectors():
+        return {"connectors": engine.connectors.list(), "catalog": CATALOG}
+
+    @app.put("/api/connectors/{name}", dependencies=[A])
+    async def put_connector(name: str, body: dict = Body(...)):
+        try:
+            await engine.connectors.upsert(name, body)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {"ok": True}
+
+    @app.delete("/api/connectors/{name}", dependencies=[A])
+    async def delete_connector(name: str):
+        await engine.connectors.remove(name)
+        return {"ok": True}
+
+    # ── Voice ──────────────────────────────────────────────────────────────
+    @app.get("/api/voice", dependencies=[A])
+    async def voice_status():
+        from ..voice.audio import list_devices
+        from ..voice.tts import VOICES
+
+        return {"status": engine.voice.status() if engine.voice else {"state": "unavailable"},
+                "devices": await asyncio.to_thread(list_devices), "tts_voices": VOICES,
+                "live_voices": ["Charon", "Puck", "Kore", "Fenrir", "Aoede", "Orus", "Zephyr", "Leda"]}
+
+    @app.post("/api/voice/{action}", dependencies=[A])
+    async def voice_action(action: str):
+        v = engine.voice
+        if v is None:
+            raise HTTPException(409, "Voice is unavailable on this machine (no audio device or PortAudio).")
+        if action == "toggle":
+            await v.toggle()
+        elif action == "start":
+            await v.activate()
+        elif action == "stop":
+            await v.deactivate()
+        elif action == "mute":
+            v.set_muted(not v.muted)
+        elif action == "interrupt":
+            v.interrupt()
+        else:
+            raise HTTPException(404)
+        return v.status()
+
+    # ── Desktop shell ──────────────────────────────────────────────────────
+    @app.post("/api/open-folder/{which}", dependencies=[A])
+    async def open_folder(which: str):
+        target = {"data": engine.config.root, "plugins": engine.plugins.folder, "skills": engine.skills.user_dir}.get(which)
+        if not target:
+            raise HTTPException(404)
+        open_target(str(target))
+        return {"ok": True}
+
+    @app.post("/api/window/{action}", dependencies=[A])
+    async def window(action: str):
+        if shell is None:
+            return {"ok": False}
+        shell.window_action(action)
+        return {"ok": True}
+
+    # ── Event stream ───────────────────────────────────────────────────────
+    @app.websocket("/ws")
+    async def ws(socket: WebSocket):
+        supplied = socket.query_params.get("token", "")
+        origin = socket.headers.get("origin", "")
+        if not hmac.compare_digest(supplied, token) or (origin and not origin.startswith(("http://127.0.0.1", "http://localhost"))):
+            await socket.close(code=4401)
+            return
+        await socket.accept()
+        q = engine.bus.subscribe()
+        await socket.send_json({"type": "hello", "state": engine.state()})
+        try:
+            receiver = asyncio.create_task(socket.receive_text())
+            while True:
+                getter = asyncio.create_task(q.get())
+                done, _ = await asyncio.wait({getter, receiver}, return_when=asyncio.FIRST_COMPLETED)
+                if receiver in done:
+                    getter.cancel()
+                    receiver.result()  # raises on disconnect
+                    receiver = asyncio.create_task(socket.receive_text())  # client pings are ignored
+                    continue
+                await socket.send_json(getter.result())
+        except (WebSocketDisconnect, RuntimeError):
+            pass
+        finally:
+            engine.bus.unsubscribe(q)
+
+    # ── UI ─────────────────────────────────────────────────────────────────
+    if (WEB_DIR / "index.html").exists():
+        if (WEB_DIR / "assets").exists():
+            app.mount("/assets", StaticFiles(directory=WEB_DIR / "assets"), name="assets")
+
+        @app.get("/{path:path}")
+        async def spa(path: str):
+            f = (WEB_DIR / path).resolve()
+            if path and f.is_file() and WEB_DIR.resolve() in f.parents:
+                return FileResponse(f)
+            return FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-store"})
+
+    return app

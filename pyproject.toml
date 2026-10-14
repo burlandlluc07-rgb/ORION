@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orion-assistant"
+version = "2.0.0"
+description = "O.R.I.O.N. — a fast, voice-first desktop AI assistant for your PC, powered by Gemini."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary — see LICENSE" }
+authors = [{ name = "ORION Project" }]
+dependencies = [
+  "google-genai>=1.40,<3",
+  "fastapi>=0.110,<1",
+  "uvicorn[standard]>=0.27,<1",
+  "pydantic>=2.6,<3",
+  "platformdirs>=4,<5",
+  "psutil>=5.9,<8",
+  "httpx>=0.27,<1",
+  "keyring>=24,<27",
+  "ddgs>=9,<11",
+  "edge-tts>=6.1,<8",
+  "miniaudio>=1.59,<2",
+  "tzdata>=2024.1; sys_platform == 'win32'",
+  "sounddevice>=0.4,<1",
+  "numpy>=1.24,<3",
+  "pywebview>=5,<7",
+  "pystray>=0.19,<1",
+  "pillow>=10,<13",
+  "pynput>=1.7,<2",
+  "pyperclip>=1.8,<2",
+  "mss>=9,<11",
+  "pyautogui>=0.9,<1",
+  "send2trash>=1.8,<2",
+  "mcp>=1.9,<3",
+  "pywinauto>=0.6; sys_platform == 'win32'",
+  "pycaw>=20230407; sys_platform == 'win32'",
+  "comtypes>=1.2; sys_platform == 'win32'",
+  "screen-brightness-control>=0.20; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+wakeword = ["openwakeword>=0.6"]
+docs = ["pypdf>=4", "python-docx>=1.1"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "pyinstaller>=6.5", "ruff>=0.5"]
+
+[project.scripts]
+orion = "orion.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["orion*"]
+
+[tool.setuptools.package-data]
+orion = ["web/**/*", "assets/*", "builtin_skills/*/SKILL.md"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
