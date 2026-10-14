@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.3.0
+- **Phone app.** An installable PWA with chat, hold-to-talk voice, a Control tab (media, volume, apps, routines,
+  smart home, lock/sleep), a live screen you can tap to click and type into, and an Activity tab. QR pairing
+  gives each phone its own revocable key.
+- **Push notifications** (Web Push/VAPID) for approvals, with Approve/Deny on the notification, plus mission
+  results and alerts.
+- **Away from home:** Tailscale (`tailscale serve`) or a free Cloudflare quick tunnel. If the tunnel URL
+  changes, ORION re-pairs the phone automatically.
+- **Missions:** autonomous background jobs with their own conversation, plan and step budget. They wait out
+  per-minute free-tier limits and re-queue themselves instead of failing.
+- **Proactive mode:** battery, sustained CPU, RAM, disk, finished downloads, upcoming events and connectivity
+  alerts, with quiet hours, spoken on the PC and pushed to the phone.
+- **Smart home:** Home Assistant and Philips Hue. Device control and scenes; locks and alarms always ask.
+  "Lights off" and "dim X to N%" use the instant fast path.
+- **Deep memory:** ORION learns durable facts from finished conversations (deduplicated, with a daily cap).
+- Background work (missions, routines, learning) now waits for a Gemini slot instead of giving up. The Flash
+  default limit is now 5 RPM, matching the current free tier.
+- Approvals waiting in other conversations now show in a dock, so none get missed.
+- Fixed: the window was cut off on small screens; it now fits and centres.
+- Fixed: volume control reported success when the PC had no audio device.
+- Vision retries when Gemini is overloaded (503); web search falls back from news to web results.
+- Verified on Windows by an end-to-end CI run against the real installer and Gemini API.
+
 ## 2.2.0
 - Verified on Windows: CI builds the frozen ORION.exe, launches it and smoke-tests the API and UI before
   packaging the installer.

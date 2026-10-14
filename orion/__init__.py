@@ -5,5 +5,5 @@ path, tools, skills, connectors, memory, scheduler) served over a local
 WebSocket to a native desktop window.
 """
 
-__version__ = "2.2.0"
+__version__ = "2.3.0"
 APP_NAME = "ORION"

@@ -1,4 +1,4 @@
-# O.R.I.O.N. 2.0
+# O.R.I.O.N. 2.3
 
 **A voice-first AI assistant for your Windows PC, in the spirit of J.A.R.V.I.S.** Talk to it or type to it.
 It opens apps, controls the system, manages files, reads your screen, searches the web, runs scheduled routines
@@ -25,7 +25,11 @@ a tray icon, global hotkeys, a Quick Bar over any app, an installer, and a modul
 | **Connectors** | **MCP** (Model Context Protocol), the same open standard Claude and Cowork use. Add GitHub, Notion, a real browser (Playwright), Home Assistant and more from a catalog, or any MCP server. |
 | **Plugins** | Drop a Python file with an `@tool` function into the plugins folder and ORION can use it. |
 | **Email & calendar** | Connect any IMAP/SMTP mailbox with an app password (Gmail, iCloud, Yahoo, Outlook…) and your calendars' private iCal links. ORION reads, searches and sends email (sending asks first), lists your schedule including recurring events, and opens new events pre-filled. No Google Cloud setup needed. |
-| **Phone remote** | Turn it on in Settings, scan the QR code, and your phone gets a mobile ORION: chat, quick actions, live progress and approvals. It runs on its own token, can't change settings, and you can rotate the code any time. |
+| **Phone app** | Turn it on in Settings, scan the QR code, and "Add to Home Screen". Your phone gets an installable ORION app: chat with hold-to-talk voice, media, volume, apps and smart-home controls, a **live view of your screen** you can tap to click, and approvals as **push notifications** with Approve/Deny buttons. It works away from home through Tailscale or a free Cloudflare tunnel. Each phone has its own revocable key and can't change settings. |
+| **Missions** | "Research the best budget gaming laptops and put a comparison on my desktop." Missions run in the background with a plan, many steps and the deep model. They wait out free-tier limits, and ORION notifies your PC and phone when they finish. |
+| **Proactive** | ORION speaks up by itself: low battery, CPU or RAM running hot for a while, a disk nearly full, a finished download, an upcoming calendar event, the internet dropping. It respects quiet hours. |
+| **Smart home** | Home Assistant (URL + token) and Philips Hue (press the bridge button to pair). "Turn off the bedroom lights" and "dim the lamp to 30%" run instantly; scenes and locks/alarms (always asks first) go through the assistant. |
+| **Deep memory** | When a conversation goes quiet, ORION picks out lasting facts (people, projects, preferences, plans) and remembers them. It skips duplicates, has a daily cap to protect your quota, and everything it learns can be deleted in Memory. |
 | **Undo** | ORION journals every file change it makes and backs up anything it overwrites, so "undo that" restores it. |
 | **System check** | Settings → About → System check tests your key, models, microphone, speakers, voice, search and app control, and says how to fix anything broken. |
 | **Spoken approvals** | When a task you started by voice needs permission, ORION asks out loud ("Shall I go ahead?") and accepts yes or no. |
@@ -102,7 +106,9 @@ worked on this week"*.
 - File changes are limited to your user folder plus folders you add. Deletes go to the Recycle Bin. Writes and moves
   are verified.
 - The engine listens on `127.0.0.1` only and requires a random per-launch token, so websites and other programs
-  can't drive it.
+  can't drive it. The phone app uses a separate server (off by default) that only accepts paired devices. Each device
+  has its own hashed key, failed pairing attempts are throttled, and admin actions (settings, keys, plugins) are
+  blocked from the phone.
 
 ## Architecture
 
@@ -167,6 +173,8 @@ logging (logs are in `%APPDATA%\ORION\logs`).
 
 ## Roadmap ideas
 - Full Google and Microsoft OAuth (write access to calendars, labels and folders) as an alternative to app passwords
-- Voice from the phone remote (push-to-talk in the mobile page)
+- Screen-watch mode (ORION notices what you're doing and offers help)
+- Browser control built in (drive a real Chrome session without a connector)
+- Multiple PCs paired to one phone
 - Local STT/LLM fallback (faster-whisper, Ollama) for offline use
 - Per-skill tool allowlists and a skill marketplace
