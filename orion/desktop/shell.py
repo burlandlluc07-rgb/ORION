@@ -46,9 +46,9 @@ class DesktopShell:
     def run(self, start_hidden: bool = False) -> None:
         import webview
 
-        width, height = self._initial_size()
+        width, height, x, y = self._initial_geometry()
         self.window = webview.create_window(
-            "ORION", self.url, width=width, height=height, min_size=(760, 520), background_color="#000000",
+            "ORION", self.url, width=width, height=height, x=x, y=y, min_size=(760, 520), background_color="#000000",
             hidden=start_hidden, text_select=True,
         )
         self.quick = webview.create_window(
@@ -76,15 +76,16 @@ class DesktopShell:
         self._cleanup()
 
     @staticmethod
-    def _initial_size() -> tuple[int, int]:
-        """Fit the window to the screen (seen on a 1024×768 VM: a fixed 1320 px window was cut off)."""
+    def _initial_geometry() -> tuple[int, int, int | None, int | None]:
+        """Fit and centre the window on the primary screen (a fixed 1320 px window was cut off on a 1024×768 VM)."""
         try:
             import webview
 
             scr = webview.screens[0]
-            return min(1320, int(scr.width * 0.9)), min(860, int(scr.height * 0.88))
+            w, h = min(1320, int(scr.width * 0.9)), min(860, int(scr.height * 0.88))
+            return w, h, int(getattr(scr, "x", 0) + (scr.width - w) / 2), int(getattr(scr, "y", 0) + (scr.height - h) / 2)
         except Exception:
-            return 1200, 780
+            return 1200, 780, None, None
 
     def _on_closing(self) -> bool:
         if self._quitting or not self.config.settings.close_to_tray or self.tray is None:
