@@ -116,6 +116,10 @@ class DesktopShell:
             self.window and self.window.hide()
         elif action == "minimize":
             self.window and self.window.minimize()
+        elif action == "maximize":
+            if self.window:
+                self.window.show()
+                self.window.maximize()
         elif action == "quick":
             self.toggle_quick()
         elif action == "hide-quick":
