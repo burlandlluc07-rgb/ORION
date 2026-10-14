@@ -41,9 +41,19 @@ $list = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Phra
 $rec = New-Object System.Speech.Recognition.SpeechRecognitionEngine($info)
 $choices = New-Object System.Speech.Recognition.Choices
 foreach ($p in $list) { $choices.Add([string]$p) }
+# The phrase on its own, or followed by anything ("Hey Orion, what's the weather?").
+$alone = New-Object System.Speech.Recognition.GrammarBuilder
+$alone.Culture = $info.Culture
+$alone.Append($choices)
+$lead = New-Object System.Speech.Recognition.GrammarBuilder
+$lead.Culture = $info.Culture
+$lead.Append($choices)
+$lead.AppendWildcard()
+$either = New-Object System.Speech.Recognition.Choices
+$either.Add([System.Speech.Recognition.GrammarBuilder[]]@($alone, $lead))
 $gb = New-Object System.Speech.Recognition.GrammarBuilder
 $gb.Culture = $info.Culture
-$gb.Append($choices)
+$gb.Append($either)
 $wake = New-Object System.Speech.Recognition.Grammar($gb)
 $wake.Name = 'wake'
 $rec.LoadGrammar($wake)
@@ -54,7 +64,13 @@ if ($Wav) { $rec.SetInputToWaveFile($Wav) } else {
 Say ("READY:" + $info.Culture.Name)
 while ($true) {
   $r = $rec.Recognize([TimeSpan]::FromSeconds(30))
-  if ($r -ne $null -and $r.Grammar.Name -eq 'wake') { Say ("HIT:" + [string]::Format([Globalization.CultureInfo]::InvariantCulture, '{0:0.000}', $r.Confidence) + ":" + $r.Text) }
+  if ($r -ne $null -and $r.Grammar.Name -eq 'wake') {
+    # Score the wake words themselves, not whatever was said after them.
+    $words = @($r.Words | Where-Object { $_.Text -and $_.Text -ne '...' -and $_.Confidence -gt 0 })
+    $conf = $r.Confidence
+    if ($words.Count -gt 0) { $conf = [Math]::Max($conf, ($words | Measure-Object -Property Confidence -Average).Average) }
+    Say ("HIT:" + [string]::Format([Globalization.CultureInfo]::InvariantCulture, '{0:0.000}', $conf) + ":" + $r.Text)
+  }
   if ($Wav -and $r -eq $null) { break }
 }
 Say 'END'
@@ -104,6 +120,15 @@ def _command(phrases: list[str], culture: str = "", wav: str = "") -> list[str]:
     return cmd
 
 
+def match_phrase(text: str, phrases: list[str]) -> str:
+    """Map recogniser text ("Hey Orion what's the weather") back to the configured phrase."""
+    low = " ".join(text.lower().replace("...", " ").split())
+    for p in sorted(phrases, key=len, reverse=True):
+        if low.startswith(p.lower()):
+            return p
+    return text.replace("...", "").strip()
+
+
 def parse_line(line: str) -> tuple[str, float, str] | None:
     """'HIT:0.912:Hey ORION' → ("hit", 0.912, "Hey ORION"); READY/ERR/END → (kind, 0, detail)."""
     line = line.strip()
@@ -135,7 +160,7 @@ def detect_in_wav(wav: str, phrases: list[str], culture: str = "", timeout: floa
         if p[0] == "ready":
             out["ready"] = p[2]
         elif p[0] == "hit":
-            out["hits"].append({"phrase": p[2], "confidence": p[1]})
+            out["hits"].append({"phrase": match_phrase(p[2], clean_phrases(phrases)), "confidence": p[1]})
         elif p[0] == "err":
             out["error"] = ERRORS.get(p[2], p[2])
     if res.returncode not in (0, None) and not out["error"]:
@@ -192,6 +217,7 @@ class WindowsWake:
                     fatal = text in ("NOSPEECH", "NORECOGNIZER")
                     self._ready.set()
                 elif kind == "hit":
+                    text = match_phrase(text, self.phrases)
                     accepted = conf >= self.threshold
                     self.on_heard(text, conf, accepted)
                     if accepted:

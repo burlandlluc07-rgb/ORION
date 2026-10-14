@@ -266,14 +266,24 @@ def wake_checks() -> None:
         return str(wav)
 
     phrases = ["Hey ORION", "Friday"]
-    pos = detect_in_wav(say("Hey Orion. What is the weather like today?", "positive"), phrases)
-    pos2 = detect_in_wav(say("Friday, open my email please.", "positive2"), phrases)
-    neg = detect_in_wav(say("Let us order a pizza and watch a movie tonight.", "negative"), phrases)
-    best = max((h["confidence"] for h in pos["hits"]), default=0)
-    ok = bool(pos["hits"]) and pos["hits"][0]["phrase"] == "Hey Orion" and any(h["phrase"] == "Friday" for h in pos2["hits"]) \
-        and not [h for h in neg["hits"] if h["confidence"] >= 0.675]
+    cases = {
+        "alone": ("Hey Orion.", "Hey Orion"),
+        "then_command": ("Hey Orion, what is the weather like today?", "Hey Orion"),
+        "friday": ("Friday, open my email please.", "Friday"),
+    }
+    seen = {}
+    for name, (text, want) in cases.items():
+        res = detect_in_wav(say(text, name), phrases)
+        seen[name] = res
+        seen[name]["ok"] = any(h["phrase"] == want and h["confidence"] >= 0.675 for h in res["hits"])
+    negatives = {n: detect_in_wav(say(t, n), phrases) for n, t in (
+        ("pizza", "Let us order a pizza and watch a movie tonight."),
+        ("mention", "I watched a documentary about the Orion constellation last night."))}
+    false = {n: [h for h in r["hits"] if h["confidence"] >= 0.675] for n, r in negatives.items()}
+    ok = all(r["ok"] for r in seen.values()) and not any(false.values())
     record("custom wake word (Windows offline speech): hears its phrases, ignores other speech", ok,
-           f"lang={pos['ready']} pos={pos['hits']} pos2={pos2['hits']} neg={neg['hits']} err={pos['error']} best={best}")
+           f"lang={seen['alone']['ready']} " + " ".join(f"{n}={r['hits']}" for n, r in seen.items())
+           + f" | false={false} err={seen['alone']['error']}")
 
 
 def main() -> int:

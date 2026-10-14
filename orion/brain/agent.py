@@ -278,6 +278,7 @@ class Agent:
         model_used = ""
         t0 = time.perf_counter()
         seen_calls: dict[str, int] = {}
+        nudges = 0
         e.bus.emit("message.start", conv_id=cid, id=msg_id, task_id=task.id)
         speech = e.voice.stream_speech() if source == "voice" and e.voice is not None else None
         try:
@@ -304,9 +305,20 @@ class Agent:
                     full_text += ("\n\n" if full_text else "") + "*(stopped)*"
                     break
                 if not calls:
-                    if not full_text.strip() and round_ == 0 and tier == "fast":
-                        tier = "smart"  # the small model came back empty — escalate once
-                        continue
+                    if not full_text.strip():
+                        if round_ == 0 and tier == "fast":
+                            tier = "smart"  # the small model came back empty: escalate once
+                            continue
+                        if nudges < 2:  # an empty turn mid-task (overload, model fallback): ask it to carry on
+                            nudges += 1
+                            nudge = types.Part(text="(Your last reply was empty. Continue the task from where you left "
+                                                    "off. When everything is done, reply with a short summary.)")
+                            if contents and contents[-1].role == "user":
+                                contents[-1].parts.append(nudge)
+                            else:
+                                contents.append(types.Content(role="user", parts=[nudge]))
+                            continue
+                        full_text = "⚠ Gemini returned an incomplete answer (it may be overloaded). Please try again."
                     break
                 contents.append(types.Content(role="model", parts=parts))
                 responses = await self._run_calls(calls, task, cid, seen_calls)

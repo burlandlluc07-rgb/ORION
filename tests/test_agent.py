@@ -287,3 +287,15 @@ def test_select_kits():
     assert "browser" in select_kits("log in to my bank website and download the statement")
     assert "windows" in select_kits("turn on dark mode and connect to wifi")
     assert select_kits("what time is it") == set()
+
+
+async def test_empty_turn_mid_task_is_nudged_not_called_done(engine):
+    add_probe(engine)
+    engine.brain = FakeBrain([[call("probe", x="1")], [], [types.Part(text="Finished: probed 1.")]])
+    res = await engine.agent.handle("probe one please and report back to me", mode="smart")
+    assert res["reply"] == "Finished: probed 1."
+    assert "empty" in engine.brain.calls[2]["contents"][-1].parts[-1].text
+
+    engine.brain = FakeBrain([[call("probe", x="2")], [], [], []])
+    res = await engine.agent.handle("probe two please and report back to me", mode="smart")
+    assert res["reply"].startswith("⚠") and "incomplete" in res["reply"]  # never a fake "Done."

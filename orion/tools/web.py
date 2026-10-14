@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import re
+import time
 import urllib.parse
 from typing import Literal
 
@@ -178,12 +179,23 @@ def _locate(location: str) -> tuple[float, float, str]:
             return float(j["latitude"]), float(j["longitude"]), f"{j.get('city')}, {j.get('country_name')}"
         except Exception as exc:
             raise ToolError("Couldn't detect your location; please name a city.") from exc
-    j = httpx.get("https://geocoding-api.open-meteo.com/v1/search",
-                  params={"name": location, "count": 1}, timeout=8).json()
+    j = _get_json("https://geocoding-api.open-meteo.com/v1/search", {"name": location, "count": 1}, 8)
     if not j.get("results"):
         raise ToolError(f"Unknown place: {location}")
     g = j["results"][0]
     return g["latitude"], g["longitude"], f"{g['name']}, {g.get('country', '')}"
+
+
+def _get_json(url: str, params: dict, timeout: float = 10) -> dict:
+    """GET JSON, retrying once on a dropped connection or timeout (free APIs blip now and then)."""
+    for attempt in range(2):
+        try:
+            return httpx.get(url, params=params, timeout=timeout, headers={"User-Agent": UA}).json()
+        except httpx.TransportError as exc:
+            if attempt:
+                raise ToolError(f"The weather service didn't respond ({type(exc).__name__}); try again shortly.") from exc
+            time.sleep(1.0)
+    return {}
 
 
 @tool(category="web")
@@ -195,11 +207,11 @@ def get_weather(location: str = "", days: int = 1) -> dict:
         days: Forecast days (1-7).
     """
     lat, lon, place = _locate(location)
-    j = httpx.get("https://api.open-meteo.com/v1/forecast", timeout=10, params={
+    j = _get_json("https://api.open-meteo.com/v1/forecast", {
         "latitude": lat, "longitude": lon, "timezone": "auto", "forecast_days": max(1, min(days, 7)),
         "current": "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m",
         "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
-    }).json()
+    })
     c = j["current"]
     d = j["daily"]
     return {

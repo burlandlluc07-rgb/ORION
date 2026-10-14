@@ -42,3 +42,11 @@ def test_windows_wake_routes_hits_by_threshold(monkeypatch):
     assert w.language == "en-GB" and hits == ["Hey Orion"] and heard == [True, False] and not errors
     with pytest.raises(ValueError):
         wake.WindowsWake([""], 0.5, "", print, print, print)
+
+
+def test_match_phrase_ignores_what_follows():
+    phrases = ["Hey Orion", "Orion", "Friday"]
+    assert wake.match_phrase("Hey Orion ... ", phrases) == "Hey Orion"
+    assert wake.match_phrase("hey orion what is the weather", phrases) == "Hey Orion"
+    assert wake.match_phrase("Orion", phrases) == "Orion"
+    assert wake.match_phrase("Friday ...", phrases) == "Friday"

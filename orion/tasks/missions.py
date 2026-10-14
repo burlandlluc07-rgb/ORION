@@ -86,10 +86,12 @@ class Missions:
                 max_rounds=MISSION_ROUNDS, on_task=lambda t: self._update(mid, task_id=t.id))
             reply = (res.get("reply") or "").strip()
             attempts = m.get("attempts", 0)
-            if "free-tier limit" in reply and attempts < 3:
-                # Still rate-limited after waiting: try again in a few minutes rather than failing.
+            transient = any(s in reply for s in ("free-tier limit", "free daily quota", "temporarily unavailable",
+                                                 "incomplete answer", "is busy right now"))
+            if reply.startswith("⚠") and transient and attempts < 3:
+                # Rate-limited or overloaded: try again in a few minutes rather than failing.
                 self._update(mid, status="queued", attempts=attempts + 1,
-                             summary="Waiting for Gemini's free-tier limit to reset — will retry automatically.")
+                             summary="Gemini is busy or out of free quota for the moment; will retry automatically.")
                 await asyncio.sleep(120 * (attempts + 1))
                 self._queue.append(mid)
                 return
