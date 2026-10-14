@@ -90,7 +90,8 @@ def match(text: str) -> Route | None:
         return Route("play_spotify", {"query": m.group(1)}, lambda r: r)
 
     # ── Web ─────────────────────────────────────────────────────────────────
-    m = re.fullmatch(r"(?:google|search google for|search for|search the web for|look up) (.+)", low)
+    # Only explicit "google …" opens a browser tab; "look up / search for …" wants an answer → Gemini + web_search.
+    m = re.fullmatch(r"(?:google|search google for|open google (?:for|and search(?: for)?)) (.+)", low)
     if m and len(m.group(1)) < 60:
         return Route("search_in_browser", {"query": m.group(1), "site": "google"}, lambda r: r)
     m = re.fullmatch(r"search youtube for (.+)", low)

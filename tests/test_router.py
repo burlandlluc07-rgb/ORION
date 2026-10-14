@@ -27,6 +27,7 @@ from orion.brain import router
     ("close discord", "close_app", {"name": "discord"}),
     ("how's my pc doing", "system_status", {}),
     ("undo that", "undo_last_change", {}),
+    ("google cheap flights to rome", "search_in_browser", {"query": "cheap flights to rome", "site": "google"}),
 ])
 def test_matches(text, tool, args):
     r = router.match(text)
@@ -44,6 +45,8 @@ def test_matches(text, tool, args):
     "search my documents for invoices from march and total them",
     "can you explain how volume works",
     "close orion",
+    "look up the population of france",
+    "search for the best budget gpu",
 ])
 def test_falls_through_to_gemini(text):
     assert router.match(text) is None

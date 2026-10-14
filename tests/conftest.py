@@ -31,3 +31,25 @@ async def engine(config):
     e.scheduler = Scheduler(e.store, e.notify, e._run_routine, lambda: None)
     yield e
     e.store.close()
+
+
+@pytest.fixture(autouse=True)
+def no_side_effects(monkeypatch):
+    """Tests must never open browsers, files or apps on the machine running them (Windows CI included)."""
+    opened: list[str] = []
+    import orion.tools.apps as apps
+    import orion.tools.files as files
+    import orion.tools.platform as platform
+    import orion.tools.web as web
+
+    for mod in (platform, web, files, apps):
+        if hasattr(mod, "open_target"):
+            monkeypatch.setattr(mod, "open_target", opened.append)
+    monkeypatch.setattr(apps, "launch", opened.append)
+    try:
+        import orion.ecosystem.accounts as accounts
+
+        monkeypatch.setattr(accounts, "open_target", opened.append)
+    except ImportError:
+        pass
+    return opened
