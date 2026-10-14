@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Any, AsyncIterator
 
 from google import genai
@@ -86,11 +87,18 @@ class GeminiBrain:
         """List models available to this key and pick a Live (voice) model."""
         names: list[str] = []
         live: list[str] = []
+        spares: list[tuple[tuple[int, ...], str]] = []
         async for m in await self.client.aio.models.list(config={"page_size": 200}):
             name = m.name.removeprefix("models/")
             names.append(name)
-            if "bidiGenerateContent" in (m.supported_actions or []):
+            actions = m.supported_actions or []
+            if "bidiGenerateContent" in actions:
                 live.append(name)
+            stable = re.fullmatch(r"gemini-(\d+(?:\.\d+)?)-flash(?:-lite)?", name)
+            if stable and "generateContent" in actions:
+                spares.append((tuple(int(x) for x in stable.group(1).split(".")), name))
+        # Stable Flash models, newest first: each has its own free quota, so they extend the day.
+        self.governor.set_extra([n for _, n in sorted(spares, reverse=True)][:4])
         pref = self.config.settings.model_live
         if pref != "auto" and pref in live:
             self.live_model = pref
@@ -98,7 +106,7 @@ class GeminiBrain:
             # Prefer native-audio flash models (most natural voice, free tier), newest first.
             ranked = sorted(live, key=lambda n: ("native-audio" in n, "flash" in n, "preview" not in n, n), reverse=True)
             self.live_model = ranked[0] if ranked else None
-        return {"models": sorted(names), "live_models": live, "live_model": self.live_model}
+        return {"models": sorted(names), "live_models": live, "live_model": self.live_model, "spare_models": self.governor.extra}
 
     # ── Generation ─────────────────────────────────────────────────────────
     def _config(self, system: str | None, tools: list[dict] | None, model: str, **extra: Any) -> types.GenerateContentConfig:
@@ -125,7 +133,7 @@ class GeminiBrain:
         """
         tried: set[str] = set()
         last_exc: BaseException | None = None
-        for _ in range(3):
+        for _ in range(6):
             model = await self.governor.acquire(tier, exclude=tried, max_wait=180 if patient else 6)
             tried.add(model)
             yielded = False
@@ -173,7 +181,7 @@ class GeminiBrain:
         extra = {"response_mime_type": "application/json"} if json_mode else {}
         tried: set[str] = set()
         last_exc: BaseException | None = None
-        for attempt in range(3):
+        for attempt in range(6):
             model = await self.governor.acquire(tier, exclude=tried, max_wait=180 if patient else 6)
             try:
                 r = await self.client.aio.models.generate_content(

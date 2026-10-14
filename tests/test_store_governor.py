@@ -37,8 +37,46 @@ async def test_governor_falls_back_and_exhausts(config, engine):
 def test_cool_down_parses_retry_delay(config, engine):
     gov = Governor(config, engine.store)
     assert gov.cool_down("m", "429 RESOURCE_EXHAUSTED ... 'retryDelay': '17s'") == 17.0
-    assert gov.cool_down("m", "quota exceeded GenerateRequestsPerDayPerProjectPerModel") >= 3600
+    assert gov.cool_down("m", "quota exceeded GenerateRequestsPerDayPerProjectPerModel") >= 60  # until the reset
     assert quota_day()
+
+
+ERR_DAY = ("429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota. Please "
+           "retry in 6h25m32.1s.', 'details': [{'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': "
+           "[{'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_input_token_count', "
+           "'quotaId': 'GenerateContentInputTokensPerModelPerMinute-FreeTier', 'quotaValue': '250000'}, "
+           "{'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_requests', "
+           "'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', 'quotaValue': '20'}]}]}}")
+
+
+def test_parsers_handle_real_429_shapes():
+    from orion.brain.governor import parse_quota, parse_retry_delay
+
+    assert parse_retry_delay(ERR_DAY) == pytest.approx(6 * 3600 + 25 * 60 + 32.1)
+    assert parse_retry_delay("'retryDelay': '23s'") == 23
+    assert parse_retry_delay("Please retry in 41.5s.") == 41.5
+    assert parse_quota(ERR_DAY) == ("day", 20)  # the token quota is skipped
+    assert parse_quota("'quotaId': 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier', 'quotaValue': '5'") == ("minute", 5)
+    assert parse_quota("something else") == (None, None)
+
+
+async def test_governor_learns_limits_and_remembers_daily_cooldown(config, engine):
+    gov = Governor(config, engine.store)
+    smart = config.settings.model_smart
+    delay = gov.cool_down(smart, ERR_DAY)
+    assert delay > 6 * 3600
+    assert gov.limits(smart).rpd == 20
+    assert Governor(config, engine.store)._st(smart).cooldown_until > 0  # survives a restart
+    assert await gov.acquire("smart") != smart  # falls back to the other model
+
+
+async def test_spare_models_extend_the_chain(config, engine):
+    gov = Governor(config, engine.store)
+    gov.set_extra(["gemini-3.5-flash", "gemini-3.1-flash-lite", config.settings.model_fast])
+    assert gov.chain("fast")[-2:] == ["gemini-3.1-flash-lite", "gemini-3.5-flash"]
+    assert gov.chain("smart")[2] == "gemini-3.5-flash"
+    config.settings.extra_models = False
+    assert len(gov.chain("fast")) == 2
 
 
 async def test_patient_acquire_waits_out_a_short_cooldown(config, engine):

@@ -243,7 +243,8 @@ def main() -> int:
         shot("07_morning_briefing")
 
         r = o.ask("What's the latest news about NASA? Two sentences.", 120)
-        record("gemini: web search answer", "web_search:done" in r["tools"] and len(r["reply"]) > 40,
+        record("gemini: web search answer", "web_search:done" in r["tools"] and len(r["reply"]) > 40
+               and not r["reply"].lstrip().startswith("⚠"),
                f"{r['reply'][:250]} | tools={r['tools']}", **r)
         shot("08_web_answer")
 
@@ -284,6 +285,9 @@ def finish(proc: subprocess.Popen) -> int:
     passed = sum(r["ok"] for r in results)
     lines = [f"# ORION Windows end-to-end — {passed}/{len(results)} passed", ""]
     lines += [f"- {'✅' if r['ok'] else '❌'} **{r['name']}** — {r['detail']}" for r in results]
+    limits = [ln[:600] for ln in (log.read_text("utf-8", errors="replace").splitlines() if log.exists() else [])
+              if "Rate limited on" in ln]
+    lines += ["", "## Rate limits hit", "```", *(limits or ["none"]), "```"]
     lines += ["", "## Log tail", "```", *tail, "```"]
     (OUT / "report.md").write_text("\n".join(lines), "utf-8")
     (OUT / "report.json").write_text(json.dumps(results, indent=1, default=str), "utf-8")

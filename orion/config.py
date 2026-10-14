@@ -71,10 +71,11 @@ class Settings(BaseModel):
     model_live: str = "auto"  # "auto" → discover a model that supports bidiGenerateContent
     model_limits: dict[str, ModelLimits] = Field(
         default_factory=lambda: {
-            "gemini-flash-lite-latest": ModelLimits(rpm=15, rpd=1000),
-            "gemini-flash-latest": ModelLimits(rpm=5, rpd=250),
+            "gemini-flash-lite-latest": ModelLimits(rpm=15, rpd=500),
+            "gemini-flash-latest": ModelLimits(rpm=5, rpd=20),
         }
     )
+    extra_models: bool = True  # when quota runs out, also use other free Flash models (each has its own quota)
     thinking_budget: int = 0  # 0 = off (fastest). Raise for harder reasoning.
 
     fast_path: bool = True  # answer simple commands locally with zero API calls

@@ -108,6 +108,9 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
     async def patch_settings(patch: dict = Body(...)):
         try:
             engine.apply_settings(patch)
+            if "model_limits" in patch:  # a manual edit beats limits learned from Google's 429s
+                learned = engine.store.kv_get("learned_limits", {}) or {}
+                engine.store.kv_set("learned_limits", {m: v for m, v in learned.items() if m not in patch["model_limits"]})
         except Exception as exc:
             raise HTTPException(400, str(exc)) from exc
         if shell is not None and "launch_on_startup" in patch:

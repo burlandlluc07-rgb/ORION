@@ -15,8 +15,12 @@
 - **Smart home:** Home Assistant and Philips Hue. Device control and scenes; locks and alarms always ask.
   "Lights off" and "dim X to N%" use the instant fast path.
 - **Deep memory:** ORION learns durable facts from finished conversations (deduplicated, with a daily cap).
-- Background work (missions, routines, learning) now waits for a Gemini slot instead of giving up. The Flash
-  default limit is now 5 RPM, matching the current free tier.
+- Background work (missions, routines, learning) now waits for a Gemini slot instead of giving up.
+- **Self-calibrating quota.** Google no longer publishes free-tier limits and has cut them (Flash is about
+  20 requests a day). ORION reads the real per-minute and per-day limits from Google's rate-limit replies,
+  remembers a model that's out for the day across restarts, and says plainly when quota comes back.
+- **Spare models.** ORION finds the other stable Flash and Flash-Lite models your key can use. Each has its
+  own free quota, so it keeps going after the main models run out (toggle in Settings → Brain).
 - Approvals waiting in other conversations now show in a dock, so none get missed.
 - Fixed: the window was cut off on small screens; it now fits and centres.
 - Fixed: volume control reported success when the PC had no audio device.

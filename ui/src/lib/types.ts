@@ -90,6 +90,7 @@ export interface Settings {
   model_limits: Record<string, { rpm: number; rpd: number }>;
   thinking_budget: number;
   fast_path: boolean;
+  extra_models: boolean;
   approval_mode: "ask" | "auto_safe" | "trust";
   allowed_roots: string[];
   voice: VoiceSettings;

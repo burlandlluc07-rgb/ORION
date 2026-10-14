@@ -97,10 +97,13 @@ export function SettingsView() {
             <option value={0}>Off (fastest)</option><option value={512}>Light</option><option value={2048}>Medium</option><option value={8192}>Deep</option>
           </select>
         </Field>
-        <Field label="Free-tier limits" hint="ORION paces itself to stay under these. Match them to your quota in AI Studio.">
+        <Field label="Spare models" hint="When the daily free quota runs out, keep going on other free Flash models. Each has its own quota.">
+          <Toggle on={st.extra_models} onChange={(v) => save({ extra_models: v })} />
+        </Field>
+        <Field label="Free-tier limits" hint="ORION paces itself to stay under these, and corrects them automatically when Google reports a different limit.">
           <div style={{ display: "flex", flexDirection: "column", gap: 6, width: "100%" }}>
             {[st.model_fast, st.model_smart].filter((m, i, a) => a.indexOf(m) === i).map((m) => {
-              const lim = st.model_limits[m] ?? { rpm: 10, rpd: 250 };
+              const lim = st.model_limits[m] ?? (m.includes("lite") ? { rpm: 15, rpd: 500 } : { rpm: 5, rpd: 20 });
               const set = (p: Partial<typeof lim>) => save({ model_limits: { ...st.model_limits, [m]: { ...lim, ...p } } });
               return (
                 <div key={m} className="row" style={{ fontSize: 12 }}>
