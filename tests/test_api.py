@@ -99,3 +99,38 @@ async def test_remote_server_lifecycle(engine):
     finally:
         await engine.remote.stop()
     assert not engine.remote.running
+
+
+async def test_update_check_compares_versions(engine, monkeypatch):
+    import httpx
+
+    class R:
+        status_code = 200
+
+        def __init__(self, tag):
+            self.tag = tag
+
+        def json(self):
+            return {"tag_name": self.tag, "html_url": "https://github.com/x/y/releases/tag/" + self.tag,
+                    "assets": [{"name": "ORION-Setup.exe", "browser_download_url": "https://dl/ORION-Setup.exe"}]}
+
+    tag = {"v": "v99.0.0"}
+
+    class C:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+        async def get(self, url):
+            return R(tag["v"])
+
+    monkeypatch.setattr(httpx, "AsyncClient", C)
+    info = await engine.check_update()
+    assert info["version"] == "99.0.0" and info["url"] == "https://dl/ORION-Setup.exe"
+    tag["v"] = "v0.1.0"
+    assert await engine.check_update() is None

@@ -1,5 +1,5 @@
 import {
-  Blocks, Brain, CalendarClock, ListChecks, MessageSquare, PanelLeftClose, PanelLeftOpen, Pin, PinOff, Plus,
+  Blocks, Brain, CalendarClock, Download, ListChecks, MessageSquare, PanelLeftClose, PanelLeftOpen, Pin, PinOff, Plus,
   Search, Settings as SettingsIcon, Trash2,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -97,6 +97,12 @@ export function Sidebar() {
       )}
 
       <div className="side-foot">
+        {open && s.engine?.update && s.engine.update.version !== s.engine.version && (
+          <a className="btn sm" href={s.engine.update.url} target="_blank" rel="noreferrer" title={s.engine.update.notes}
+            style={{ justifyContent: "flex-start", textDecoration: "none" }}>
+            <Download size={13} /> ORION {s.engine.update.version} is available
+          </a>
+        )}
         {open && quota && (
           <div className="meter" title="Gemini free-tier requests used today (resets at midnight Pacific)" style={{ margin: 0 }}>
             <div className="meter-top">

@@ -347,6 +347,13 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
         except ToolError as exc:
             raise HTTPException(400, str(exc)) from exc
 
+    # ── System check ───────────────────────────────────────────────────────
+    @app.post("/api/diagnostics", dependencies=[X])
+    async def diagnostics(body: dict = Body(default={})):
+        from ..diagnostics import run_all
+
+        return await run_all(engine, include_generation=bool(body.get("generate", True)))
+
     # ── Phone remote ───────────────────────────────────────────────────────
     @app.get("/api/remote", dependencies=[X])
     async def remote_status():

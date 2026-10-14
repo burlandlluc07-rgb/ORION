@@ -100,6 +100,8 @@ export interface Settings {
   close_to_tray: boolean;
   history_turns: number;
   onboarded: boolean;
+  check_updates: boolean;
+  remote_enabled: boolean;
 }
 
 export interface VoiceStatus {
@@ -122,6 +124,7 @@ export interface EngineState {
   approvals: Approval[];
   live_model: string | null;
   data_dir: string;
+  update?: { version: string; url: string; notes: string; page: string } | null;
 }
 
 export interface Vitals {

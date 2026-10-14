@@ -85,6 +85,7 @@ class Engine:
         self._bg.append(asyncio.create_task(self._vitals_loop(), name="vitals"))
         if self.config.get_api_key():
             self._bg.append(asyncio.create_task(self._discover(), name="discover"))
+        self._bg.append(asyncio.create_task(self._update_loop(), name="updates"))
         await self.start_voice()
         if self.config.settings.remote_enabled:
             try:
@@ -111,6 +112,40 @@ class Engine:
             self.bus.emit("brain.models", **info)
         except Exception as exc:
             log.info("Model discovery failed: %s", exc)
+
+    async def check_update(self) -> dict | None:
+        """Compare against the newest GitHub release; returns {"version", "url", "notes"} if newer."""
+        import httpx
+
+        from . import __version__
+
+        repo = self.config.settings.update_repo.strip()
+        if not repo or "/" not in repo:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=10, headers={"Accept": "application/vnd.github+json"}) as c:
+                r = await c.get(f"https://api.github.com/repos/{repo}/releases/latest")
+            if r.status_code != 200:
+                return None  # no releases yet, private repo or offline
+            rel = r.json()
+        except Exception:
+            return None
+        latest = str(rel.get("tag_name", "")).lstrip("vV")
+        if not latest or _version_tuple(latest) <= _version_tuple(__version__):
+            return None
+        asset = next((a["browser_download_url"] for a in rel.get("assets", []) if a["name"].endswith(".exe")), None)
+        info = {"version": latest, "url": asset or rel.get("html_url"), "notes": (rel.get("body") or "")[:1500],
+                "page": rel.get("html_url")}
+        self.store.kv_set("update", info)
+        self.bus.emit("update.available", update=info)
+        return info
+
+    async def _update_loop(self) -> None:
+        await asyncio.sleep(20)  # let start-up finish first
+        while True:
+            if self.config.settings.check_updates:
+                await self.check_update()
+            await asyncio.sleep(24 * 3600)
 
     async def stop(self) -> None:
         self.tracker.stop_all()
@@ -206,4 +241,11 @@ class Engine:
             "approvals": self.approvals.list(),
             "live_model": self.brain.live_model,
             "data_dir": str(self.config.root),
+            "update": self.store.kv_get("update"),
         }
+
+
+def _version_tuple(v: str) -> tuple[int, ...]:
+    import re
+
+    return tuple(int(x) for x in re.findall(r"\d+", v)[:3]) or (0,)

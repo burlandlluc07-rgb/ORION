@@ -88,6 +88,9 @@ class Settings(BaseModel):
     launch_on_startup: bool = False
     close_to_tray: bool = True
 
+    check_updates: bool = True
+    update_repo: str = "burlandlluc07-rgb/ORION"  # GitHub "owner/repo" whose Releases ORION checks
+
     remote_enabled: bool = False
     remote_port: int = 8790
 

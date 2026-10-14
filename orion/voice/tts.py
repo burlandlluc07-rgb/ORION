@@ -105,3 +105,62 @@ class TTS:
     def stop(self) -> None:
         self._gen += 1
         self.speaker.clear()
+
+
+_BOUNDARY = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\"'(`*_-])|\n{2,}")
+
+
+class SpeechStream:
+    """Speak text while it is still being generated: each finished sentence is
+    synthesised and queued immediately, so the first words play ~1 s after the
+    model starts answering instead of after the whole reply."""
+
+    def __init__(self, tts: TTS) -> None:
+        self.tts = tts
+        self.gen = tts._gen
+        self.buf = ""
+        self.q: asyncio.Queue[asyncio.Task | None] = asyncio.Queue()
+        self.task = asyncio.create_task(self._run())
+        self.spoke = False
+
+    def push(self, delta: str) -> None:
+        self.buf += delta
+        if self.buf.count("```") % 2:  # inside a code block: wait for it to close
+            return
+        parts = _BOUNDARY.split(self.buf)
+        for sentence in parts[:-1]:
+            self._emit(sentence)
+        self.buf = parts[-1]
+
+    def _emit(self, text: str) -> None:
+        clean = speakable(text)
+        if len(clean) > 1 and self.gen == self.tts._gen:
+            # Start synthesising right away; playback below keeps sentence order.
+            self.q.put_nowait(asyncio.create_task(self.tts._synth_edge(clean)))
+
+    def finish(self) -> None:
+        self._emit(self.buf)
+        self.buf = ""
+        self.q.put_nowait(None)
+
+    async def _run(self) -> None:
+        while True:
+            job = await self.q.get()
+            if job is None:
+                break
+            if self.gen != self.tts._gen:  # interrupted: drain without playing
+                job.cancel()
+                continue
+            try:
+                pcm = await job
+            except Exception as exc:
+                log.warning("Streaming TTS failed: %s", exc)
+                continue
+            if self.gen == self.tts._gen and pcm:
+                self.tts.speaker.play(pcm)
+                self.spoke = True
+        if self.gen == self.tts._gen:
+            await self.tts.speaker.wait_done()
+
+    async def wait(self) -> None:
+        await self.task

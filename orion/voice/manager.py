@@ -245,6 +245,21 @@ class VoiceManager:
         if self.state != "error":
             self.set_state("standby")
 
+    def stream_speech(self):
+        """A SpeechStream for a classic-mode voice turn, or None when replies aren't spoken."""
+        if not self.available or self.mode != "classic" or not self.e.config.settings.voice.speak_replies:
+            return None
+        from .tts import SpeechStream
+
+        return SpeechStream(self.tts)
+
+    async def finish_stream(self, stream, reply: str) -> None:
+        await stream.wait()
+        if not stream.spoke and reply.strip():  # e.g. streaming TTS failed: fall back to one-shot
+            await self.tts.speak(reply)
+        if self.state == "speaking":
+            self.set_state("standby")
+
     async def speak(self, text: str) -> None:
         if not self.available or self.mode == "off":
             return

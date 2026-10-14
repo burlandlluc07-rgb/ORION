@@ -1,6 +1,6 @@
-import { Brain, FolderOpen, Info, KeyRound, Keyboard, Mic, Monitor, RefreshCw, ShieldCheck, Smartphone, Trash2, UserRound } from "lucide-react";
+import { Brain, FolderOpen, Info, KeyRound, Keyboard, Mic, Monitor, RefreshCw, ShieldCheck, Smartphone, Stethoscope, CheckCircle2, XCircle, MinusCircle, Loader2, Trash2, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Field, Toggle } from "../components/ui";
+import { Field, Modal, Toggle } from "../components/ui";
 import { api } from "../lib/api";
 import { useStore } from "../lib/store";
 import type { Settings } from "../lib/types";
@@ -186,6 +186,9 @@ export function SettingsView() {
         <Field label="Launch when Windows starts" hint="Starts quietly in the tray, ready for “Hey Jarvis” and your routines.">
           <Toggle on={st.launch_on_startup} onChange={(v) => save({ launch_on_startup: v })} />
         </Field>
+        <Field label="Check for updates" hint="Looks for new ORION releases on GitHub once a day and shows a link — never installs anything by itself.">
+          <Toggle on={st.check_updates} onChange={(v) => save({ check_updates: v })} />
+        </Field>
         <Field label="Start minimized to tray"><Toggle on={st.start_minimized} onChange={(v) => save({ start_minimized: v })} /></Field>
         <Field label="Closing the window keeps ORION running in the tray"><Toggle on={st.close_to_tray} onChange={(v) => save({ close_to_tray: v })} /></Field>
         <Field label="Conversation memory" hint="How many recent turns are sent with each message. Fewer = faster and cheaper.">
@@ -204,7 +207,10 @@ export function SettingsView() {
 
       <section className="settings-sec">
         <h3><Info size={16} /> About</h3>
-        <Field label={`ORION ${s.engine?.version}`} hint={<>Data folder: <code>{s.engine?.data_dir}</code></>}>
+        <Field label="System check" hint="Tests your key, models, microphone, speakers, voice, search and app control — and says how to fix anything broken.">
+          <SystemCheck />
+        </Field>
+        <Field label={`ORION ${s.engine?.version}`} hint={<>Data folder: <code>{s.engine?.data_dir}</code> (settings, database, logs, skills, plugins)</>}>
           <button className="btn" onClick={() => api.post("/api/open-folder/data")}><FolderOpen size={14} /> Open</button>
         </Field>
       </section>
@@ -247,5 +253,44 @@ function PhoneRemote() {
       )}
       {st?.error && <div className="err" style={{ padding: "0 18px 12px" }}>{st.error}</div>}
     </section>
+  );
+}
+
+interface CheckRow { id: string; name: string; ok: boolean | null; detail: string; fix: string }
+
+function SystemCheck() {
+  const [rows, setRows] = useState<CheckRow[] | null>(null);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setOpen(true); setBusy(true); setRows(null);
+    try { setRows(await api.post<CheckRow[]>("/api/diagnostics", { generate: true })); }
+    catch (e) { setRows([{ id: "err", name: "System check", ok: false, detail: (e as Error).message, fix: "" }]); }
+    finally { setBusy(false); }
+  };
+  const bad = rows?.filter((r) => r.ok === false).length ?? 0;
+  return (
+    <>
+      <button className="btn" onClick={run}><Stethoscope size={14} /> Run</button>
+      {open && (
+        <Modal title={busy ? "Checking ORION…" : bad ? `${bad} problem${bad === 1 ? "" : "s"} found` : "All systems nominal"} onClose={() => setOpen(false)} wide
+          footer={<><button className="btn ghost" onClick={() => setOpen(false)}>Close</button><button className="btn" disabled={busy} onClick={run}>Run again</button></>}>
+          {busy && <div className="row muted"><Loader2 size={15} className="spin" /> Testing microphone, Gemini, voice and search — about 10 seconds.</div>}
+          {rows && <div className="list">
+            {rows.map((r) => (
+              <div key={r.id} className="item" style={{ padding: "10px 14px", alignItems: "flex-start" }}>
+                {r.ok === true ? <CheckCircle2 size={17} style={{ color: "var(--text-2)" }} /> : r.ok === false
+                  ? <XCircle size={17} style={{ color: "var(--bad)" }} /> : <MinusCircle size={17} className="muted" />}
+                <div className="grow">
+                  <div className="t" style={{ fontWeight: 550 }}>{r.name}</div>
+                  <div className="d">{r.detail}</div>
+                  {r.fix && <div className="d" style={{ color: "var(--text)" }}>→ {r.fix}</div>}
+                </div>
+              </div>
+            ))}
+          </div>}
+        </Modal>
+      )}
+    </>
   );
 }

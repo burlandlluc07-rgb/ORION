@@ -236,6 +236,7 @@ class Agent:
         t0 = time.perf_counter()
         seen_calls: dict[str, int] = {}
         e.bus.emit("message.start", conv_id=cid, id=msg_id, task_id=task.id)
+        speech = e.voice.stream_speech() if source == "voice" and e.voice is not None else None
         try:
             for round_ in range(MAX_ROUNDS):
                 parts: list[types.Part] = []
@@ -253,6 +254,8 @@ class Agent:
                         elif val.text and not val.thought:
                             full_text += val.text
                             e.bus.emit("message.delta", conv_id=cid, id=msg_id, delta=val.text)
+                            if speech:
+                                speech.push(val.text)
                 if task.cancel.is_set():
                     full_text += ("\n\n" if full_text else "") + "*(stopped)*"
                     break
@@ -262,21 +265,7 @@ class Agent:
                         continue
                     break
                 contents.append(types.Content(role="model", parts=parts))
-                responses: list[types.Part] = []
-                for call in calls:
-                    args = dict(call.args or {})
-                    key = f"{call.name}:{json.dumps(args, sort_keys=True, default=str)}"
-                    seen_calls[key] = seen_calls.get(key, 0) + 1
-                    if seen_calls[key] > 2:
-                        ok, result = False, "You already ran this exact call twice. Stop repeating it and answer."
-                    else:
-                        ok, result = await self._dispatch(call.name, args, task, cid)
-                    payload = {"result": result} if ok else {"error": result}
-                    responses.append(types.Part.from_function_response(name=call.name, response=payload))
-                    if call.id:
-                        responses[-1].function_response.id = call.id
-                    if task.cancel.is_set():
-                        break
+                responses = await self._run_calls(calls, task, cid, seen_calls)
                 if full_text and not full_text.endswith("\n"):
                     full_text += "\n\n"
                     e.bus.emit("message.delta", conv_id=cid, id=msg_id, delta="\n\n")
@@ -301,8 +290,57 @@ class Agent:
         e.bus.emit("message.end", conv_id=cid, id=msg_id, message=msg)
         if task.id in e.tracker.active:
             e.tracker.finish(task, "stopped" if task.cancel.is_set() else "done")
-        await e.after_reply(reply, source)
+        if speech is not None:
+            speech.finish()
+            await e.voice.finish_stream(speech, reply)
+        else:
+            await e.after_reply(reply, source)
         return {"ok": True, "conv_id": cid, "reply": reply, "model": model_used}
+
+    def _parallel_safe(self, name: str) -> bool:
+        if name in ("update_plan", "use_skill"):
+            return False  # cheap, and their order matters for the UI
+        tool = self.e.registry.get(name)
+        return tool is not None and not self.needs_approval(tool.risk, name) and tool.risk == "safe"
+
+    async def _run_calls(self, calls: list[types.FunctionCall], task: Task, cid: str,
+                         seen_calls: dict[str, int]) -> list[types.Part]:
+        """Execute one round of function calls.
+
+        Consecutive read-only calls (search, weather, read_file…) run concurrently —
+        a briefing that needs 6 lookups takes as long as the slowest one. Anything
+        that changes the PC or needs approval runs strictly in order.
+        """
+        results: list[tuple[bool, Any] | None] = [None] * len(calls)
+
+        async def one(i: int, call: types.FunctionCall) -> None:
+            args = dict(call.args or {})
+            key = f"{call.name}:{json.dumps(args, sort_keys=True, default=str)}"
+            seen_calls[key] = seen_calls.get(key, 0) + 1
+            if seen_calls[key] > 2:
+                results[i] = (False, "You already ran this exact call twice. Stop repeating it and answer.")
+            else:
+                results[i] = await self._dispatch(call.name, args, task, cid)
+
+        i = 0
+        while i < len(calls) and not task.cancel.is_set():
+            j = i
+            while j < len(calls) and self._parallel_safe(calls[j].name):
+                j += 1
+            if j - i > 1:
+                await asyncio.gather(*(one(k, calls[k]) for k in range(i, j)))
+                i = j
+            else:
+                await one(i, calls[i])
+                i += 1
+        parts: list[types.Part] = []
+        for call, res in zip(calls, results, strict=True):
+            ok, result = res if res is not None else (False, "Stopped by user before this ran.")
+            part = types.Part.from_function_response(name=call.name, response={"result": result} if ok else {"error": result})
+            if call.id:
+                part.function_response.id = call.id
+            parts.append(part)
+        return parts
 
     async def _dispatch(self, name: str, args: dict, task: Task, cid: str) -> tuple[bool, Any]:
         e = self.e

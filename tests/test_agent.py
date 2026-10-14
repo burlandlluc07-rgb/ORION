@@ -192,3 +192,28 @@ async def test_reminder_tool_and_scheduler(engine):
     assert "Reminder set" in out
     items = engine.store.list_routines()
     assert items and items[0]["prompt"] == "!notify:stretch"
+
+
+async def test_safe_calls_run_in_parallel_and_keep_order(engine):
+    import time
+
+    async def slow_read(x: str) -> str:
+        """Slow read-only lookup.
+
+        Args:
+            x: value
+        """
+        await asyncio.sleep(0.3)
+        return f"read {x}"
+
+    from orion.tools.registry import schema_for
+
+    schema, _, desc = schema_for(slow_read)
+    engine.registry.add(Tool(name="slow_read", description=desc, parameters=schema, fn=slow_read, risk="safe"))
+    engine.brain = FakeBrain([[call("slow_read", x="a"), call("slow_read", x="b"), call("slow_read", x="c")],
+                              [types.Part(text="done")]])
+    t0 = time.perf_counter()
+    await engine.agent.handle("look up three things in parallel please")
+    assert time.perf_counter() - t0 < 0.8  # 3 × 0.3 s would be ~0.9 s sequentially
+    responses = [p.function_response.response["result"] for p in engine.brain.calls[1]["contents"][-1].parts]
+    assert responses == ["read a", "read b", "read c"]

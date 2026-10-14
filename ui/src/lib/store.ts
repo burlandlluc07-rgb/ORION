@@ -210,6 +210,9 @@ export const useStore = create<Store>((set, get) => ({
         set({ models: ev.models ?? [] });
         if (s.engine) set({ engine: { ...get().engine!, live_model: ev.live_model } });
         break;
+      case "update.available":
+        if (s.engine) set({ engine: { ...s.engine, update: ev.update } });
+        break;
       case "setup.required":
         set({ onboarding: true });
         break;
