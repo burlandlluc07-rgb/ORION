@@ -36,6 +36,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PYTHONIOENCODING: utf-8
         run: |
+          if ($env:GEMINI_API_KEY) { Write-Host "Gemini key received: yes ($($env:GEMINI_API_KEY.Length) chars)" } else { Write-Host "Gemini key received: NO - add a repository secret named GEMINI_API_KEY under Settings > Secrets and variables > Actions" }
           $env:ORION_HOME = "$env:RUNNER_TEMP\orion-e2e"
           python scripts/e2e_windows.py
       - uses: actions/upload-artifact@v5
