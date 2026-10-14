@@ -384,7 +384,7 @@ function SystemCheck() {
 }
 
 
-const WAKE_SUGGESTIONS = ["Hey ORION", "ORION", "Hey Jarvis", "Jarvis", "Friday", "Computer", "Hey Assistant"];
+const WAKE_SUGGESTIONS = ["Hey ORION", "Hey Jarvis", "Hey Friday", "OK ORION", "Hey Computer", "Hey Assistant"];
 
 function WakeWordSettings() {
   const st = useStore((s) => s.engine?.settings)!;
@@ -416,6 +416,9 @@ function WakeWordSettings() {
               onKeyDown={(e) => e.key === "Enter" && add(draft)} />
             <button className="btn" onClick={() => add(draft)} disabled={!draft.trim()}>Add</button>
           </div>
+          {vs.wake_phrases.some((p) => p.trim().split(/\s+/).length < 2) && (
+            <div className="d" style={{ fontSize: 12.5 }}>Single words can wake ORION by mistake when you say something
+              similar (“fried day” → “Friday”). Two-word phrases like “Hey Friday” are much more reliable.</div>)}
           <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
             {WAKE_SUGGESTIONS.filter((s) => !vs.wake_phrases.some((p) => p.toLowerCase() === s.toLowerCase())).map((s) => (
               <button key={s} className="btn ghost" style={{ fontSize: 12, padding: "2px 8px" }} onClick={() => add(s)}>+ {s}</button>
