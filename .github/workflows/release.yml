@@ -3,6 +3,11 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      draft:
+        description: "Create a private draft release (only people with write access can see it)"
+        type: boolean
+        default: true
 
 jobs:
   build:
@@ -59,7 +64,25 @@ jobs:
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$ver" packaging\installer.iss
       - uses: actions/upload-artifact@v5
         with: { name: ORION-Windows, path: "dist/ORION-Setup-*.exe" }
-      - name: Publish release
+      - name: Release notes and version
+        id: meta
+        shell: pwsh
+        run: |
+          $ver = (python scripts/release_notes.py)
+          "version=$ver" >> $env:GITHUB_OUTPUT
+      - name: Publish release (tag push)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
-        with: { files: "dist/ORION-Setup-*.exe" }
+        with:
+          files: "dist/ORION-Setup-*.exe"
+          body_path: dist/RELEASE_NOTES.md
+      - name: Create release (manual run; a private draft by default)
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.meta.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: ORION ${{ steps.meta.outputs.version }}
+          draft: ${{ inputs.draft }}
+          files: "dist/ORION-Setup-*.exe"
+          body_path: dist/RELEASE_NOTES.md
