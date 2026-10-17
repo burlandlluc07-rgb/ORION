@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { Composer, type ComposerHandle } from "../components/Composer";
 import { Markdown } from "../components/Markdown";
-import { Orb } from "../components/Orb";
+import { Logo } from "../components/Logo";
 import { TaskCard } from "../components/TaskCard";
 import { api } from "../lib/api";
 import { useStore } from "../lib/store";
@@ -56,7 +56,8 @@ export function MessageView({ m }: { m: Message }) {
     <div className="msg assistant" aria-label={`${name} said`}>
       <div className="body">
         {task && <TaskCard task={task} />}
-        {m.content ? <Markdown text={m.content} /> : m.streaming && !task?.steps.length ? <div className="typing"><i /><i /><i /></div> : null}
+        {m.content && <Markdown text={m.content} />}
+        {m.streaming && <div className="msg-thinking" aria-label="ORION is working"><Logo size={26} state="thinking" label="ORION is working" /></div>}
         {!m.streaming && (
           <div className="msg-meta">
             <CopyButton text={m.content} />
@@ -135,7 +136,8 @@ export function ChatView() {
         {empty ? (
           <div className="home">
             <div className="home-hello">
-              <Orb size={64} state={s.voice.state} interactive onClick={() => api.post("/api/voice/toggle").catch(() => {})} />
+              <Logo size={72} state={busy ? "thinking" : s.voice.state} interactive label="Talk to ORION"
+                onClick={() => api.post("/api/voice/toggle").catch(() => {})} />
               <h2>{greeting(name)}</h2>
             </div>
             <Composer ref={composer} busy={busy} />

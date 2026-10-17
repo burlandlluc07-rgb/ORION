@@ -51,7 +51,7 @@ async function seed(page, extra = {}) {
 }
 
 async function shot(page, name) {
-  await page.waitForTimeout(450);
+  await page.waitForTimeout(1300);  // lets the logo finish drawing in
   await page.screenshot({ path: path.join(out, `${name}.png`) });
   console.log("wrote", name);
 }
