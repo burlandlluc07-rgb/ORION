@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+- **A better phone app.** The phone app is redesigned for touch: bigger buttons, a bottom tab bar in thumb reach,
+  room for the notch and home bar, chat bubbles, quick-start suggestions, a conversation list, and in-app
+  confirm sheets instead of browser pop-ups. Approval buttons no longer run off the edge of the screen.
+- **Full-screen PC screen on your phone.** In Screen, tap the full-screen button to fill the phone with your PC's
+  screen. Pinch or double-tap to zoom and drag to move around. In Click mode, tap to click, hold for a right-click
+  and double-tap to double-click. The keyboard tray and live/pause stay one tap away. On Android it uses real full
+  screen and turns sideways; on iPhone (which has no full screen for web pages) it fills the page instead, and you
+  rotate the phone yourself. The phone app can now be used in landscape.
+
 ## 2.7.1
 - **Import your WhatsApp contacts.** In Accounts → WhatsApp, import your phone's contacts export (.vcf from
   Android, iPhone/iCloud or Google, or a Google Contacts CSV) instead of typing numbers. Ask by first name:

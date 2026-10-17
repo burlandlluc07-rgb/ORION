@@ -48,6 +48,241 @@
 .ctl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
 .ctl-grid .btn { justify-content: flex-start; padding: 10px 12px; }
 .slider { flex: 1; accent-color: var(--text); height: 28px; }
-.screen-bar { display: flex; align-items: center; gap: 8px; }
-.screen-img { width: 100%; border: 1px solid var(--line-2); border-radius: var(--radius-sm); background: #000; display: block; }
-.screen-img.clickable { outline: 2px solid var(--text); cursor: crosshair; }
+
+
+/* ── Touch-first phone layout ─────────────────────────────────────────────
+   Scoped to .phone / html.is-phone so the desktop UI is untouched. Uses the shared tokens in tokens.css. */
+
+html.is-phone, html.is-phone body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+html.is-phone body { -webkit-text-size-adjust: 100%; }
+
+.phone {
+  --tap: 48px;
+  --nav-h: 60px;
+  --pad: 16px;
+  --sheet-radius: var(--radius-lg);
+  height: 100dvh; display: flex; flex-direction: column; background: var(--bg); overflow: hidden;
+  padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right);
+}
+.phone button { touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+.phone .ellipsis { min-width: 0; }
+
+/* Header */
+.phone .phone-head { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px var(--pad);
+  padding-top: max(8px, env(safe-area-inset-top)); border-bottom: 1px solid var(--line); background: var(--bg); min-height: 60px; }
+.phone .phone-head-text { min-width: 0; }
+.phone .phone-head-title { font-family: var(--font-display); font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
+.phone .phone-head-sub { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-3); margin-top: 1px; }
+.phone .phone-head-sub .dot { width: 7px; height: 7px; }
+.phone .head-btn { width: var(--tap); height: var(--tap); display: grid; place-items: center; border: 0; background: none; color: var(--text-2); border-radius: 50%; }
+.phone .head-btn:active { background: var(--panel-2); color: var(--text); }
+
+.phone .phone-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+/* Bottom navigation, in thumb reach */
+.phone .phone-tabs { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); background: var(--bg-2);
+  padding-bottom: env(safe-area-inset-bottom); }
+.phone .phone-tabs button { border: 0; background: none; color: var(--text-3); height: var(--nav-h); display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 3px; font-size: 11px; font-weight: 550; letter-spacing: 0.01em; }
+.phone .phone-tabs .tab-ico { position: relative; display: grid; place-items: center; width: 56px; height: 30px; border-radius: 15px; transition: background 0.15s; }
+.phone .phone-tabs button.on { color: var(--text); }
+.phone .phone-tabs button.on .tab-ico { background: var(--panel-3, var(--panel-2)); }
+.phone .phone-tabs button:active .tab-ico { background: var(--panel-2); }
+.phone .tab-badge { position: absolute; top: -2px; right: 8px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--bad);
+  color: #fff; font: 600 11px/18px var(--font); font-style: normal; text-align: center; }
+.phone .tab-dot { position: absolute; top: 3px; right: 14px; width: 7px; height: 7px; border-radius: 50%; background: var(--text); animation: pulse 1.2s infinite; }
+
+/* Pages */
+.phone .phone-page { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: var(--pad); display: flex; flex-direction: column; gap: 14px; }
+.phone .phone-page > * { flex: none; }
+.phone .ctl-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
+.phone .ctl-title { font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 12px;
+  display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.phone .btn { min-height: 40px; border-radius: 10px; font-size: 14px; }
+.phone .btn.lg { min-height: var(--tap); padding: 0 18px; font-size: 15px; }
+.phone .btn.sm { min-height: 34px; }
+.phone .btn.danger-solid { background: var(--bad); border-color: var(--bad); color: #fff; }
+.phone .input { min-height: var(--tap); font-size: 16px; border-radius: 10px; padding: 0 14px; }  /* 16px stops iOS zooming on focus */
+.phone .list { gap: 10px; }
+.phone .item { border-radius: 12px; }
+.phone .item .t { font-size: 14.5px; }
+.phone .task-item { flex-direction: column; align-items: stretch; gap: 6px; }
+.phone .alert-item { padding: 12px 14px; }
+.phone .empty { padding: 32px 16px; border-radius: 12px; }
+
+/* Chat */
+.phone .phone-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.phone .phone-scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.phone .phone-chat-inner { padding: 18px var(--pad) 24px; gap: 16px; }
+.phone .msg { gap: 0; flex-direction: column; }
+.phone .msg .who { width: auto; padding: 0 0 4px; font-size: 10.5px; }
+.phone .msg .body { font-size: 15.5px; line-height: 1.55; }
+.phone .msg.user { align-items: flex-end; padding-top: 0; border-top: 0; }
+.phone .msg.user .who { display: none; }
+.phone .msg.user .body { flex: none; max-width: 85%; background: var(--panel-2); border: 1px solid var(--line-2); padding: 10px 14px;
+  border-radius: 18px 18px 4px 18px; }
+.phone .msg-meta { opacity: 1; }
+.phone .msg-meta .icon-btn.sm { width: 32px; height: 32px; }
+.phone .phone-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 16px 4px 4px; text-align: center; color: var(--text-2); }
+.phone .phone-empty h2 { margin: 6px 0 0; font-family: var(--font-serif); font-size: var(--fs-xl); color: var(--text); font-weight: 650; letter-spacing: -0.01em; }
+.phone .phone-empty p { margin: 0; max-width: 300px; line-height: 1.5; font-size: 14.5px; }
+.phone .suggest { width: 100%; display: grid; gap: 8px; margin-top: 12px; }
+.phone .suggest-chip { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 16px; border-radius: 12px;
+  border: 1px solid var(--line); background: var(--panel); color: var(--text); font-size: 14.5px; text-align: left; }
+.phone .suggest-chip svg { color: var(--text-3); flex: none; }
+.phone .suggest-chip:active { background: var(--panel-2); border-color: var(--line-2); }
+.phone .phone-heard { display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px var(--pad); font-size: 13.5px; color: var(--text-2); border-top: 1px solid var(--line); }
+.phone .phone-heard.err { color: var(--bad); }
+.phone .phone-heard.rec { color: var(--text); padding: 12px var(--pad); }
+.phone .rec-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); animation: pulse 1s infinite; }
+.phone .phone-compose { display: flex; align-items: flex-end; gap: 8px; padding: 10px 12px 12px; border-top: 1px solid var(--line); background: var(--bg); }
+.phone .phone-compose .composer-wrap { position: static; padding: 0; border: 0; background: none; }
+.phone .phone-compose .composer { border-radius: 24px; background: var(--panel); }
+.phone .phone-compose .composer textarea { font-size: 16px; min-height: 46px; padding: 12px 16px 2px; max-height: 140px; }
+.phone .phone-compose .composer-bar { padding: 2px 6px 6px 8px; }
+.phone .phone-compose .composer-bar .icon-btn { width: 38px; height: 38px; border-radius: 50%; }
+.phone .phone-compose .send-btn { width: 38px; height: 38px; border-radius: 50%; }
+.phone .talk-btn { width: 58px; height: 58px; flex: none; border-radius: 50%; border: 1px solid var(--line-2); background: var(--panel-2);
+  color: var(--text); display: grid; place-items: center; position: relative; touch-action: none; -webkit-touch-callout: none; }
+.phone .talk-btn:active { background: var(--panel-3, var(--panel-2)); }
+.phone .talk-btn.rec { background: var(--text); color: var(--bg); border-color: var(--text); }
+
+/* Approval cards on a narrow screen: wrap the buttons, drop the desktop shortcut hint */
+.phone .approval { border-radius: 12px; }
+.phone .approval .row { flex-wrap: wrap; }
+.phone .approval .actions { flex-wrap: wrap; }
+.phone .approval .actions .btn { min-height: var(--tap); flex: 1 1 auto; }
+.phone .approval .actions .grow { display: none; }
+.phone .approval kbd { display: none; }
+
+/* Control */
+.phone .media-row { gap: 22px; }
+.phone .ctl-btn { width: 56px; height: 56px; }
+.phone .ctl-btn.big { width: 72px; height: 72px; gap: 0; display: flex; align-items: center; justify-content: center; }
+.phone .ctl-btn.sm { width: 44px; height: 44px; flex: none; }
+.phone .ctl-btn:active { transform: scale(0.96); }
+.phone .vol-row { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+.phone .vol-num { display: inline-flex; align-items: center; gap: 5px; width: 52px; justify-content: flex-end; color: var(--text-2); font-variant-numeric: tabular-nums; font-size: 14px; }
+.phone .slider { height: 44px; }
+.phone .ctl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.phone .ptile { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line-2);
+  background: var(--panel-2); color: var(--text); font-size: 14.5px; font-weight: 550; text-align: left; min-width: 0; }
+.phone .ptile:active { transform: scale(0.98); border-color: var(--text-3); }
+.phone .ptile svg { flex: none; color: var(--text-2); }
+.phone .ptile.danger { color: var(--bad); }
+.phone .ptile.danger svg { color: var(--bad); }
+.phone .ptile.lit { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.phone .ptile-state { font-size: 12px; opacity: 0.7; }
+.phone .ptile-letter { width: 26px; height: 26px; flex: none; display: grid; place-items: center; border-radius: 7px; background: var(--bg);
+  border: 1px solid var(--line-2); font-size: 12px; font-weight: 700; color: var(--text-2); }
+
+/* Activity */
+.phone .notif-row { display: flex; align-items: center; gap: 12px; }
+.phone .notif-ico { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--panel-2); color: var(--text-2); }
+.phone .notif-row .t { font-weight: 600; font-size: 14.5px; margin-bottom: 2px; }
+
+/* Shared form row (keyboard, new mission) */
+.phone .kb-row { display: flex; gap: 8px; }
+.phone .kb-row .input { flex: 1; min-width: 0; }
+.phone .kb-keys { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.phone .key { min-height: 44px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--text);
+  font: 500 13.5px var(--mono); }
+.phone .key:active { background: var(--text); color: var(--bg); }
+
+/* Screen */
+.phone .screen-page { gap: 12px; }
+.phone .scr { display: flex; flex-direction: column; gap: 10px; }
+.phone .scr-bar { display: flex; align-items: center; gap: 8px; }
+.phone .chip { display: inline-flex; align-items: center; gap: 7px; height: 40px; padding: 0 14px; border-radius: 20px; border: 1px solid var(--line-2);
+  background: var(--panel-2); color: var(--text); font-size: 14px; font-weight: 550; }
+.phone .chip.icon { width: 40px; padding: 0; justify-content: center; }
+.phone .chip.solid { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.phone .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bad); animation: pulse 1.6s infinite; }
+.phone .seg { display: inline-flex; height: 40px; padding: 3px; border-radius: 20px; border: 1px solid var(--line-2); background: var(--panel-2); }
+.phone .seg button { display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; color: var(--text-2); padding: 0 11px; border-radius: 17px; font-size: 13px; font-weight: 550; }
+.phone .seg button.on { background: var(--text); color: var(--bg); }
+.phone .scr-stage { position: relative; width: 100%; overflow: hidden; background: #000; border: 1px solid var(--line-2); border-radius: 10px;
+  touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; max-height: calc(100dvh - 260px); }
+.phone .scr-stage.clicking { border-color: var(--text); box-shadow: 0 0 0 1px var(--text); }
+.phone .scr-stage img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; transform-origin: 0 0; pointer-events: none; will-change: transform; }
+.phone .scr-msg { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  color: #a6a6a6; font-size: 13.5px; text-align: center; padding: 16px; }
+.phone .scr-expand, .phone .scr-zoom { position: absolute; display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.62); color: #fff; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.phone .scr-expand { right: 8px; bottom: 8px; width: 40px; height: 40px; justify-content: center; border-radius: 50%; }
+.phone .scr-zoom { left: 8px; top: 8px; height: 30px; padding: 0 10px; border-radius: 15px; font-size: 12px; }
+.phone .scr-hint { margin: -2px 2px 0; font-size: 12.5px; color: var(--text-3); line-height: 1.45; text-align: center; }
+.phone .tap-mark { position: absolute; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%; border: 2px solid #fff;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.5); pointer-events: none; animation: tap 0.5s ease-out forwards; }
+.phone .tap-mark.right { border-style: dashed; }
+@keyframes tap { from { transform: scale(0.4); opacity: 1; } to { transform: scale(1.3); opacity: 0; } }
+
+/* Full screen: native (Fullscreen API) and the in-page fallback share the same look */
+.phone .scr-full { position: fixed; inset: 0; z-index: 90; background: #000; gap: 0; display: flex; flex-direction: column; }
+.phone .scr-full:fullscreen { width: 100vw; height: 100vh; }
+/* The screen takes whatever height the keyboard tray leaves, so nothing is hidden behind it. */
+.phone .scr-full .scr-stage { flex: 1; min-height: 0; max-height: none; border: 0; border-radius: 0; box-shadow: none; }
+.phone .fs-rotate { position: absolute; left: 50%; bottom: max(20px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 2;
+  display: none; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 20px; background: rgba(20, 20, 20, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.2); color: #fff; font-size: 13px; white-space: nowrap; pointer-events: none; }
+@media (orientation: portrait) { .phone .scr-full:not(.kb-open):not(.scr-bare) .fs-rotate { display: inline-flex; } }
+.phone .fs-top { position: absolute; left: 0; right: 0; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px;
+  padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) 10px max(10px, env(safe-area-inset-left));
+  background: linear-gradient(rgba(0, 0, 0, 0.7), transparent); transition: opacity 0.2s, transform 0.2s; pointer-events: none; }
+.phone .fs-top > * { pointer-events: auto; }
+.phone .scr-bare .fs-top { opacity: 0; transform: translateY(-8px); pointer-events: none; }
+.phone .scr-bare .fs-top > * { pointer-events: none; }
+.phone .fs-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 44px; height: 44px; padding: 0 12px;
+  border-radius: 22px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(20, 20, 20, 0.72); color: #fff; font-size: 14px; font-weight: 550;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.phone .fs-btn.on { background: #fff; color: #000; border-color: #fff; }
+.phone .fs-btn .live-dot { background: #e5484d; }
+.phone .fs-kb { flex: none; z-index: 2; padding: 12px max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  background: rgba(10, 10, 10, 0.9); border-top: 1px solid rgba(255, 255, 255, 0.12); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.phone .fs-kb .kb-keys { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: max-content; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+.phone .fs-kb .key { padding: 0 14px; }
+.phone .fs-kb .input { background: #141414; border-color: #2c2c2c; color: #f2f2f2; }
+.phone .fs-kb .key { background: #141414; border-color: #2c2c2c; color: #f2f2f2; }
+
+/* Bottom sheets */
+.phone .sheet-back { position: fixed; inset: 0; z-index: 95; background: var(--scrim); display: flex; align-items: flex-end; justify-content: center; animation: fade 0.15s; }
+.phone .sheet { width: 100%; max-width: 560px; max-height: 85dvh; overflow-y: auto; background: var(--panel); border: 1px solid var(--line-2); border-bottom: 0;
+  border-radius: var(--sheet-radius) var(--sheet-radius) 0 0; padding: 8px var(--pad) max(var(--pad), env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 12px; animation: sheet-up 0.2s ease-out; }
+@keyframes sheet-up { from { transform: translateY(24px); opacity: 0.6; } }
+.phone .sheet-grab { width: 38px; height: 4px; border-radius: 2px; background: var(--line-2); align-self: center; margin-bottom: 4px; }
+.phone .sheet-title { font-family: var(--font-serif); font-size: 20px; font-weight: 650; }
+.phone .sheet-text { margin: -4px 0 0; color: var(--text-2); line-height: 1.5; font-size: 14.5px; }
+.phone .sheet-actions { display: flex; flex-direction: column; gap: 8px; }
+.phone .sheet-actions .btn { width: 100%; }
+.phone .sheet-list { display: flex; flex-direction: column; }
+.phone .sheet-row { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 12px; border: 0; border-radius: 10px; background: none;
+  color: var(--text); font-size: 15px; text-align: left; }
+.phone .sheet-row .muted { font-size: 12.5px; flex: none; }
+.phone .sheet-row.on { background: var(--panel-2); }
+.phone .sheet-row:active { background: var(--panel-2); }
+.phone .sheet-pre { margin: 0; white-space: pre-wrap; font: 13px/1.55 var(--mono); color: var(--text-2); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 10px; padding: 12px; max-height: 50dvh; overflow: auto; }
+
+/* Toasts on a phone: full width at the top, clear of the notch and the bottom navigation */
+html.is-phone .toasts { left: 12px; right: 12px; top: max(12px, env(safe-area-inset-top)); bottom: auto; z-index: 100; }
+html.is-phone .toast { width: 100%; border-radius: 12px; }
+
+/* Landscape phones: slimmer chrome so the content gets the height */
+@media (orientation: landscape) and (max-height: 520px) {
+  .phone { --nav-h: 48px; }
+  .phone .phone-head { min-height: 48px; padding-top: max(4px, env(safe-area-inset-top)); padding-bottom: 4px; }
+  .phone .phone-head > canvas, .phone .phone-head-sub { display: none; }
+  .phone .phone-tabs button { flex-direction: row; gap: 8px; font-size: 12.5px; }
+  .phone .phone-tabs .tab-ico { width: 40px; height: 28px; }
+  .phone .scr:not(.scr-full) .scr-stage { width: auto; max-width: 100%; height: calc(100dvh - 170px); max-height: none; margin: 0 auto; }
+  .phone .screen-page { align-items: stretch; }
+  .phone .phone-empty > canvas { display: none; }
+  .phone .suggest { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Larger phones and tablets: give cards more room */
+@media (min-width: 600px) {
+  .phone .phone-page, .phone .phone-chat-inner { max-width: 720px; width: 100%; margin: 0 auto; }
+  .phone .ctl-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
