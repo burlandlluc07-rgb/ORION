@@ -1,0 +1,51 @@
+/* ORION design tokens, shared by the desktop app (styles.css) and the phone app (phone.css). */
+/* Change colours, radii, type and motion here only. */
+:root {
+  --bg: #000000;
+  --bg-2: #070707;
+  --panel: #0d0d0d;
+  --panel-2: #141414;
+  --panel-3: #1c1c1c;
+  --line: #1f1f1f;
+  --line-2: #2c2c2c;
+  --text: #f2f2f2;
+  --text-2: #a6a6a6;
+  --text-3: #6b6b6b;
+  --accent: #ffffff;
+  --accent-2: #d9d9d9;
+  --accent-ink: #000000;
+  --accent-soft: rgba(255, 255, 255, 0.06);
+  --accent-glow: rgba(255, 255, 255, 0.16);
+  --ok: #e6e6e6;
+  --warn: #b3b3b3;
+  --bad: #e5484d;
+  --violet: #8c8c8c;
+  --radius: 6px;
+  --radius-sm: 4px;
+  --shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  --font: "Segoe UI Variable Text", "Segoe UI", Inter, system-ui, -apple-system, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", Inter, system-ui, sans-serif;
+  --mono: "Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace;
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-2: #f7f7f7;
+  --panel: #ffffff;
+  --panel-2: #f4f4f4;
+  --panel-3: #ebebeb;
+  --line: #e6e6e6;
+  --line-2: #d4d4d4;
+  --text: #0a0a0a;
+  --text-2: #525252;
+  --text-3: #8a8a8a;
+  --accent: #0a0a0a;
+  --accent-2: #333333;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(0, 0, 0, 0.05);
+  --accent-glow: rgba(0, 0, 0, 0.14);
+  --ok: #262626;
+  --warn: #6b6b6b;
+  --shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+  color-scheme: light;
+}
