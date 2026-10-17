@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.7.0
 - **Sort email by importance.** Ask "sort my unread emails by importance" or "what's important in my inbox" and
   ORION ranks them high / medium / low with a short reason for each: people you've written to, deadlines and
   urgent wording (English, Spanish and Catalan), mail sent straight to you vs. copied, newsletters and automated
