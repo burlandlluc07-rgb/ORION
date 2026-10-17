@@ -204,6 +204,48 @@ async def cancel_mission(id: str, ctx: ToolContext = None) -> str:  # type: igno
     return "Mission stopped."
 
 
+def _background(ctx: ToolContext):
+    svc = _engine(ctx).background
+    if not svc.running:
+        raise ToolError("The background agent is off. It can be turned on in Settings.")
+    return svc
+
+
+@tool(category="missions", summary=lambda a: f"Background task: {str(a.get('task'))[:60]}")
+def queue_background_task(task: str, ctx: ToolContext = None) -> str:  # type: ignore[assignment]
+    """Queue a chore for the BACKGROUND AGENT, a separate worker that never touches the screen: it only reads and
+    writes files in its own allowed folders, runs shell commands with no window and searches the web. Its tasks
+    survive restarts and wait for the user's OK before overwriting or deleting files or running unknown commands.
+    Use only when the user asks for the background agent or the task queue; for research and multi-step jobs that
+    need ORION's other tools, use start_mission instead.
+
+    Args:
+        task: A complete, self-contained description of the chore and what to deliver.
+    """
+    t = _background(ctx).submit(task, source="orion")
+    return f"Queued background task {t['id']}. You'll get a notification when it finishes or needs your OK."
+
+
+@tool(category="missions")
+def list_background_tasks(ctx: ToolContext = None) -> list[dict]:  # type: ignore[assignment]
+    """List recent background agent tasks with their status and result."""
+    return [{"id": t["id"], "task": t["prompt"][:120], "status": t["status"],
+             "result": (t.get("result") or t.get("error") or "")[:300]} for t in _background(ctx).list(10)]
+
+
+@tool(category="missions", summary=lambda a: f"Cancel background task {a.get('id')}")
+def cancel_background_task(id: str, ctx: ToolContext = None) -> str:  # type: ignore[assignment]
+    """Cancel a queued, running or waiting background agent task.
+
+    Args:
+        id: Task id from list_background_tasks.
+    """
+    t = _background(ctx).cancel(id)
+    if t is None:
+        raise ToolError("No background task with that id.")
+    return f"Background task {id} is {t['status']}."
+
+
 @tool(category="productivity", summary=lambda a: f"To-do: {a.get('action')} {a.get('item', '')}".strip())
 def todo(action: Literal["add", "list", "done", "undo", "remove", "clear_done"] = "list", item: str = "",
          list_name: str = "to-do", due: str = "", ctx: ToolContext = None) -> list[dict] | str:  # type: ignore[assignment]

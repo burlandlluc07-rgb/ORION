@@ -47,7 +47,7 @@ def make_vm(gemini=None, speech=None):
                           brain=SimpleNamespace(transcribe=transcribe), vault=SimpleNamespace(root=None))
     vm = object.__new__(vm_mod.VoiceManager)
     vm.e, vm.speech, vm.conv_id, vm.catalog = eng, speech, "c1", {"pause the music": "pause"}
-    vm._hint_cache = (0.0, [])
+    vm._hint_cache = (float("-inf"), [])
     return vm, bus
 
 

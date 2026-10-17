@@ -132,9 +132,15 @@ class ApprovalBroker:
                       desktop: bool = False) -> bool:
         """Ask the user. ``desktop`` marks a foreground step (mouse, keys, focus or a visible window): it is
         approved for this one action only, so "allow for this session" never covers it."""
+        return await self.ask(tool, label, risk, args, task, desktop) in ("approve", "always")
+
+    async def ask(self, tool: str, label: str, risk: str, args: dict[str, Any], task: Task | None,
+                  desktop: bool = False, approval_id: str | None = None) -> str:
+        """Like :meth:`request`, but returns the decision: approve, always, deny or expired.
+        ``approval_id`` lets the caller pick the prompt's id, so it can answer the prompt itself later."""
         if tool in self.session_allow and risk != "danger" and not desktop:
-            return True
-        aid = new_id()
+            return "always"
+        aid = approval_id or new_id()
         fut: asyncio.Future = asyncio.get_running_loop().create_future()
         info = {"id": aid, "tool": tool, "label": label, "risk": risk, "args": _preview(args),
                 "task_id": task.id if task else None, "expires": time.time() + APPROVAL_TIMEOUT,
@@ -165,7 +171,7 @@ class ApprovalBroker:
             self.bus.emit("approval.resolved", id=aid)
         if decision == "always" and not desktop:
             self.session_allow.add(tool)
-        return decision in ("approve", "always")
+        return decision
 
     def respond(self, aid: str, decision: str) -> bool:
         item = self.pending.get(aid)

@@ -201,6 +201,59 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
     async def cancel_mission(mid: str):
         return {"ok": engine.missions.cancel(mid)}
 
+    # ── Background agent ───────────────────────────────────────────────────
+    def _bg():
+        if not engine.background.running:
+            raise HTTPException(409, "The background agent is off.")
+        return engine.background
+
+    @app.get("/api/background", dependencies=[A])
+    async def background():
+        svc = engine.background
+        if not svc.running:
+            return {"status": svc.status(), "tasks": [], "approvals": []}
+        return {"status": svc.status(), "tasks": svc.list(50), "approvals": svc.pending_approvals()}
+
+    @app.post("/api/background/tasks", dependencies=[A])
+    async def background_submit(body: dict = Body(...)):
+        prompt = str(body.get("prompt", "")).strip()
+        if not prompt:
+            raise HTTPException(400, "Describe the task.")
+        timeout = body.get("timeout")
+        try:
+            return _bg().submit(prompt, source=str(body.get("source", "api")), kind=str(body.get("kind", "agent")),
+                                timeout=float(timeout) if timeout else None)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    @app.get("/api/background/tasks/{tid}", dependencies=[A])
+    async def background_task(tid: str):
+        task = _bg().get(tid)
+        if task is None:
+            raise HTTPException(404, "No such task")
+        return task
+
+    @app.post("/api/background/tasks/{tid}/cancel", dependencies=[A])
+    async def background_cancel(tid: str):
+        task = _bg().cancel(tid)
+        if task is None:
+            raise HTTPException(404, "No such task")
+        return task
+
+    @app.post("/api/background/approvals/{aid}", dependencies=[A])
+    async def background_decide(aid: str, body: dict = Body(...)):
+        decision = body.get("decision")
+        if decision not in ("approve", "deny"):
+            raise HTTPException(400, "decision must be approve or deny")
+        return {"ok": _bg().decide(aid, decision == "approve")}
+
+    @app.post("/api/background/{action}", dependencies=[A])
+    async def background_control(action: str):
+        if action not in ("pause", "resume"):
+            raise HTTPException(404, "Unknown action")
+        getattr(_bg(), action)()
+        return _bg().status()
+
     @app.get("/api/alerts", dependencies=[A])
     async def alerts():
         return list(reversed(engine.proactive.alerts))

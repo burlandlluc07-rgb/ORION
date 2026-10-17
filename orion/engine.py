@@ -65,6 +65,9 @@ class Engine:
         from .memory.vault import Vault
 
         self.vault = Vault(self)
+        from .background.service import BackgroundService
+
+        self.background = BackgroundService(self)
         self.scheduler: Scheduler | None = None
         self.voice = None
         self.notifier: Callable[[str, str], None] | None = None  # set by the desktop shell (tray toasts)
@@ -112,6 +115,8 @@ class Engine:
         self._bg.append(asyncio.create_task(self._update_loop(), name="updates"))
         self.proactive.start()
         self.missions.recover()
+        if self.config.settings.background_agent:
+            self.start_background()
         try:
             self.vault.ensure()
             self.vault.migrate()
@@ -127,6 +132,12 @@ class Engine:
                 log.warning("Phone remote couldn't start: %s", exc)
         log.info("ORION %s engine started (%d tools, %d skills)", __version__, len(self.registry.all()),
                  len(self.skills.skills))
+
+    def start_background(self) -> None:
+        try:
+            self.background.start(self._loop)
+        except Exception as exc:  # a broken task database must not stop ORION itself
+            log.warning("Background agent couldn't start: %s", exc)
 
     async def start_voice(self) -> None:
         try:
@@ -181,6 +192,7 @@ class Engine:
             await asyncio.sleep(24 * 3600)
 
     async def stop(self) -> None:
+        await asyncio.to_thread(self.background.stop)  # before deny_all, so its approvals stay pending
         self.tracker.stop_all()
         self.approvals.deny_all()
         if self.voice:
@@ -283,6 +295,10 @@ class Engine:
         self.config.update(patch)
         files_tools.set_allowed_roots(self.config.settings.allowed_roots)
         self._apply_browser_mode()
+        if self.config.settings.background_agent and not self.background.running and self._loop:
+            self.start_background()
+        elif not self.config.settings.background_agent and self.background.running and self._loop:
+            self._loop.run_in_executor(None, self.background.stop)
         if self.voice and self.config.settings.voice.model_dump() != old_voice:
             asyncio.ensure_future(self.voice.restart())
         self.bus.emit("settings.changed", settings=self.config.settings.model_dump())
@@ -303,6 +319,7 @@ class Engine:
             "quota": self.governor.snapshot(),
             "tasks": [t.to_dict() for t in self.tracker.active.values()],
             "approvals": self.approvals.list(),
+            "background": self.background.status(),
             "live_model": self.brain.live_model,
             "data_dir": str(self.config.root),
             "update": self.store.kv_get("update"),

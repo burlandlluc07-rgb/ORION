@@ -135,6 +135,17 @@ def last_step(c: httpx.Client, tool: str) -> dict:
     return {}
 
 
+def wait_background(c: httpx.Client, tid: str, timeout: float = 30) -> dict:
+    deadline = time.time() + timeout
+    task: dict = {}
+    while time.time() < deadline:
+        task = c.get(f"/api/background/tasks/{tid}").json()
+        if task.get("status") in ("completed", "failed", "cancelled"):
+            break
+        time.sleep(0.2)
+    return task
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="smoke_report.json")
@@ -190,6 +201,29 @@ def main() -> int:
         check("integrations: status is read-only and honest", r["ok"] and not r["asked"] and quiet(r) is not False
               and states.get("whatsapp") == "blocked" and set(states) == {"google", "whatsapp", "autocad"}, r)
 
+        # The background agent runs inside ORION: a queued task and an approval round trip through ORION's
+        # own approval prompt leave the desktop alone.
+        before = desktop_state()
+        bg = c.post("/api/background/tasks", json={"prompt": "smoke check", "kind": "dummy"}).json()
+        done = wait_background(c, bg["id"])
+        r = {"status": done.get("status"), "result": done.get("result"), **changes(before, desktop_state())}
+        check("background agent: task runs quietly", done.get("status") == "completed" and quiet(r) is not False, r)
+        before = desktop_state()
+        bg_appr = c.post("/api/background/tasks", json={"prompt": "smoke [approval]", "kind": "dummy"}).json()
+        prompt = None
+        deadline = time.time() + 30
+        while prompt is None and time.time() < deadline:
+            prompt = next((a for a in c.get("/api/state").json().get("approvals", [])
+                           if a.get("tool") == "background:dummy_action"), None)
+            time.sleep(0.2)
+        if prompt:
+            c.post(f"/api/approvals/{prompt['id']}", json={"decision": "approve"})
+        done = wait_background(c, bg_appr["id"])
+        r = {"asked": bool(prompt), "asked_desktop": bool(prompt and prompt.get("desktop")),
+             "result": done.get("result"), **changes(before, desktop_state())}
+        check("background agent: approval through ORION", bool(prompt) and not r["asked_desktop"]
+              and str(done.get("result", "")).startswith("Dummy action was approved") and quiet(r) is not False, r)
+
         if args.controls and IS_WIN:
             # 2. Media keys go to the shell as a message: no key press is injected.
             r = run_tool(c, "media_control", {"action": "stop"})
@@ -228,6 +262,9 @@ def main() -> int:
             proc, c = start_orion(home, env)
             rec = last_step(c, "create_document")
             check("restart: records survive", rec.get("stage") == "completed", {"stage": rec.get("stage")})
+            bg_after = c.get(f"/api/background/tasks/{bg_appr['id']}").json()
+            check("restart: background tasks survive", bg_after.get("status") == "completed",
+                  {"status": bg_after.get("status")})
     except Exception as exc:
         report["error"] = f"{type(exc).__name__}: {exc}"
     finally:

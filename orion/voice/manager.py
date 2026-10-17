@@ -93,7 +93,7 @@ class VoiceManager:
         self._speech_task: asyncio.Task | None = None
         self._classic_task: asyncio.Task | None = None
         self._next: tuple | None = None  # input that arrived mid-turn (wake word while busy)
-        self._hint_cache: tuple[float, list[str]] = (0.0, [])
+        self._hint_cache: tuple[float, list[str]] = (float("-inf"), [])  # monotonic() is < 120 s after boot
         self.available = True
         self.error: str | None = None
         self._approval_id: str | None = None
