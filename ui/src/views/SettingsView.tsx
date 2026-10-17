@@ -1,9 +1,52 @@
-import { Zap, Brain, FolderOpen, Info, KeyRound, Keyboard, Mic, Monitor, RefreshCw, ShieldCheck, Smartphone, Stethoscope, CheckCircle2, XCircle, MinusCircle, Loader2, Trash2, UserRound } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Laptop, Moon, Sun, Zap, Brain, FolderOpen, Info, KeyRound, Keyboard, Mic, Monitor, RefreshCw, ShieldCheck, Smartphone, Stethoscope, CheckCircle2, XCircle, MinusCircle, Loader2, Trash2, UserRound } from "lucide-react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { Field, Modal, Toggle } from "../components/ui";
 import { api } from "../lib/api";
 import { useStore } from "../lib/store";
 import type { Settings } from "../lib/types";
+
+const SECTIONS = [
+  { id: "personal", label: "Personal", icon: UserRound },
+  { id: "brain", label: "Brain", icon: Brain },
+  { id: "voice", label: "Voice", icon: Mic },
+  { id: "proactive", label: "Proactive & learning", icon: Zap },
+  { id: "safety", label: "Safety & permissions", icon: ShieldCheck },
+  { id: "phone", label: "Phone app", icon: Smartphone },
+  { id: "app", label: "App", icon: Monitor },
+  { id: "shortcuts", label: "Shortcuts", icon: Keyboard },
+  { id: "about", label: "About", icon: Info },
+];
+
+/** Section list on the left; highlights the section in view and scrolls to one on click. */
+function SettingsNav({ page }: { page: RefObject<HTMLDivElement> }) {
+  const [cur, setCur] = useState("personal");
+  useEffect(() => {
+    const el = page.current;
+    if (!el) return;
+    const onScroll = () => {
+      const top = el.getBoundingClientRect().top + 80;
+      let best = SECTIONS[0].id;
+      for (const sec of SECTIONS) {
+        const node = document.getElementById(`set-${sec.id}`);
+        if (node && node.getBoundingClientRect().top <= top) best = sec.id;
+      }
+      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 4) best = SECTIONS[SECTIONS.length - 1].id;
+      setCur(best);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [page]);
+  return (
+    <nav className="settings-nav" aria-label="Settings sections">
+      {SECTIONS.map((sec) => (
+        <button key={sec.id} className={cur === sec.id ? "on" : ""} aria-current={cur === sec.id ? "true" : undefined}
+          onClick={() => { document.getElementById(`set-${sec.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" }); setCur(sec.id); }}>
+          <sec.icon size={15} /> {sec.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
 
 interface VoiceInfo {
   devices: { inputs: { id: number; name: string; default: boolean }[]; outputs: { id: number; name: string; default: boolean }[]; error?: string };
@@ -19,6 +62,7 @@ export function SettingsView() {
   const [key, setKey] = useState("");
   const [keyMsg, setKeyMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [newRoot, setNewRoot] = useState("");
+  const pageRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api.get<VoiceInfo>("/api/voice").then(setVoice).catch(() => {});
@@ -47,10 +91,13 @@ export function SettingsView() {
   const modelOptions = (cur: string) => Array.from(new Set([cur, "gemini-flash-lite-latest", "gemini-flash-latest", ...genModels]));
 
   return (
-    <div className="page"><div className="page-inner" style={{ maxWidth: 860 }}>
+    <div className="page" ref={pageRef}><div className="page-inner" style={{ maxWidth: 1060 }}>
       <div className="page-head"><div className="grow"><h2>Settings</h2><p>Make ORION yours.</p></div></div>
+      <div className="settings-layout">
+      <SettingsNav page={pageRef} />
+      <div>
 
-      <section className="settings-sec">
+      <section className="settings-sec" id="set-personal">
         <h3><UserRound size={16} /> Personal</h3>
         <Field label="Your name" hint="ORION greets and addresses you by it.">
           <input className="input" defaultValue={st.user_name} onBlur={(e) => save({ user_name: e.target.value.trim() })} />
@@ -66,13 +113,17 @@ export function SettingsView() {
           </select>
         </Field>
         <Field label="Theme">
-          <select className="select" value={st.theme} onChange={(e) => save({ theme: e.target.value })}>
-            <option value="dark">Dark</option><option value="light">Light</option><option value="system">Match Windows</option>
-          </select>
+          <div className="segmented" role="radiogroup" aria-label="Theme">
+            {([["light", Sun, "Light"], ["dark", Moon, "Dark"], ["system", Laptop, "Match Windows"]] as const).map(([id, Icon, label]) => (
+              <button key={id} role="radio" aria-checked={st.theme === id} className={st.theme === id ? "on" : ""} onClick={() => save({ theme: id })}>
+                <Icon size={13} /> {label}
+              </button>
+            ))}
+          </div>
         </Field>
       </section>
 
-      <section className="settings-sec">
+      <section className="settings-sec" id="set-brain">
         <h3><Brain size={16} /> Brain (Gemini)</h3>
         <Field label={<><KeyRound size={14} /> API key</>} hint={<>{s.engine?.has_key ? "A key is saved. Paste a new one to replace it." : "Required."} Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">aistudio.google.com</a>.</>}>
           <input className="input" type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder={s.engine?.has_key ? "••••••••••••••••" : "AIza…"} />
@@ -117,7 +168,7 @@ export function SettingsView() {
         </Field>
       </section>
 
-      <section className="settings-sec">
+      <section className="settings-sec" id="set-voice">
         <h3><Mic size={16} /> Voice</h3>
         <Field label="Voice mode" hint={<>Live: real-time voice-to-voice with Gemini (fastest, most natural). Classic: transcribe → think → speak with a neural voice; also runs instant local commands.{s.engine?.live_model ? <> Live model: <code>{s.engine.live_model}</code>.</> : null}</>}>
           <select className="select" value={st.voice.mode} onChange={(e) => saveVoice({ mode: e.target.value as Settings["voice"]["mode"] })}>
@@ -176,7 +227,7 @@ export function SettingsView() {
         {voice?.devices.error && <div className="err" style={{ padding: "0 18px 12px" }}>Audio: {voice.devices.error}</div>}
       </section>
 
-      <section className="settings-sec">
+      <section className="settings-sec" id="set-proactive">
         <h3><Zap size={16} /> Proactive & learning</h3>
         <Field label="Proactive mode" hint="ORION speaks up on its own: low battery, a program hogging the PC, low disk space, finished downloads, upcoming meetings, internet drops. Runs locally — no AI quota used.">
           <Toggle on={st.proactive} onChange={(v) => save({ proactive: v })} />
@@ -206,7 +257,7 @@ export function SettingsView() {
         </Field>
       </section>
 
-      <section className="settings-sec">
+      <section className="settings-sec" id="set-safety">
         <h3><ShieldCheck size={16} /> Safety & permissions</h3>
         <Field label="Approvals" hint="Off by default since 2.6: ORION acts without asking. Choose Ask to be asked before changes again. Safe actions (reading, searching, volume…) never ask.">
           <select className="select" value={st.approval_mode} onChange={(e) => save({ approval_mode: e.target.value })}>
@@ -243,7 +294,7 @@ export function SettingsView() {
 
       <PhoneRemote />
 
-      <section className="settings-sec">
+      <section className="settings-sec" id="set-app">
         <h3><Monitor size={16} /> App</h3>
         <Field label="Launch when Windows starts" hint="Starts quietly in the tray, ready for “Hey Jarvis” and your routines.">
           <Toggle on={st.launch_on_startup} onChange={(v) => save({ launch_on_startup: v })} />
@@ -260,14 +311,14 @@ export function SettingsView() {
         </Field>
       </section>
 
-      <section className="settings-sec">
+      <section className="settings-sec" id="set-shortcuts">
         <h3><Keyboard size={16} /> Shortcuts</h3>
         <Field label="Quick Bar" hint="Summon ORION over any app. Takes effect after restart."><input className="input" defaultValue={st.hotkey_quickbar} onBlur={(e) => save({ hotkey_quickbar: e.target.value })} /></Field>
         <Field label="Push to talk / end voice" hint="Takes effect after restart."><input className="input" defaultValue={st.hotkey_voice} onBlur={(e) => save({ hotkey_voice: e.target.value })} /></Field>
         <Field label="In the app" hint="Ctrl+K focus input · Ctrl+N new chat · Ctrl+B sidebar · Esc stop · Ctrl+Enter approve"><span /></Field>
       </section>
 
-      <section className="settings-sec">
+      <section className="settings-sec" id="set-about">
         <h3><Info size={16} /> About</h3>
         <Field label="System check" hint="Tests your key, models, microphone, speakers, voice, search and app control — and says how to fix anything broken.">
           <SystemCheck />
@@ -276,6 +327,8 @@ export function SettingsView() {
           <button className="btn" onClick={() => api.post("/api/open-folder/data")}><FolderOpen size={14} /> Open</button>
         </Field>
       </section>
+      </div>
+      </div>
     </div></div>
   );
 }
@@ -311,7 +364,7 @@ function PhoneRemote() {
     { id: "cloudflare", name: "Anywhere · Instant link", desc: "No account needed. HTTPS link via Cloudflare; it changes when ORION restarts (your phone gets a one-tap re-pair notification)." },
   ] as const;
   return (
-    <section className="settings-sec">
+    <section className="settings-sec" id="set-phone">
       <h3><Smartphone size={16} /> Phone app</h3>
       <Field label="Control ORION from your phone" hint="Chat and talk to ORION, see and control your screen, run media and apps, approve actions and get notifications — like a remote for your PC. The phone can't change settings or accounts.">
         <Toggle on={st.enabled} onChange={(v) => !busy && act({ enabled: v })} />

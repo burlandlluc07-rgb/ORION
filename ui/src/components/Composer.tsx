@@ -1,4 +1,4 @@
-import { ArrowUp, Mic, MicOff, Paperclip, Square, X } from "lucide-react";
+import { ArrowUp, Check, ChevronDown, Mic, MicOff, Paperclip, Rocket, Square, Telescope, X, Zap } from "lucide-react";
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { api, fileToB64 } from "../lib/api";
 import { useStore } from "../lib/store";
@@ -10,6 +10,50 @@ export interface ComposerHandle {
 }
 
 const MAX_FILE = 15 * 1024 * 1024;
+
+const MODES = [
+  { id: "auto", label: "Auto", icon: Rocket, desc: "ORION picks the model for each request" },
+  { id: "fast", label: "Fast", icon: Zap, desc: "Flash-Lite: quickest, biggest free quota" },
+  { id: "smart", label: "Deep", icon: Telescope, desc: "Flash: stronger reasoning for harder jobs" },
+] as const;
+
+/** Thinking-mode picker that lives in the composer bar, like a model picker. */
+function ModePicker() {
+  const mode = useStore((s) => s.mode);
+  const set = useStore((s) => s.set);
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent ? e.key === "Escape" : !wrap.current?.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", close);
+    return () => { window.removeEventListener("mousedown", close); window.removeEventListener("keydown", close); };
+  }, [open]);
+  const cur = MODES.find((m) => m.id === mode) ?? MODES[0];
+  return (
+    <div className="mode-wrap" ref={wrap}>
+      <button className={`mode-btn ${open ? "open" : ""}`} onClick={() => setOpen(!open)} aria-haspopup="menu" aria-expanded={open}
+        title="Thinking mode">
+        <cur.icon size={14} /> {cur.label} <ChevronDown size={13} />
+      </button>
+      {open && (
+        <div className="menu" role="menu" aria-label="Thinking mode">
+          {MODES.map((m) => (
+            <button key={m.id} role="menuitemradio" aria-checked={mode === m.id} className={`menu-item ${mode === m.id ? "sel" : ""}`}
+              onClick={() => { set({ mode: m.id }); setOpen(false); }}>
+              <m.icon size={15} />
+              <span><div className="mi-t">{m.label}</div><div className="mi-d">{m.desc}</div></span>
+              {mode === m.id && <Check size={15} className="mi-check" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export const Composer = forwardRef<ComposerHandle, { busy: boolean; remote?: boolean }>(function Composer({ busy, remote = false }, ref) {
   const send = useStore((s) => s.send);
@@ -113,7 +157,7 @@ export const Composer = forwardRef<ComposerHandle, { busy: boolean; remote?: boo
           ref={ta}
           value={text}
           rows={1}
-          placeholder={voiceLive ? "Listening… or type here" : "Ask ORION anything, or type / for skills"}
+          placeholder={voiceLive ? "Listening… or type here" : "How can I help you today?"}
           onChange={(e) => { setText(e.target.value); setSel(0); }}
           onPaste={(e) => { if (e.clipboardData.files.length) { e.preventDefault(); addFiles(e.clipboardData.files); } }}
           onKeyDown={(e) => {
@@ -127,8 +171,9 @@ export const Composer = forwardRef<ComposerHandle, { busy: boolean; remote?: boo
         />
         <div className="composer-bar">
           <input ref={fileInput} type="file" multiple hidden onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
-          <button className="icon-btn" title="Attach files or images" onClick={() => fileInput.current?.click()}><Paperclip size={17} /></button>
+          <button className="icon-btn" aria-label="Attach files" title="Attach files or images" onClick={() => fileInput.current?.click()}><Paperclip size={17} /></button>
           <span className="grow" />
+          {!remote && <ModePicker />}
           {!remote && <button
             className={`mic-btn ${voiceLive ? "live" : ""}`}
             disabled={voiceUnavailable}
@@ -145,7 +190,7 @@ export const Composer = forwardRef<ComposerHandle, { busy: boolean; remote?: boo
         </div>
       </div>
       {!remote && <div className="composer-hint">
-        Enter to send · Shift+Enter new line · <kbd>/</kbd> skills · Esc stops · risky actions always ask first
+        <kbd>/</kbd> for skills · Shift+Enter for a new line · Esc stops · risky actions always ask first
       </div>}
     </div>
   );
