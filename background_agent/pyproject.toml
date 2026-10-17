@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orion-background-agent"
+version = "0.1.0"
+description = "ORION background task daemon: queue, scheduler and Gemini agent that never touches the mouse, keyboard or focus"
+requires-python = ">=3.11"
+dependencies = [
+    "google-genai>=1.40,<3",
+    "apscheduler>=3.10,<4",
+    "sqlalchemy>=2.0",
+    "winotify>=1.1; sys_platform == 'win32'",
+    "pystray>=0.19; sys_platform == 'win32'",
+    "Pillow>=10; sys_platform == 'win32'",
+    "keyring>=24; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+claude = ["anthropic>=1.15"]
+dev = ["pytest>=8", "pyinstaller>=6", "anthropic>=1.15"]
+
+[project.scripts]
+orion-bg = "orion_bg.cli:main"
+
+[tool.setuptools]
+packages = ["orion_bg"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

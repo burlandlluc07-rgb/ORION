@@ -1,0 +1,39 @@
+name: Background agent Windows lab
+on:
+  workflow_dispatch:
+  push:
+    branches: ["ci/background-agent-lab"]
+
+jobs:
+  lab:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: background_agent
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12" }
+      - name: Install the standalone background agent
+        run: python -m pip install -U pip && pip install -r requirements.txt pytest pyinstaller
+      - name: Unit tests on Windows
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python -m pytest -q -p no:cacheprovider tests
+      - name: Build the frozen exe
+        if: always()
+        run: pyinstaller --noconfirm orion_bg.spec
+      - name: Windows lab (daemon, tray, toast, hotkey, hidden shell, supervisor, autostart, live Gemini)
+        if: always()
+        env:
+          PYTHONIOENCODING: utf-8
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python scripts/windows_lab.py --out lab_report.json --frozen dist\orion-bg\orion-bg-cli.exe
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: background-agent-lab
+          path: |
+            background_agent/lab_report.json
+            background_agent/background-agent.log

@@ -1,0 +1,11 @@
+# Core
+google-genai>=1.40,<3
+apscheduler>=3.10,<4
+sqlalchemy>=2.0
+# Windows extras (toasts, tray icon, reuse ORION's saved Gemini key)
+winotify>=1.1; sys_platform == "win32"
+pystray>=0.19; sys_platform == "win32"
+Pillow>=10; sys_platform == "win32"
+keyring>=24; sys_platform == "win32"
+# Optional: only if you set [agent].provider = "claude"
+# anthropic>=1.15
