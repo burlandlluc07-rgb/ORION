@@ -477,7 +477,11 @@ function WhatsAppSection() {
       {(!info.configured || info.dry_run) && (
         <div className="modal-body">
           <div className="fh muted" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
-            From Meta's developer site: your app → WhatsApp → API Setup. Messages come from that WhatsApp Business number, not your personal WhatsApp.
+            <b>Your own WhatsApp</b> works without any setup: add contacts below, then ask ORION to WhatsApp someone. It asks you
+            yes or no with the exact message, then opens WhatsApp Desktop and presses Send (or just types it in for you to send).
+          </div>
+          <div className="fh muted" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
+            <b>Optional, a business number in the background:</b> from Meta's developer site: your app → WhatsApp → API Setup. Messages come from that WhatsApp Business number, not your personal WhatsApp.
             Free text only reaches people who messaged that number in the last 24 hours; otherwise ORION sends an approved template.
           </div>
           <div className="row" style={{ flexWrap: "wrap" }}>
@@ -498,7 +502,7 @@ function WhatsAppSection() {
           <div className="fc"><button className="btn sm ghost" onClick={() => api.del<WhatsAppInfo>(`/api/accounts/whatsapp/contacts/${encodeURIComponent(c.name)}`).then(setInfo)}><Trash2 size={12} /></button></div>
         </div>
       ))}
-      {info.configured && (
+      {(
         <div className="modal-body">
           <div className="row">
             <input className="input" style={{ width: 150 }} value={cName} placeholder="Name" onChange={(e) => setCName(e.target.value)} />

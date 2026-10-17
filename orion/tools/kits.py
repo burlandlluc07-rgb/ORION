@@ -19,7 +19,8 @@ KITS: dict[str, str] = {
     "windows": "Windows settings and maintenance: Wi-Fi, Bluetooth, dark mode, wallpaper, install/uninstall apps, "
                "startup apps, network and speed test, Windows Update, window layouts, cleanup, power plans",
     "home": "smart-home devices, scenes, locks and alarms",
-    "whatsapp": "send WhatsApp messages (each one is approved by the user first), WhatsApp contacts and templates",
+    "whatsapp": "WhatsApp messages: a typed-in draft in the user's own WhatsApp (whatsapp_draft), or business-number sends "
+                "that the user approves first, plus WhatsApp contacts and templates",
 }
 
 _PATTERNS: dict[str, re.Pattern] = {

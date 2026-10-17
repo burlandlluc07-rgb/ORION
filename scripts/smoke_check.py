@@ -195,12 +195,12 @@ def main() -> int:
               ["queued", "validating", "running", "verifying", "completed"]
               and (rec.get("approval") or {}).get("by") == "policy", {"record": rec})
 
-        # Integration readiness is a read-only look: no prompt, nothing started, WhatsApp not set up yet.
+        # Integration readiness is a read-only look: no prompt, nothing started, WhatsApp only offers drafts until it is set up.
         r = run_tool(c, "integration_status", {})
         states = {i["id"]: i["state"] for i in c.get("/api/integrations").json()["integrations"]}
         r["states"] = states
         check("integrations: status is read-only and honest", r["ok"] and not r["asked"] and quiet(r) is not False
-              and states.get("whatsapp") == "not_set_up" and set(states) == {"google", "whatsapp", "autocad"}, r)
+              and states.get("whatsapp") == "partial" and set(states) == {"google", "whatsapp", "autocad"}, r)
 
         # WhatsApp in dry run: even with prompts off, the exact message waits for approval; nothing is sent
         # and the desktop is left alone (no WhatsApp window, no focus change).

@@ -48,7 +48,7 @@ async def test_status_reports_every_integration_and_what_is_blocked(engine, monk
     monkeypatch.delenv("ProgramW6432", raising=False)
     by_id = {s["id"]: s for s in status(engine)}
     assert by_id["google"]["state"] == "not_set_up" and by_id["google"]["next"]
-    assert by_id["whatsapp"]["state"] == "not_set_up" and "sending any WhatsApp message" in by_id["whatsapp"]["blocked"]
+    assert by_id["whatsapp"]["state"] == "partial" and "whatsapp_draft" in by_id["whatsapp"]["can"][0]
     assert by_id["autocad"]["state"] == "not_found"
     task = engine.tracker.start("t", None)
     ok, res = await engine.agent.run_tool("integration_status", {}, task, None)

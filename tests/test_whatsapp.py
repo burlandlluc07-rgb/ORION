@@ -89,9 +89,42 @@ def test_numbers_are_normalized_and_masked():
     assert mask("34612345678") == "+•••••••5678"
 
 
-def test_no_tools_until_set_up(engine):
+def test_only_personal_drafts_until_set_up(engine):
     assert engine.registry.get("whatsapp_send") is None
-    assert next(s for s in status(engine) if s["id"] == "whatsapp")["state"] == "not_set_up"
+    assert engine.registry.get("whatsapp_draft").risk == "confirm"
+    assert next(s for s in status(engine) if s["id"] == "whatsapp")["state"] == "partial"
+
+
+@pytest.mark.parametrize("app,url", [
+    (True, "whatsapp://send?phone=34612345678&text=Running%2010%20min%20late%20%26%20sorry"),
+    (False, "https://wa.me/34612345678?text=Running%2010%20min%20late%20%26%20sorry"),
+])
+async def test_personal_draft_opens_the_chat_typed_in_and_sends_nothing(engine, meta, no_side_effects, monkeypatch,
+                                                                        app, url):
+    import orion.ecosystem.whatsapp as wa
+
+    monkeypatch.setattr(wa, "desktop_app_installed", lambda: app)
+    engine.whatsapp.save_contact("Mom", "+34 612 345 678")
+    task = engine.tracker.start("t", None)
+    ok, res = await engine.agent.run_tool("whatsapp_draft", {"to": "Mom", "text": "Running 10 min late & sorry"},
+                                          task, None)
+    assert ok and "NOT sent yet" in res and no_side_effects == [url] and meta.requests == []
+    step = task.steps[0]
+    assert step["label"] == "Open WhatsApp with a message to Mom (+•••••••5678): “Running 10 min late & sorry” " \
+                            "(you press Send)"
+    life = step["lifecycle"]
+    assert life["capabilities"]["desktop"] == "visible" and life["verification"]["status"] == "unverified"
+
+
+async def test_personal_draft_waits_for_the_desktop_gate_when_asked(engine, no_side_effects, prompts_on, monkeypatch):
+    import orion.ecosystem.whatsapp as wa
+
+    monkeypatch.setattr(wa, "desktop_app_installed", lambda: True)
+    task = engine.tracker.start("t", None)
+    run = asyncio.create_task(engine.agent.run_tool("whatsapp_draft", {"text": "hi"}, task, None))
+    card = await answer(engine, "deny")
+    assert card["desktop"] and "a chat you pick" in card["label"]
+    assert not (await run)[0] and no_side_effects == []
 
 
 def test_setup_checks_meta_and_keeps_the_token_secret(engine, meta, fake_keyring, tmp_path):
@@ -227,3 +260,68 @@ def test_settings_api(engine, meta):
     r = client.put("/api/accounts/whatsapp/contacts", json={"name": "Mom", "number": "+34612345678"})
     assert r.json()["contacts"] == [{"name": "Mom", "number": "+•••••••5678"}]
     assert client.delete("/api/accounts/whatsapp/contacts/mom").json()["contacts"] == []
+
+
+@pytest.fixture
+def desktop_whatsapp(monkeypatch):
+    """WhatsApp Desktop as far as ORION can see it: installed, and pressing Send works unless told otherwise."""
+    import orion.ecosystem.whatsapp as wa
+
+    pressed: list[str] = []
+    monkeypatch.setattr(wa, "desktop_app_installed", lambda: True)
+
+    def press(text):
+        pressed.append(text)
+        return "cleared"
+
+    monkeypatch.setattr(wa, "press_send_in_whatsapp", press)
+    return pressed
+
+
+async def test_personal_send_asks_yes_or_no_then_presses_send(engine, no_side_effects, desktop_whatsapp):
+    engine.whatsapp.save_contact("Mom", "+34 612 345 678")
+    task = engine.tracker.start("t", None)
+    run = asyncio.create_task(engine.agent.run_tool("whatsapp_send_personal", {"to": "Mom", "text": "On my way"},
+                                                    task, None))
+    card = await answer(engine, "approve")
+    assert card["label"] == "Send WhatsApp from your own number to Mom (+•••••••5678): “On my way” " \
+                            "(ORION opens WhatsApp and presses Send)"
+    assert card["risk"] == "danger"
+    ok, res = await run
+    assert ok and res.startswith("Sent from your WhatsApp to Mom")
+    assert no_side_effects == ["whatsapp://send?phone=34612345678&text=On%20my%20way"]
+    assert desktop_whatsapp == ["On my way"]
+    life = task.steps[0]["lifecycle"]
+    assert life["capabilities"]["desktop"] == "input" and life["verification"]["status"] == "passed"
+
+
+async def test_personal_send_no_opens_nothing(engine, no_side_effects, desktop_whatsapp):
+    engine.whatsapp.save_contact("Mom", "+34 612 345 678")
+    task = engine.tracker.start("t", None)
+    run = asyncio.create_task(engine.agent.run_tool("whatsapp_send_personal", {"to": "Mom", "text": "x"}, task, None))
+    await answer(engine, "deny")
+    assert not (await run)[0] and no_side_effects == [] and desktop_whatsapp == []
+
+
+async def test_personal_send_voice_yes(engine, no_side_effects, desktop_whatsapp):
+    async def spoken_yes(info):
+        engine.approvals.respond(info["id"], "approve")
+
+    engine.approvals.on_voice_request = spoken_yes
+    engine.whatsapp.save_contact("Mom", "+34 612 345 678")
+    task = engine.tracker.start("t", None, "voice")
+    ok, _ = await asyncio.wait_for(engine.agent.run_tool("whatsapp_send_personal", {"to": "Mom", "text": "Hi"},
+                                                         task, None), 5)
+    assert ok and desktop_whatsapp == ["Hi"]
+
+
+def test_personal_send_needs_the_desktop_app_and_one_line(engine, no_side_effects, monkeypatch):
+    import orion.ecosystem.whatsapp as wa
+
+    engine.whatsapp.save_contact("Mom", "+34 612 345 678")
+    monkeypatch.setattr(wa, "desktop_app_installed", lambda: False)
+    with pytest.raises(ToolError, match="WhatsApp Desktop isn't installed"):
+        engine.whatsapp.whatsapp_send_personal("Mom", "hi")
+    with pytest.raises(ToolError, match="first line"):
+        engine.whatsapp.whatsapp_send_personal("Mom", "line one\nline two")
+    assert no_side_effects == []

@@ -1,6 +1,21 @@
-# WhatsApp (Cloud API)
+# WhatsApp
 
-ORION sends WhatsApp messages through Meta's official **WhatsApp Business Cloud API**. It is a plain HTTPS
+## From your own WhatsApp (no setup)
+
+Add contacts in Ecosystem → Accounts → WhatsApp (name and number with country code), then ask
+"WhatsApp Mom that I'm on my way".
+
+- `whatsapp_send_personal`: ORION shows the recipient and exact text and asks yes or no (card, phone, or a
+  spoken yes for voice requests). After a yes it opens **WhatsApp Desktop** on that chat with the message typed
+  in and presses Enter, only while WhatsApp is the active window, then checks the message left the compose box.
+  This briefly brings WhatsApp to the front. Needs WhatsApp Desktop (Microsoft Store); one-line messages only.
+- `whatsapp_draft`: opens WhatsApp (or WhatsApp Web) with the message typed in and leaves Send to you.
+
+Both use WhatsApp's own `whatsapp://send` / `wa.me` links: no unofficial client, nothing that risks your account.
+
+## From a business number, in the background (Cloud API, optional)
+
+ORION can also send through Meta's official **WhatsApp Business Cloud API**. It is a plain HTTPS
 call, so it runs in the background: no WhatsApp window, no mouse, no focus change.
 
 **Every message waits for you.** `whatsapp_send` shows the recipient and the exact text (or template) on an
