@@ -163,6 +163,12 @@ def read_selection(hwnd: int, errors: list | None = None) -> str:
                 note(f"descendant {i}", exc)
     except Exception as exc:
         note("search", exc)
+    try:  # classic Win32 edit boxes (Notepad, WordPad, dialogs) don't always offer UI Automation's text interface
+        text = _win32_edit_selection(hwnd)
+        if text:
+            return text
+    except Exception as exc:
+        note("win32", exc)
     try:  # pywinauto's wrappers, as a second route to the same UI Automation data
         from pywinauto import Desktop  # type: ignore
 
@@ -178,6 +184,41 @@ def read_selection(hwnd: int, errors: list | None = None) -> str:
                 note("wrapper", exc)
     except Exception as exc:
         note("wrappers", exc)
+    return ""
+
+
+def _win32_edit_selection(hwnd: int) -> str:
+    """EM_GETSEL + WM_GETTEXT on the window's edit controls (both work across processes)."""
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+    user32.SendMessageW.restype = ctypes.c_ssize_t
+    user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+    edits: list[int] = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def collect(child, _):
+        buf = ctypes.create_unicode_buffer(64)
+        user32.GetClassNameW(child, buf, 64)
+        if buf.value == "Edit" or buf.value.startswith("RichEdit"):
+            edits.append(child)
+        return len(edits) < 16
+
+    user32.EnumChildWindows(hwnd, collect, 0)
+    for edit in edits:
+        packed = user32.SendMessageW(edit, 0x00B0, 0, 0)  # EM_GETSEL: start/end in the low/high words
+        start, end = packed & 0xFFFF, (packed >> 16) & 0xFFFF
+        if end <= start:
+            continue
+        n = user32.SendMessageW(edit, 0x000E, 0, 0)  # WM_GETTEXTLENGTH
+        buf = ctypes.create_unicode_buffer(n + 1)
+        user32.SendMessageW(edit, 0x000D, n + 1, ctypes.addressof(buf))  # WM_GETTEXT
+        text = buf.value.replace("\r\n", "\n")
+        raw = buf.value
+        if n > 0xFFFF:  # positions are 16-bit here; past that, only trust a whole-text selection
+            return text[:MAX_SELECTION] if start == 0 and end == 0xFFFF else ""
+        return raw[start:end].replace("\r\n", "\n").strip()[:MAX_SELECTION]
     return ""
 
 
