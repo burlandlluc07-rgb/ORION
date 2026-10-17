@@ -1,5 +1,6 @@
 import { ArrowRight, ExternalLink, KeyRound, Loader2, Mic, Zap } from "lucide-react";
 import { useState } from "react";
+import { Logo } from "../components/Logo";
 import { Orb } from "../components/Orb";
 import { api } from "../lib/api";
 import { useStore } from "../lib/store";
@@ -36,7 +37,7 @@ export function Onboarding() {
   return (
     <div className="onb">
       <div className="onb-card">
-        <Orb size={step === 3 ? 170 : 130} state={step === 3 ? "listening" : "standby"} />
+        {step === 3 ? <Orb size={170} state="listening" /> : <Logo size={140} />}
         <div className="steps-dots">{[0, 1, 2, 3].map((i) => <i key={i} className={i <= step ? "on" : ""} />)}</div>
 
         {step === 0 && (

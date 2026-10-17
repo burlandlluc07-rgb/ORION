@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { quotaSummary, useStore, type View } from "../lib/store";
 import type { Conversation } from "../lib/types";
-import { Orb } from "./Orb";
+import { Logo } from "./Logo";
 
 const NAV: { id: View; label: string; icon: typeof MessageSquare }[] = [
   { id: "chat", label: "Chat", icon: MessageSquare },
@@ -52,7 +52,7 @@ export function Sidebar() {
     <aside className={`sidebar ${open ? "" : "collapsed"}`}>
       <div className="brand">
         <button className="brand-mark" onClick={() => s.openConversation(null)} title="ORION home" aria-label="ORION home">
-          <Orb size={30} state={s.voice.state} />
+          <Logo size={30} ring state={s.voice.state} label="ORION home" />
         </button>
         {open && (
           <div className="grow">
