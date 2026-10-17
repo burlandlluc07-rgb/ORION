@@ -340,23 +340,30 @@ def frozen(exe: str | None):
     if not exe:
         raise Skip("no --frozen exe given")
     home = Path(tempfile.mkdtemp(prefix="orion-frozen-"))
-    env = dict(os.environ, ORION_HOME=str(home))
+    # No Gemini key for the frozen daemon: the import check below must fail on
+    # the missing key, not spend quota on a real call.
+    env = {k: v for k, v in os.environ.items() if k not in ("GEMINI_API_KEY", "GOOGLE_API_KEY")}
+    env["ORION_HOME"] = str(home)
     (home / "background-agent.toml").write_text(
         f'[safety]\nallowed_paths = ["{WORK.as_posix()}"]\n[tray]\nenabled = false\n[hotkey]\nenabled = false\n'
-        "[tasks]\ndummy_seconds = 0.5\n", encoding="utf-8")
+        "[tasks]\ndummy_seconds = 0.5\n[gemini]\nuse_orion_keyring = false\n", encoding="utf-8")
     d = subprocess.Popen([exe, "daemon"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         r = None
         for _ in range(60):
             r = subprocess.run([exe, "submit", "frozen dummy", "--kind", "dummy", "--wait"], env=env,
                                capture_output=True, text=True, timeout=60)
-            if r.returncode == 0:
+            if r.returncode != 2:  # 2 = daemon not reachable yet
                 break
             time.sleep(1)
-        expect(r is not None and r.returncode == 0 and "frozen dummy" in r.stdout, (r.stdout + r.stderr) if r else "")
-        g = subprocess.run([exe, "submit", "frozen gemini import check", "--wait"], env={**env, "GEMINI_API_KEY": "", "GOOGLE_API_KEY": ""},
+        if r is None or r.returncode != 0 or "Dummy task done: frozen dummy" not in r.stdout:
+            listing = subprocess.run([exe, "list"], env=env, capture_output=True, text=True, timeout=30).stdout
+            flog = home / "logs" / "background-agent.log"
+            tail = flog.read_text(encoding="utf-8", errors="replace")[-3000:] if flog.exists() else "(no log)"
+            raise AssertionError(f"submit said: {(r.stdout + r.stderr) if r else ''}\nlist:\n{listing}\nlog tail:\n{tail}")
+        g = subprocess.run([exe, "submit", "frozen gemini import check", "--wait"], env=env,
                            capture_output=True, text=True, timeout=60)
-        expect("GEMINI_API_KEY" in g.stdout + g.stderr or "Gemini" in g.stdout + g.stderr, g.stdout + g.stderr)
+        expect("Set the GEMINI_API_KEY" in g.stdout + g.stderr, g.stdout + g.stderr)
         subprocess.run([exe, "stop"], env=env, capture_output=True, timeout=30)
         expect(d.wait(30) == 0, "frozen daemon did not exit cleanly")
         return "dummy task completed from the frozen exe; google-genai imports"
