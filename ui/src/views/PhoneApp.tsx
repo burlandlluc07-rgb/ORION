@@ -169,7 +169,8 @@ function ChatTab() {
     (!!s.activeId && Object.values(s.tasks).some((t) => t.conv_id === s.activeId && (t.status === "running" || t.status === "waiting"))),
   [s.messages, s.tasks, s.activeId]);
 
-  useEffect(() => { const el = scroller.current; if (el) el.scrollTop = el.scrollHeight; });
+  // Follow new messages; an empty chat stays at the top so the greeting isn't cut off on short screens.
+  useEffect(() => { const el = scroller.current; if (el) el.scrollTop = s.messages.length ? el.scrollHeight : 0; });
 
   // Speak ORION's answer aloud when the question was spoken.
   const last = s.messages[s.messages.length - 1];
