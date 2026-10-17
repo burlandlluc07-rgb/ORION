@@ -74,9 +74,9 @@ def test_all_mail_and_limit(mailbox):
 
 def test_user_rules_change_the_order_and_persist(mailbox, engine):
     acc, _, _ = mailbox
-    assert "always important" in acc.email_importance_rules("add", "github.com", "important")
+    assert "are important" in acc.email_importance_rules("add", "github.com", "important")
     acc.email_importance_rules("add", "Sarah@Acme.com", "low")
-    assert {r["match"] for r in acc.email_importance_rules("list")} == {"github.com", "sarah@acme.com"}
+    assert {r["match"] for r in acc.email_importance_rules("list")["rules"]} == {"github.com", "sarah@acme.com"}
     assert (acc.root / "email_rules.json").exists()
     out = acc.email_by_importance()
     assert out["emails"][0]["id"] == "3" and any("your rule" in r for r in out["emails"][0]["reasons"])
@@ -87,7 +87,7 @@ def test_user_rules_change_the_order_and_persist(mailbox, engine):
 
 
 def test_tools_are_safe_email_kit_tools(mailbox, engine):
-    for name in ("email_by_importance", "email_importance_rules"):
+    for name in ("email_by_importance", "email_importance_rules", "email_importance_feedback"):
         tool = engine.registry.get(name)
         assert tool.risk == "safe" and tool.kit == "email"
         caps = capabilities_for(tool)
@@ -168,3 +168,154 @@ def test_parses_a_real_servers_split_header_and_text_response(engine):
     assert (a["id"], a["from"], a["text"], a["list_id"]) == ("7", "Ann <ann@corp.com>", "Hello there", "<l.corp.com>")
     assert a["flags"] == {"\\Seen", "\\Flagged"} and a["gmail_important"]
     assert (b["id"], b["subject"], b["text"], b["gmail_important"]) == ("9", "Yo", "Body2", False)
+
+
+# ── adapting to the user's feedback ────────────────────────────────────────
+def test_feedback_moves_a_sender_and_adapts_the_order(mailbox):
+    acc, store, original = mailbox
+    before = [e["id"] for e in acc.email_by_importance()["emails"]]
+    assert before.index("4") > before.index("2")
+    out = acc.email_importance_feedback("4", "more")
+    assert "bob@random.org will rank higher" in out and "random.org emails" in out and "now scores" in out
+    for _ in range(6):  # repeated feedback is capped, never runs away
+        acc.email_importance_feedback("4", "more")
+    learned = acc.email_learning.load()
+    assert learned["senders"]["bob@random.org"] == ep.SENDER_CAP
+    assert learned["domains"]["random.org"] == ep.DOMAIN_CAP
+    top = acc.email_by_importance()["emails"][0]
+    assert top["id"] == "4" and any("you've said emails from bob@random.org matter more" in r for r in top["reasons"])
+    assert (acc.root / "email_learning.json").exists()
+    assert store == original  # learning only writes ORION's own file
+
+
+def test_less_feedback_and_signal_weights(mailbox):
+    acc, _, _ = mailbox
+    acc.email_importance_feedback("2", "less")
+    learned = acc.email_learning.load()
+    assert learned["senders"]["sarah@acme.com"] == -ep.SENDER_STEP
+    assert learned["signals"]["urgent"] == 0.9 and learned["signals"]["contact"] == 0.9
+    s = ep.score(msg(text="this is urgent"), ME, set(), [], now=NOW, learned=learned)
+    assert "says “urgent” (counts less for you)" in s["reasons"]
+    # "less" on an automated email makes the automated penalty stronger, not weaker
+    acc.email_importance_feedback("3", "less")
+    assert acc.email_learning.load()["signals"]["automated"] == 1.1
+
+
+def test_signal_weights_stay_bounded(tmp_path):
+    lr = ep.Learning(tmp_path / "l.json")
+    for _ in range(20):
+        lr.feedback("a@x.com", ["urgent", "bulk"], "less")
+    sig = lr.load()["signals"]
+    assert sig["urgent"] == ep.SIGNAL_MIN and sig["bulk"] == ep.SIGNAL_MAX
+    for _ in range(40):
+        lr.feedback("a@x.com", ["urgent"], "more")
+    assert lr.load()["signals"]["urgent"] == ep.SIGNAL_MAX
+    lr.feedback("a@x.com", ["not-a-signal"], "more")  # unknown signals are ignored
+    assert "not-a-signal" not in lr.load()["signals"]
+
+
+def test_shared_mail_providers_are_never_learned_as_a_domain(tmp_path):
+    lr = ep.Learning(tmp_path / "l.json")
+    changed = lr.feedback("friend@gmail.com", [], "more")
+    assert "domain" not in changed and lr.load()["domains"] == {}
+    # a stale gmail.com entry (hand-edited file) is still ignored when scoring
+    s = ep.score(msg(**{"from": "x@gmail.com"}), ME, set(), [], now=NOW,
+                 learned={"senders": {}, "domains": {"gmail.com": 20}, "signals": {}})
+    assert not any("gmail.com emails" in r for r in s["reasons"])
+
+
+def test_forget(mailbox):
+    acc, _, _ = mailbox
+    acc.email_importance_feedback("4", "more")
+    acc.email_importance_feedback("2", "less")
+    listed = acc.email_importance_rules("list")
+    assert listed["learned_senders"] == {"bob@random.org": 10, "sarah@acme.com": -10}
+    assert "Forgot" in acc.email_importance_rules("forget", "random.org")  # the domain and its senders
+    learned = acc.email_learning.load()
+    assert "bob@random.org" not in learned["senders"] and "random.org" not in learned["domains"]
+    assert "sarah@acme.com" in learned["senders"]
+    assert "hadn't learned" in acc.email_importance_rules("forget", "nobody@nowhere.com")
+    assert "Forgot" in acc.email_importance_rules("forget")
+    assert acc.email_importance_rules("list") == "No importance rules yet, and nothing learned from feedback."
+
+
+def test_a_low_rule_no_longer_buries_urgent_mail(mailbox):
+    acc, _, _ = mailbox
+    acc.email_importance_rules("add", "acme.com", "low")
+    sarah = next(e for e in acc.email_by_importance()["emails"] if e["id"] == "2")
+    assert sarah["importance"] == "medium"  # urgent + deadline + a contact still lifts it out of low
+    assert any("your rule" in r for r in sarah["reasons"])
+    calm = ep.score(msg(**{"from": "x@acme.com"}), ME, set(), [{"match": "acme.com", "level": "low"}], now=NOW)
+    assert calm["importance"] == "low"
+
+
+def test_people_you_email_often_rank_higher():
+    once = ep.score(msg(), ME, {"ann@corp.com": 1}, [], now=NOW)
+    often = ep.score(msg(), ME, {"ann@corp.com": 7}, [], now=NOW)
+    assert "you email them often" in often["reasons"] and often["score"] > once["score"]
+
+
+def test_feedback_errors_and_damaged_file(mailbox):
+    acc, _, _ = mailbox
+    with pytest.raises(acc_mod.ToolError):
+        acc.email_importance_feedback("1:*", "more")  # only a single email id
+    with pytest.raises(acc_mod.ToolError):
+        acc.email_importance_feedback("999", "more")
+    with pytest.raises(acc_mod.ToolError):
+        acc.email_importance_feedback("1", "more", folder="Nope")
+    acc.email_learning.path.write_text("{not json", "utf-8")
+    assert acc.email_learning.load() == {"senders": {}, "domains": {}, "signals": {}}
+    assert acc.email_by_importance()["emails"]  # ranking still works
+    acc.email_importance_feedback("4", "more")
+    assert acc.email_learning.load()["senders"] == {"bob@random.org": 10}
+
+
+def test_review_fixes_for_learning(tmp_path, mailbox):
+    lr = ep.Learning(tmp_path / "l.json")
+    # the user's own organisation is never learned as a domain, nor applied when scoring
+    assert "domain" not in lr.feedback("facilities@acme.com", [], "less", me="me@acme.com")
+    assert "domain" not in lr.feedback("it@mail.acme.com", [], "less", me="me@acme.com")
+    own = {"senders": {}, "domains": {"acme.com": -20}, "signals": {}}
+    assert not any("acme.com emails" in r for r in
+                   ep.score(msg(**{"from": "boss@acme.com"}), "me@acme.com", set(), [], now=NOW, learned=own)["reasons"])
+    # verdicts are checked, never silently read as "less"
+    with pytest.raises(ValueError):
+        lr.feedback("a@x.com", [], "higher")
+    assert lr.feedback("a@x.com", [], " More ")["sender"] == ep.SENDER_STEP
+    acc, _, _ = mailbox
+    with pytest.raises(acc_mod.ToolError):
+        acc.email_importance_feedback("4", "higher")
+    # a sender with no @ is learned once, not again as a "domain"
+    assert "domain" not in lr.feedback("MAILER-DAEMON", [], "less")
+    # forgetting a domain covers its subdomains and their senders
+    lr.feedback("bob@mail.corp.com", [], "less")
+    lr.feedback("ann@corp.com", [], "less")
+    lr.forget("corp.com")
+    learned = lr.load()
+    assert not [k for k in learned["senders"] if "corp.com" in k] and not [k for k in learned["domains"] if "corp" in k]
+    # regional shared providers are not learned either
+    assert "domain" not in lr.feedback("x@gmx.net", [], "less")
+
+
+def test_damaged_numbers_in_the_learning_file_are_ignored_or_clamped(tmp_path):
+    p = tmp_path / "l.json"
+    p.write_text('{"senders": {"a@x.com": NaN, "b@x.com": 1000, "c@x.com": true, "d@x.com": 1e400},'
+                 ' "domains": {"x.com": -Infinity, "y.com": -99},'
+                 ' "signals": {"recent": -3, "urgent": 9, "made_up": 1.2}}', "utf-8")
+    learned = ep.Learning(p).load()
+    assert learned == {"senders": {"b@x.com": ep.SENDER_CAP}, "domains": {"y.com": -ep.DOMAIN_CAP},
+                       "signals": {"recent": ep.SIGNAL_MIN, "urgent": ep.SIGNAL_MAX}}
+    s = ep.score(msg(**{"from": "a@x.com"}), ME, set(), [], now=NOW, learned=learned)
+    assert 0 <= s["score"] <= 100
+
+
+def test_an_important_rule_alone_reaches_high_even_for_list_mail():
+    gh = msg(**{"from": "GitHub <notifications@github.com>", "cc": ME, "to": "repo@noreply.github.com",
+                "list_id": "<repo.github.com>"})
+    s = ep.score(gh, ME, set(), [{"match": "github.com", "level": "important"}], now=NOW)
+    assert s["importance"] == "high"
+
+
+def test_ranked_entries_carry_their_folder(mailbox):
+    acc, _, _ = mailbox
+    assert {e["folder"] for e in acc.email_by_importance()["emails"]} == {"INBOX"}
