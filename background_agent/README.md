@@ -103,8 +103,24 @@ Points to decide when integrating (from the Day 1 code map):
 
 ## What was and was not verified
 
-Verified here on Linux (Python 3.13): 64 automated tests pass. They cover the queue, the restart resume, parallel workers, cancel, timeout, pause, approvals, the path allowlist, shell rules, the Gemini loop with a scripted client (tool calls, approval pause and resume, denial, empty-reply nudge, safety block, 429 retry, API errors, web search with sources, key lookup), the optional Claude loop, the HTTP API and token, scheduler firing and persistence, the supervisor restart logic, the autostart XML and a full daemon run. A request through the real `google-genai` SDK against a local stub confirmed the wire format (function declarations, system instruction, thought signatures replayed unchanged, function responses). A PyInstaller build ran a dummy task and a schedule from the frozen binary.
+**Windows (GitHub Actions `windows-latest`, branch `ci/background-agent-lab` of the ORION repo, run 39024762510):** 64 unit tests pass (2 skipped: symlinks, Claude SDK not installed), the PyInstaller build works, and all 14 lab checks in `scripts/windows_lab.py` pass. The checks cover:
 
-Not verified: anything Windows-only (toasts, tray icon, hotkey, `schtasks`, hidden-window flags, `%APPDATA%` paths) and a live Gemini call (no API key here). These need a run on your PC, or the Windows lab workflow once this lives in a repo.
+- The daemon with the tray icon, toasts and the Ctrl+Alt+O hotkey, which queued clipboard text.
+- The approval gate, cancel and the timeout.
+- Shell commands (`cmd`, PowerShell, Python) running with no window.
+- The history page.
+- A live Gemini run: it wrote and read a file, an overwrite waited for approval and then applied, and web search answered "Canberra".
+- A clean stop.
+- The supervisor bringing a killed daemon back, with its schedule kept.
+- Task Scheduler autostart: installed, ran a task hidden, then removed.
+- The frozen exe.
+
+The mouse position and foreground window were identical before and after every agent step. Two control cases (the lab opening Notepad and moving the cursor itself) prove the probe does detect changes.
+
+On the first run the live Gemini call got HTTP 429 (daily quota on `gemini-flash-latest`). The agent now falls back to `gemini-flash-lite-latest` on a quota error, and the later runs passed that way.
+
+**Linux:** 66 tests pass, and requests through the real `google-genai` and `anthropic` SDKs against a local stub confirmed the request format.
+
+**Not verified:** a run on your own PC, and a logon-triggered start (the lab started the scheduled task by hand).
 
 Known limits: the timeout is checked between steps and bounds shell commands, so one long model API call can overrun it by up to that call's own timeout. If the daemon dies right after a tool ran but before its result was saved, that tool call is checked and handled again on resume: an overwrite asks for approval again, and a delete of a file that is already gone is refused.
