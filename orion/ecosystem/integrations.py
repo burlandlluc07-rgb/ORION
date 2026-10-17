@@ -67,12 +67,29 @@ def _google(engine: "Engine") -> dict:
 
 
 def _whatsapp(engine: "Engine") -> dict:
-    return {"id": "whatsapp", "name": "WhatsApp (Cloud API)", "state": "blocked", "can": [],
-            "blocked": ["sending any WhatsApp message", "reading WhatsApp messages"],
-            "read_only_test": "none yet",
-            "next": "Waiting for the example message (what should be sent, to whom, when). The Cloud API adapter is "
-                    "built only after that, and every message will ask for approval before it is sent. Opening the "
-                    "WhatsApp app itself still works and asks first, like any visible window."}
+    wa = engine.whatsapp.public()
+    base = {"id": "whatsapp", "name": "WhatsApp (Cloud API)"}
+    always = ["sending without your approval: every message shows the recipient and exact text first",
+              "reading WhatsApp messages (needs a webhook, not built)",
+              "your personal WhatsApp account: messages come from your WhatsApp Business number"]
+    if not wa["configured"]:
+        return {**base, "state": "not_set_up", "can": [], "blocked": ["sending any WhatsApp message"] + always[1:],
+                "read_only_test": "none until it is set up",
+                "next": "In Accounts → WhatsApp, add the Phone number ID and access token from Meta's WhatsApp → "
+                        "API Setup page, or turn on dry run to try it without sending anything."}
+    contacts = len(wa["contacts"])
+    if wa["dry_run"]:
+        return {**base, "state": "partial", "blocked": ["really sending: dry run is on"] + always,
+                "can": [f"draft and approve messages to {contacts} saved contact(s) or any number, without sending"],
+                "read_only_test": "ask ORION to WhatsApp someone: you see the approval card, nothing is sent",
+                "next": "Add the Phone number ID and access token from Meta to send for real."}
+    can = [f"send approved messages from {wa['verified_name'] or 'your business number'} "
+           f"{wa['display_number']} to {contacts} saved contact(s) or any number"]
+    if wa["business_account_id"]:
+        can.append("list your approved message templates (whatsapp_templates)")
+    return {**base, "state": "ready" if wa["has_token"] else "partial", "can": can, "blocked": always,
+            "read_only_test": "whatsapp_templates or whatsapp_contacts; nothing is sent",
+            "next": "" if wa["has_token"] else "The access token is missing; paste it again in Accounts → WhatsApp."}
 
 
 def _autocad(engine: "Engine") -> dict:

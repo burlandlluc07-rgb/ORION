@@ -195,12 +195,24 @@ def main() -> int:
               ["queued", "validating", "running", "verifying", "completed"]
               and (rec.get("approval") or {}).get("by") == "policy", {"record": rec})
 
-        # Integration readiness is a read-only look: no prompt, nothing started, WhatsApp reported as blocked.
+        # Integration readiness is a read-only look: no prompt, nothing started, WhatsApp not set up yet.
         r = run_tool(c, "integration_status", {})
         states = {i["id"]: i["state"] for i in c.get("/api/integrations").json()["integrations"]}
         r["states"] = states
         check("integrations: status is read-only and honest", r["ok"] and not r["asked"] and quiet(r) is not False
-              and states.get("whatsapp") == "blocked" and set(states) == {"google", "whatsapp", "autocad"}, r)
+              and states.get("whatsapp") == "not_set_up" and set(states) == {"google", "whatsapp", "autocad"}, r)
+
+        # WhatsApp in dry run: even with prompts off, the exact message waits for approval; nothing is sent
+        # and the desktop is left alone (no WhatsApp window, no focus change).
+        c.put("/api/accounts/whatsapp", json={"dry_run": True})
+        c.put("/api/accounts/whatsapp/contacts", json={"name": "Smoke", "number": "+34 600 000 000"})
+        r = run_tool(c, "whatsapp_send", {"to": "Smoke", "text": "smoke check"}, decision="deny")
+        check("whatsapp: declined message is not sent, asked even with prompts off",
+              r["asked"] and not r["ok"] and not r["asked_desktop"] and quiet(r) is not False, r)
+        r = run_tool(c, "whatsapp_send", {"to": "Smoke", "text": "smoke check"}, decision="approve")
+        check("whatsapp: approved dry run, background only", r["asked"] and r["ok"]
+              and r["result"].startswith("Dry run: nothing was sent") and quiet(r) is not False, r)
+        c.delete("/api/accounts/whatsapp")
 
         # The background agent runs inside ORION: a queued task and an approval round trip through ORION's
         # own approval prompt leave the desktop alone.

@@ -1,5 +1,5 @@
 import {
-  Blocks, Cable, CalendarDays, FolderOpen, Lightbulb, Loader2, Mail, Plug, Plus, Puzzle, RefreshCw, Sparkles, Trash2, UserRound, Wrench,
+  Blocks, Cable, CalendarDays, FolderOpen, Lightbulb, Loader2, Mail, MessageCircle, Plug, Plus, Puzzle, RefreshCw, Sparkles, Trash2, UserRound, Wrench,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Markdown } from "../components/Markdown";
@@ -425,8 +425,90 @@ function AccountsTab() {
         </div>
       </section>
 
+      <WhatsAppSection />
       <SmartHomeSection />
     </>
+  );
+}
+
+// ── WhatsApp (Cloud API) ──────────────────────────────────────────────────
+interface WhatsAppInfo {
+  configured: boolean; dry_run: boolean; phone_number_id: string; business_account_id: string;
+  verified_name: string; display_number: string; has_token: boolean; contacts: { name: string; number: string }[];
+}
+
+function WhatsAppSection() {
+  const toast = useStore((s) => s.toast);
+  const [info, setInfo] = useState<WhatsAppInfo | null>(null);
+  const [pid, setPid] = useState("");
+  const [waba, setWaba] = useState("");
+  const [token, setToken] = useState("");
+  const [cName, setCName] = useState("");
+  const [cNum, setCNum] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => { api.get<WhatsAppInfo>("/api/accounts/whatsapp").then(setInfo); }, []);
+  if (!info) return null;
+
+  const save = async (dry_run: boolean) => {
+    setBusy(true); setErr("");
+    try {
+      setInfo(await api.put<WhatsAppInfo>("/api/accounts/whatsapp", dry_run ? { dry_run } : { phone_number_id: pid, business_account_id: waba, access_token: token }));
+      setToken("");
+      toast({ title: dry_run ? "WhatsApp dry run on" : "WhatsApp connected", tone: "success" });
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  };
+  const addContact = async () => {
+    setErr("");
+    try { setInfo(await api.put<WhatsAppInfo>("/api/accounts/whatsapp/contacts", { name: cName, number: cNum })); setCName(""); setCNum(""); }
+    catch (e) { setErr((e as Error).message); }
+  };
+
+  return (
+    <section className="settings-sec">
+      <h3><MessageCircle size={16} /> WhatsApp</h3>
+      {info.configured && (
+        <div className="field">
+          <div><div className="fl">{info.dry_run ? "Dry run (nothing is sent)" : `${info.verified_name || "WhatsApp Business"} ${info.display_number}`}</div>
+            <div className="fh">Official Cloud API, runs in the background · every message shows you the recipient and exact text before it is sent</div></div>
+          <div className="fc"><button className="btn danger" onClick={() => api.del<WhatsAppInfo>("/api/accounts/whatsapp").then(setInfo)}><Trash2 size={13} /> Disconnect</button></div>
+        </div>
+      )}
+      {(!info.configured || info.dry_run) && (
+        <div className="modal-body">
+          <div className="fh muted" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
+            From Meta's developer site: your app → WhatsApp → API Setup. Messages come from that WhatsApp Business number, not your personal WhatsApp.
+            Free text only reaches people who messaged that number in the last 24 hours; otherwise ORION sends an approved template.
+          </div>
+          <div className="row" style={{ flexWrap: "wrap" }}>
+            <div className="grow"><label className="lbl">Phone number ID</label><input className="input" value={pid} onChange={(e) => setPid(e.target.value)} /></div>
+            <div className="grow"><label className="lbl">WhatsApp Business Account ID (for templates)</label><input className="input" value={waba} onChange={(e) => setWaba(e.target.value)} /></div>
+          </div>
+          <div><label className="lbl">Access token</label><input className="input" type="password" value={token} onChange={(e) => setToken(e.target.value)} /></div>
+          <div className="row">
+            <button className="btn primary" disabled={!pid || !token || busy} onClick={() => save(false)}>
+              {busy ? <><Loader2 size={14} className="spin" /> Checking with Meta…</> : "Connect WhatsApp"}</button>
+            {!info.configured && <button className="btn" disabled={busy} onClick={() => save(true)}>Try a dry run first</button>}
+          </div>
+        </div>
+      )}
+      {info.contacts.map((c) => (
+        <div key={c.name} className="field">
+          <div><div className="fl">{c.name}</div><div className="fh">{c.number}</div></div>
+          <div className="fc"><button className="btn sm ghost" onClick={() => api.del<WhatsAppInfo>(`/api/accounts/whatsapp/contacts/${encodeURIComponent(c.name)}`).then(setInfo)}><Trash2 size={12} /></button></div>
+        </div>
+      ))}
+      {info.configured && (
+        <div className="modal-body">
+          <div className="row">
+            <input className="input" style={{ width: 150 }} value={cName} placeholder="Name" onChange={(e) => setCName(e.target.value)} />
+            <input className="input" value={cNum} placeholder="+34 612 345 678" onChange={(e) => setCNum(e.target.value)} />
+            <button className="btn" disabled={!cName || !cNum} onClick={addContact}><Plus size={13} /> Add contact</button>
+          </div>
+        </div>
+      )}
+      {err && <div className="err" style={{ padding: "0 18px 12px" }}>{err}</div>}
+    </section>
   );
 }
 

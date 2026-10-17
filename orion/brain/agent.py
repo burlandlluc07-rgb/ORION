@@ -136,7 +136,8 @@ class Agent:
         except ToolError as exc:
             return self._end(task, step, record, "failed", str(exc), ok=False)
 
-        need_risk = origin != "user" and self.needs_approval(tool.risk, name)
+        # always_ask tools (a sent message can't be taken back) ask every time, whoever chose the action.
+        need_risk = tool.always_ask or (origin != "user" and self.needs_approval(tool.risk, name))
         need_desktop = self.needs_desktop_permission(caps.desktop, origin)
         scope = f"{name} on “{record.target}” for this task only" if record.target else f"{name} for this task only"
         if need_risk or need_desktop:

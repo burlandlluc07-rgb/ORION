@@ -13,6 +13,11 @@
   that fired, a little at a time and within fixed limits. People you email often also rank higher. What it
   learned shows in the reasons, lives on this PC in `email_learning.json`, and can be forgotten ("forget what you
   learned about acme.com").
+- **WhatsApp messages (Cloud API).** Ask ORION to WhatsApp someone by saved contact name or number. It sends
+  through Meta's official WhatsApp Business Cloud API in the background, and every message shows you the
+  recipient and the exact text and waits for your OK, even with approval prompts off. Templates cover people
+  outside WhatsApp's 24-hour window. Set it up in Accounts → WhatsApp (see docs/whatsapp.md); a dry run works
+  without a Meta account.
 
 ## 2.6.0
 - **No more approval prompts by default.** ORION now acts without asking first: typing and clicking, opening or
