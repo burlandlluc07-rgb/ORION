@@ -497,6 +497,34 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
         engine.accounts.remove_email()
         return engine.accounts.public()
 
+    # ── WhatsApp (Cloud API) ───────────────────────────────────────────────
+    @app.get("/api/accounts/whatsapp", dependencies=[X])
+    async def whatsapp():
+        return engine.whatsapp.public()
+
+    @app.put("/api/accounts/whatsapp", dependencies=[X])
+    async def put_whatsapp(body: dict = Body(...)):
+        try:
+            return await asyncio.to_thread(engine.whatsapp.configure, body)
+        except ToolError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.delete("/api/accounts/whatsapp", dependencies=[X])
+    async def delete_whatsapp():
+        engine.whatsapp.remove()
+        return engine.whatsapp.public()
+
+    @app.put("/api/accounts/whatsapp/contacts", dependencies=[X])
+    async def put_whatsapp_contact(body: dict = Body(...)):
+        try:
+            return engine.whatsapp.save_contact(str(body.get("name", "")), str(body.get("number", "")))
+        except ToolError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.delete("/api/accounts/whatsapp/contacts/{name}", dependencies=[X])
+    async def delete_whatsapp_contact(name: str):
+        return engine.whatsapp.remove_contact(name)
+
     @app.put("/api/accounts/calendars", dependencies=[X])
     async def put_calendars(body: dict = Body(...)):
         try:

@@ -51,6 +51,9 @@ class Engine:
         from .ecosystem.home import SmartHome
 
         self.home = SmartHome(self.accounts, self.registry)
+        from .ecosystem.whatsapp import WhatsApp
+
+        self.whatsapp = WhatsApp(self.config.root, self.registry, lambda: self.bus.emit("ecosystem.changed"))
         self.remote = RemoteServer(self)
         self.approvals.on_request = self._push_approval
         from .proactive import Proactive
@@ -91,6 +94,7 @@ class Engine:
         self._apply_browser_mode()
         self.accounts.sync_tools()
         self.home.sync_tools()
+        self.whatsapp.sync_tools()
         from .ecosystem.integrations import status_tool
 
         self.registry.add(status_tool(self))

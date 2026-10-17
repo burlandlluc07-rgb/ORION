@@ -19,6 +19,8 @@ KITS: dict[str, str] = {
     "windows": "Windows settings and maintenance: Wi-Fi, Bluetooth, dark mode, wallpaper, install/uninstall apps, "
                "startup apps, network and speed test, Windows Update, window layouts, cleanup, power plans",
     "home": "smart-home devices, scenes, locks and alarms",
+    "whatsapp": "WhatsApp messages: a typed-in draft in the user's own WhatsApp (whatsapp_draft), or business-number sends "
+                "that the user approves first, plus WhatsApp contacts and templates",
 }
 
 _PATTERNS: dict[str, re.Pattern] = {
@@ -37,6 +39,7 @@ _PATTERNS: dict[str, re.Pattern] = {
         r"winget|update|upgrade|startup|boot|network|internet speed|speed ?test|ping|ip address|router|"
         r"snap|arrange|side by side|half of the screen|left half|right half|recycle bin|temp files|clean ?up|"
         r"junk|power plan|battery saver|performance mode)\b", re.I),
+    "whatsapp": re.compile(r"\bwhats ?app\b", re.I),
     "home": re.compile(r"\b(lights?|lamps?|scenes?|thermostat|heating|locks?|alarm|smart plug|bulbs?|home)\b", re.I),
 }
 

@@ -64,6 +64,7 @@ class Tool:
     summarize: Callable[[dict], str] | None = None
     wants_context: str | None = None
     kit: str | None = None  # None = core (always offered); otherwise the toolkit it belongs to (see kits.py)
+    always_ask: bool = False  # ask before every single call, whatever the approval setting (e.g. sending a message)
 
     def declaration(self) -> dict:
         return {"name": self.name, "description": self.description, "parameters_json_schema": self.parameters}

@@ -29,10 +29,10 @@ if TYPE_CHECKING:
 ROUTE_ORDER = ("api_mcp", "cli", "headless_browser", "app_automation", "gui_env", "foreground")
 
 # Real mouse, keyboard or focus: the user's input is taken over.
-INPUT = {"type_text", "press_keys", "mouse_click", "scroll", "window_action"}
+INPUT = {"type_text", "press_keys", "mouse_click", "scroll", "window_action", "whatsapp_send_personal"}
 # Opens, moves or covers a visible window, or locks/ends the session, without injecting input.
 VISIBLE = {"open_app", "open_settings_page", "open_website", "search_in_browser", "play_youtube", "play_spotify",
-           "open_path", "arrange_window", "calendar_add_event", "lock_pc", "power", "browser_show"}
+           "open_path", "arrange_window", "calendar_add_event", "whatsapp_draft", "lock_pc", "power", "browser_show"}
 # The browser tools: background while ORION's browser runs hidden, visible while it is shown.
 BROWSER = {"browser_open", "browser_view", "browser_click", "browser_type", "browser_select", "browser_press",
            "browser_scroll", "browser_back", "browser_tabs", "browser_look", "browser_close", "browser_hide"}

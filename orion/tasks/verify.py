@@ -233,6 +233,27 @@ def _calendar_event(args: dict, result: str) -> dict:
     return unverified("ORION opened a pre-filled event; it can't confirm you pressed Save")
 
 
+def _whatsapp_draft(args: dict, result: str) -> dict:
+    return unverified("ORION opened WhatsApp with the message typed in; it can't confirm you pressed Send")
+
+
+def _whatsapp_personal(args: dict, result: str) -> dict:
+    if (result or "").startswith("Sent from your WhatsApp"):
+        return passed("the typed message left WhatsApp's compose box after Send was pressed")
+    return unverified("Send was pressed in WhatsApp, but its window couldn't be read to confirm")
+
+
+def _whatsapp_send(args: dict, result: str) -> dict:
+    """The Cloud API's message id proves WhatsApp accepted it; delivery needs a webhook ORION doesn't run."""
+    if (result or "").startswith("Dry run"):
+        return unverified("dry run: nothing was sent")
+    m = re.search(r"message id (wamid\.[\w=+/-]+|\S+)\)", result or "")
+    if not m:
+        return failed("WhatsApp gave no message id")
+    return {"status": "unverified", "reason": "accepted by WhatsApp; delivery isn't confirmed (no webhook)",
+            "evidence": [f"Cloud API message id {m.group(1)}"]}
+
+
 def _self_checked(how: str) -> Verifier:
     return lambda args, result: passed(f"the tool checked its own result: {how}")
 
@@ -250,6 +271,9 @@ VERIFIERS: dict[str, Verifier] = {
     "take_screenshot": _screenshot,
     "open_app": _open_app,
     "calendar_add_event": _calendar_event,
+    "whatsapp_send": _whatsapp_send,
+    "whatsapp_draft": _whatsapp_draft,
+    "whatsapp_send_personal": _whatsapp_personal,
 }
 
 
