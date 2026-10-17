@@ -128,13 +128,17 @@ class ApprovalBroker:
         self.on_voice_request: Callable[[dict], Awaitable[None]] | None = None
         self.on_request: Callable[[dict], None] | None = None  # e.g. push the approval to paired phones
 
-    async def request(self, tool: str, label: str, risk: str, args: dict[str, Any], task: Task | None) -> bool:
-        if tool in self.session_allow and risk != "danger":
+    async def request(self, tool: str, label: str, risk: str, args: dict[str, Any], task: Task | None,
+                      desktop: bool = False) -> bool:
+        """Ask the user. ``desktop`` marks a foreground step (mouse, keys, focus or a visible window): it is
+        approved for this one action only, so "allow for this session" never covers it."""
+        if tool in self.session_allow and risk != "danger" and not desktop:
             return True
         aid = new_id()
         fut: asyncio.Future = asyncio.get_running_loop().create_future()
         info = {"id": aid, "tool": tool, "label": label, "risk": risk, "args": _preview(args),
-                "task_id": task.id if task else None, "expires": time.time() + APPROVAL_TIMEOUT}
+                "task_id": task.id if task else None, "expires": time.time() + APPROVAL_TIMEOUT,
+                "desktop": desktop}
         self.pending[aid] = (fut, info)
         self.bus.emit("approval.request", approval=info)
         if self.on_request is not None:
@@ -159,7 +163,7 @@ class ApprovalBroker:
         finally:
             self.pending.pop(aid, None)
             self.bus.emit("approval.resolved", id=aid)
-        if decision == "always":
+        if decision == "always" and not desktop:
             self.session_allow.add(tool)
         return decision in ("approve", "always")
 

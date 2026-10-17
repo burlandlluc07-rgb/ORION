@@ -215,6 +215,18 @@ export function SettingsView() {
             <option value="trust">Never ask (not recommended)</option>
           </select>
         </Field>
+        <Field label="Using your desktop" hint="Background first: ORION works without your screen, mouse or keyboard. When it decides a step needs them (typing, clicking, opening a window), it asks first, even in Trust mode. Your own instant commands and phone buttons never ask.">
+          <select className="select" value={st.desktop_actions} onChange={(e) => save({ desktop_actions: e.target.value })}>
+            <option value="ask">Ask before each desktop step (recommended)</option>
+            <option value="allow">Don't ask</option>
+          </select>
+        </Field>
+        <Field label="ORION's browser" hint="In the background, websites are used without a window. ORION shows the window when you need to sign in yourself.">
+          <select className="select" value={st.browser_mode} onChange={(e) => save({ browser_mode: e.target.value })}>
+            <option value="background">Background (recommended)</option>
+            <option value="visible">Always in a window</option>
+          </select>
+        </Field>
         <Field label="Extra folders ORION may change" hint="By default file changes are limited to your user folder. Deletes always go to the Recycle Bin.">
           <div style={{ display: "flex", flexDirection: "column", gap: 6, width: "100%" }}>
             {st.allowed_roots.map((r) => (

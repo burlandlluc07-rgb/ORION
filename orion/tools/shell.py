@@ -7,7 +7,7 @@ import sys
 import tempfile
 from typing import Literal
 
-from .platform import CREATE_NO_WINDOW, IS_WIN, home
+from .platform import CREATE_NO_WINDOW, IS_WIN, disown, home, own
 from .registry import ToolContext, ToolError, tool
 
 
@@ -16,6 +16,8 @@ def _run(argv: list[str], timeout: int, ctx: ToolContext | None) -> str:
         argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
         errors="replace", cwd=str(home()), creationflags=CREATE_NO_WINDOW,
     )
+    if ctx is not None:
+        own(ctx.cancel, proc)
     try:
         for _ in range(max(1, timeout) * 10):
             try:
@@ -32,6 +34,8 @@ def _run(argv: list[str], timeout: int, ctx: ToolContext | None) -> str:
     finally:
         if proc.poll() is None:
             proc.kill()
+        if ctx is not None:
+            disown(ctx.cancel, proc)
     out = (out or "").strip()
     return f"exit code {proc.returncode}\n{out[-6000:] if out else '(no output)'}"
 

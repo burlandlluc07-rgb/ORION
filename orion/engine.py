@@ -85,6 +85,7 @@ class Engine:
         self.skills.disabled = set(self.store.kv_get("disabled_skills", []))
         files_tools.set_allowed_roots(self.config.settings.allowed_roots)
         files_tools.set_data_dir(self.config.root)
+        self._apply_browser_mode()
         self.accounts.sync_tools()
         self.home.sync_tools()
 
@@ -278,9 +279,16 @@ class Engine:
         old_voice = self.config.settings.voice.model_dump()
         self.config.update(patch)
         files_tools.set_allowed_roots(self.config.settings.allowed_roots)
+        self._apply_browser_mode()
         if self.voice and self.config.settings.voice.model_dump() != old_voice:
             asyncio.ensure_future(self.voice.restart())
         self.bus.emit("settings.changed", settings=self.config.settings.model_dump())
+
+    def _apply_browser_mode(self) -> None:
+        from .tools.browser import BROWSER
+
+        # Only the preference: a running browser switches the next time it starts (or via browser_show/hide).
+        BROWSER.want_visible = self.config.settings.browser_mode == "visible"
 
     def state(self) -> dict:
         s = self.config.settings

@@ -181,10 +181,10 @@ def change_volume(delta: int) -> str:
     """
     cur = get_volume()
     if cur is None:
-        import pyautogui
-
-        pyautogui.press("volumeup" if delta > 0 else "volumedown", presses=max(1, abs(delta) // 2))
-        return f"Pressed volume {'up' if delta > 0 else 'down'} (couldn't read the exact level)."
+        steps = max(1, abs(int(delta)) // 2)
+        for _ in range(steps):
+            _app_command("volume_up" if delta > 0 else "volume_down")
+        return f"Turned the volume {'up' if delta > 0 else 'down'} (couldn't read the exact level)."
     return set_volume(cur + int(delta))
 
 
@@ -203,9 +203,7 @@ def mute(state: Literal["toggle", "on", "off"] = "toggle") -> str:
             ep.SetMute(int(new), None)
             return "Muted." if new else "Unmuted."
         except Exception:
-            import pyautogui
-
-            pyautogui.press("volumemute")
+            _app_command("volume_mute")
             return "Toggled mute."
     if IS_MAC:
         val = {"on": "true", "off": "false"}.get(state, "not (output muted of (get volume settings))")
@@ -253,11 +251,36 @@ def media_control(action: Literal["play_pause", "next", "previous", "stop"]) -> 
     if IS_LINUX and shutil.which("playerctl"):
         run(["playerctl", {"play_pause": "play-pause", "previous": "previous"}.get(action, action)])
         return "Done."
+    if IS_WIN:
+        _app_command(action)
+        return f"Media: {action.replace('_', '/')}."
     import pyautogui
 
     key = {"play_pause": "playpause", "next": "nexttrack", "previous": "prevtrack", "stop": "stop"}[action]
     pyautogui.press(key)
     return f"Media: {action.replace('_', '/')}."
+
+
+# WM_APPCOMMAND codes. Sent as a window message to the shell, the same command a media key produces, but
+# without injecting a key press: nothing reaches the focused window and the mouse and focus stay put.
+APPCOMMANDS = {"volume_mute": 8, "volume_down": 9, "volume_up": 10, "next": 11, "previous": 12, "stop": 13,
+               "play_pause": 14}
+
+
+def _app_command(action: str) -> None:
+    if not IS_WIN:
+        import pyautogui
+
+        pyautogui.press({"volume_mute": "volumemute", "volume_down": "volumedown", "volume_up": "volumeup"}[action])
+        return
+    import ctypes
+
+    user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+    shell = user32.FindWindowW("Shell_TrayWnd", None)
+    if not shell:
+        raise ToolError("The Windows shell (taskbar) isn't running, so media commands can't be sent.")
+    res = ctypes.c_ulong()
+    user32.SendMessageTimeoutW(shell, 0x0319, shell, APPCOMMANDS[action] << 16, 0x2, 2000, ctypes.byref(res))
 
 
 # ── Power ───────────────────────────────────────────────────────────────────

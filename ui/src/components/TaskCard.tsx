@@ -1,5 +1,6 @@
 import {
-  Ban, CheckCircle2, ChevronDown, ChevronRight, Circle, CircleDot, Clock, Loader2, ShieldAlert, Square, XCircle,
+  AlertTriangle, Ban, CheckCircle2, ChevronDown, ChevronRight, Circle, CircleDot, Clock, Loader2, Monitor, ShieldAlert,
+  Square, XCircle,
 } from "lucide-react";
 import { useState } from "react";
 import type { Step, Task } from "../lib/types";
@@ -11,6 +12,7 @@ export function StepIcon({ status }: { status: Step["status"] }) {
     case "denied": return <Ban size={16} className="s-denied" />;
     case "waiting": return <ShieldAlert size={16} className="s-waiting" />;
     case "stopped": return <Square size={14} className="s-stopped" />;
+    case "attention": return <AlertTriangle size={16} className="s-waiting" />;
     default: return <Loader2 size={16} className="s-running spin" />;
   }
 }
@@ -19,6 +21,13 @@ function dur(s: Step) {
   const end = s.ended ?? Date.now() / 1000;
   const d = end - s.started;
   return d < 1 ? `${Math.round(d * 1000)}ms` : `${d.toFixed(1)}s`;
+}
+
+function Verified({ v }: { v: NonNullable<NonNullable<Step["lifecycle"]>["verification"]> }) {
+  if (v.status === "passed") return <span className="badge safe" title={v.evidence.join("; ")}>verified</span>;
+  if (v.status === "failed") return <span className="badge danger" title={v.reason}>check failed</span>;
+  if (v.status === "unverified") return <span className="badge" title={v.reason}>not verified</span>;
+  return null;
 }
 
 export function TaskStatus({ task }: { task: Task }) {
@@ -56,9 +65,21 @@ export function StepList({ steps, showResults = true }: { steps: Step[]; showRes
             <div className="row" style={{ gap: 8 }}>
               <span className="grow ellipsis">{s.label}</span>
               {s.risk !== "safe" && <span className={`badge ${s.risk}`}>{s.risk === "danger" ? "high risk" : "approval"}</span>}
+              {s.lifecycle && s.lifecycle.capabilities.desktop !== "none" && (
+                <span className="badge confirm" title="Uses your screen, mouse or keyboard"><Monitor size={11} /> desktop</span>
+              )}
+              {s.lifecycle?.verification && <Verified v={s.lifecycle.verification} />}
               <span className="dur">{dur(s)}</span>
             </div>
             {showResults && openId === s.id && s.result && <div className="result">{s.result}</div>}
+            {showResults && openId === s.id && s.lifecycle && (
+              <div className="result muted">
+                {s.lifecycle.history.map((h) => h.stage.replace("_", " ")).join(" → ")}
+                {s.lifecycle.verification?.evidence.length ? `\nChecked: ${s.lifecycle.verification.evidence.join("; ")}` : ""}
+                {s.lifecycle.verification?.reason ? `\nCheck: ${s.lifecycle.verification.reason}` : ""}
+                {s.lifecycle.logs.length ? `\n${s.lifecycle.logs.join("\n")}` : ""}
+              </div>
+            )}
           </div>
         </div>
       ))}

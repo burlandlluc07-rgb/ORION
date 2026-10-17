@@ -16,6 +16,36 @@ IS_LINUX = sys.platform.startswith("linux")
 CREATE_NO_WINDOW = 0x08000000 if IS_WIN else 0
 
 
+# Worker processes ORION started for a task, keyed by that task's cancel token, so a stop can end exactly
+# ORION's own workers (never anything else on the PC).
+_OWNED: dict[int, list[subprocess.Popen]] = {}
+
+
+def own(token: object, proc: subprocess.Popen) -> None:
+    _OWNED.setdefault(id(token), []).append(proc)
+
+
+def disown(token: object, proc: subprocess.Popen) -> None:
+    procs = _OWNED.get(id(token), [])
+    if proc in procs:
+        procs.remove(proc)
+    if not procs:
+        _OWNED.pop(id(token), None)
+
+
+def kill_owned(token: object) -> int:
+    """Terminate the still-running worker processes ORION started for this task. Returns how many."""
+    n = 0
+    for proc in _OWNED.pop(id(token), []):
+        if proc.poll() is None:
+            try:
+                proc.kill()
+                n += 1
+            except OSError:
+                pass
+    return n
+
+
 def run(cmd: list[str] | str, timeout: float = 15, shell: bool = False, check: bool = False) -> subprocess.CompletedProcess:
     return subprocess.run(
         cmd, capture_output=True, text=True, timeout=timeout, shell=shell, check=check,

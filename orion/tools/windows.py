@@ -795,6 +795,9 @@ POSITIONS = ("left", "right", "top", "bottom", "top-left", "top-right", "bottom-
              "maximize")
 
 
+SWP_NOZORDER, SWP_NOACTIVATE, SWP_SHOWWINDOW = 0x0004, 0x0010, 0x0040
+
+
 def _frame_rect(hwnd: int) -> tuple[int, int, int, int]:
     import ctypes
     from ctypes import wintypes
@@ -826,10 +829,12 @@ def place_window(hwnd: int, position: str, monitor: int = 0) -> tuple[int, int, 
     user32.GetMonitorInfoW(ctypes.c_void_p(hmon), ctypes.byref(mi))
     wa = mi.rcWork
     W, H = wa.right - wa.left, wa.bottom - wa.top
-    user32.ShowWindow(hwnd, 9)  # SW_RESTORE (un-maximise first)
+    # Never activate the window: it moves, but the user's focus stays where it was.
+    flags = SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW
+    if user32.IsZoomed(hwnd) or user32.IsIconic(hwnd):
+        user32.ShowWindow(hwnd, 4)  # SW_SHOWNOACTIVATE restores without activating (SW_RESTORE would)
     if position == "maximize":
-        user32.SetWindowPos(hwnd, 0, wa.left, wa.top, W // 2, H // 2, 0x0004 | 0x0040)
-        user32.ShowWindow(hwnd, 3)
+        user32.SetWindowPos(hwnd, 0, wa.left, wa.top, W, H, flags)
         return _frame_rect(hwnd)
     half_w, half_h = W // 2, H // 2
     x, y, w, h = {
@@ -842,11 +847,11 @@ def place_window(hwnd: int, position: str, monitor: int = 0) -> tuple[int, int, 
     x, y = wa.left + x, wa.top + y
     # Compensate for the invisible resize borders Windows 10/11 add around windows.
     wr = wintypes.RECT()
-    user32.SetWindowPos(hwnd, 0, x, y, w, h, 0x0004 | 0x0040)
+    user32.SetWindowPos(hwnd, 0, x, y, w, h, flags)
     user32.GetWindowRect(hwnd, ctypes.byref(wr))
     fl, ft, fr, fb = _frame_rect(hwnd)
     dl, dt, dr, db = fl - wr.left, ft - wr.top, wr.right - fr, wr.bottom - fb
-    user32.SetWindowPos(hwnd, 0, x - dl, y - dt, w + dl + dr, h + dt + db, 0x0004 | 0x0040)
+    user32.SetWindowPos(hwnd, 0, x - dl, y - dt, w + dl + dr, h + dt + db, flags)
     return _frame_rect(hwnd)
 
 
