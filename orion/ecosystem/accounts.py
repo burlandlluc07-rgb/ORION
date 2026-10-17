@@ -39,6 +39,7 @@ from typing import Literal
 import httpx
 
 from ..tools.platform import open_target
+from . import email_priority
 from ..tools.registry import Registry, Tool, ToolError, schema_for
 
 log = logging.getLogger("orion.accounts")
@@ -108,6 +109,8 @@ class Accounts:
         self.on_change = on_change
         self._lock = threading.Lock()
         self._ics_cache: dict[str, tuple[float, bytes]] = {}
+        self._known_cache: tuple[float, str, set[str]] | None = None
+        self.email_rules = email_priority.Rules(root / "email_rules.json")
         self.data = self._read()
 
     # ── persistence ────────────────────────────────────────────────────────
@@ -222,7 +225,8 @@ class Accounts:
                              (self.email_send, "confirm"), (self.email_forward, "confirm"),
                              (self.email_save_attachments, "confirm"), (self.email_mark, "safe"),
                              (self.email_move, "confirm"), (self.email_folders, "safe"),
-                             (self.email_find_contact, "safe")):
+                             (self.email_find_contact, "safe"), (self.email_by_importance, "safe"),
+                             (self.email_importance_rules, "safe")):
                 self._register(fn, risk, "account:email", "email")
         self._register(self.calendar_add_event, "confirm", "account:calendar", "calendar")
         if self.data.get("calendars"):
@@ -638,6 +642,137 @@ class Accounts:
             imap.logout()
         people = sorted(found.values(), key=lambda c: -c["emails"])[:limit]
         return people or f"No one matching “{name}” in your recent mail."
+
+    # ── importance (read-only) ─────────────────────────────────────────────
+    _PRIORITY_HEADERS = "FROM TO CC SUBJECT DATE LIST-UNSUBSCRIBE LIST-ID PRECEDENCE AUTO-SUBMITTED X-PRIORITY IMPORTANCE"
+
+    def _known_contacts(self, imap: imaplib.IMAP4_SSL, em: dict) -> set[str]:
+        """Addresses the user has sent mail to (recent Sent folder), cached for 30 minutes."""
+        hit = self._known_cache
+        if hit and hit[1] == em["address"] and time.time() - hit[0] < 1800:
+            return hit[2]
+        known: set[str] = set()
+        try:
+            sent = next((n for n, f in self._folders(imap) if "\\sent" in f), None)
+            if sent and imap.select(f'"{sent}"', readonly=True)[0] == "OK":
+                typ, data = imap.uid("search", None, "ALL")
+                uids = (data[0].split() if typ == "OK" and data and data[0] else [])[-300:]
+                if uids:
+                    typ, data = imap.uid("fetch", b",".join(uids), "(BODY.PEEK[HEADER.FIELDS (TO CC)])")
+                    for item in data or []:
+                        if isinstance(item, tuple):
+                            h = email.message_from_bytes(item[1])
+                            known |= email_priority.addresses(_decode(h.get("To")), _decode(h.get("Cc")))
+        except Exception as exc:  # contacts are a bonus signal; ranking still works without them
+            log.warning("Couldn't read the Sent folder for contacts: %s", exc)
+        known.discard(em["address"].lower())
+        self._known_cache = (time.time(), em["address"], known)
+        return known
+
+    def _priority_fetch(self, imap: imaplib.IMAP4_SSL, uids: list[bytes], gmail: bool) -> list[dict]:
+        """Headers, opening text and flags for many emails in one round trip."""
+        items = f"(UID FLAGS{' X-GM-LABELS' if gmail else ''} BODY.PEEK[HEADER.FIELDS ({self._PRIORITY_HEADERS})] " \
+                f"BODY.PEEK[TEXT]<0.1500>)"
+        typ, data = imap.uid("fetch", b",".join(uids), items)
+        if typ != "OK":
+            return []
+        out: list[dict] = []
+        cur: dict | None = None
+        for item in data or []:
+            if not isinstance(item, tuple):
+                continue
+            prefix = item[0].decode("utf-8", "replace")
+            m = re.match(r"^\d+ \(", prefix)
+            if m:  # a new message starts
+                uid = re.search(r"UID (\d+)", prefix)
+                flags = re.search(r"FLAGS \(([^)]*)\)", prefix)
+                cur = {"id": uid.group(1) if uid else "", "flags": set((flags.group(1) if flags else "").split()),
+                       "gmail_important": "\\Important" in prefix, "header": b"", "text": b""}
+                out.append(cur)
+            if cur is None:
+                continue
+            if "HEADER" in prefix:
+                cur["header"] = item[1]
+            elif "TEXT" in prefix:
+                cur["text"] = item[1]
+            else:  # a whole message (servers that ignore the partial fetch)
+                cur["header"], cur["text"] = item[1], item[1]
+        msgs = []
+        for c in out:
+            h = email.message_from_bytes(c["header"])
+            if c["text"] is c["header"]:
+                text = _body_text(h, 1500)
+            else:
+                text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>|=\r?\n|--+[\w=_.-]+", " ",
+                                                   c["text"].decode("utf-8", "replace")))
+            msgs.append({
+                "id": c["id"], "flags": c["flags"], "gmail_important": c["gmail_important"], "text": text.strip(),
+                "from": _decode(h.get("From")), "to": _decode(h.get("To")), "cc": _decode(h.get("Cc")),
+                "subject": _decode(h.get("Subject")), "date": h.get("Date", ""),
+                "list_unsubscribe": h.get("List-Unsubscribe", ""), "list_id": h.get("List-Id", ""),
+                "precedence": h.get("Precedence", ""), "auto_submitted": h.get("Auto-Submitted", ""),
+                "x_priority": h.get("X-Priority", ""), "importance": h.get("Importance", ""),
+            })
+        return msgs
+
+    def email_by_importance(self, limit: int = 10, unread_only: bool = True, scan: int = 40,
+                            folder: str = "INBOX") -> dict:
+        """Sort the user's emails by importance, most important first, each with a short reason (who sent it,
+        deadlines or urgent wording, newsletter or automated, the user's own rules). Read-only: nothing in the
+        mailbox changes. Use it for "what's important in my inbox", "sort my unread emails by importance".
+        Present the high ones first with their reasons; you may re-order slightly after reading the content.
+
+        Args:
+            limit: How many to return (max 30).
+            unread_only: Only unread emails (set false for "all my recent emails").
+            scan: How many of the newest emails to look at (max 100).
+            folder: Mailbox folder name.
+        """
+        em = self._em()
+        gmail = "gmail" in em["imap_host"]
+        rules = self.email_rules.load()
+        imap = self._imap_login(em)
+        try:
+            known = self._known_contacts(imap, em)
+            if imap.select(f'"{folder}"', readonly=True)[0] != "OK":
+                raise ToolError(f"No folder named “{folder}”. Use email_folders to see them.")
+            typ, data = imap.uid("search", None, "UNSEEN" if unread_only else "ALL")
+            uids = (data[0].split() if typ == "OK" and data and data[0] else [])[-max(1, min(scan, 100)):]
+            msgs = self._priority_fetch(imap, uids, gmail) if uids else []
+        finally:
+            imap.logout()
+        if not msgs:
+            return {"note": "No unread emails." if unread_only else "No messages.", "emails": []}
+        ranked = []
+        for m in msgs:
+            s = email_priority.score(m, em["address"], known, rules)
+            ranked.append({"id": m["id"], "from": m["from"], "subject": m["subject"], "date": m["date"],
+                           "unread": "\\Seen" not in m["flags"], **s, "snippet": re.sub(r"\s+", " ", m["text"])[:160]})
+        ranked.sort(key=lambda r: -r["score"])  # stable: equal scores keep newest-first order below
+        counts = {k: sum(r["importance"] == k for r in ranked) for k in ("high", "medium", "low")}
+        return {"looked_at": len(ranked), "counts": counts, "folder": folder,
+                "emails": ranked[:max(1, min(limit, 30))]}
+
+    def email_importance_rules(self, action: Literal["list", "add", "remove"] = "list", match: str = "",
+                               level: Literal["important", "low"] = "important") -> list[dict] | str:
+        """The user's own email importance rules, saved on this PC, e.g. "emails from my boss are always
+        important", "anything from linkedin.com is low priority". Used by email_by_importance.
+
+        Args:
+            action: list, add or remove a rule.
+            match: An address (boss@acme.com), a domain (acme.com) or a word in the sender name or subject.
+            level: important, or low priority.
+        """
+        if action == "list":
+            return self.email_rules.load() or "No importance rules yet."
+        if not match.strip():
+            raise ToolError("Say which address, domain or word the rule is for.")
+        if action == "add":
+            r = self.email_rules.add(match, level)
+            return f"Saved: emails matching “{r['match']}” are {'always important' if level == 'important' else 'low priority'}."
+        if self.email_rules.remove(match):
+            return f"Removed the rule for “{match.strip().lower()}”."
+        return f"There's no rule for “{match.strip().lower()}”."
 
     # ── calendar ───────────────────────────────────────────────────────────
     def _fetch_ics(self, url: str, force: bool = False) -> bytes:

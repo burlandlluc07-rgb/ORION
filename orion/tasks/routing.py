@@ -49,7 +49,7 @@ LOCAL_CHANGES = {"write_file", "create_folder", "move_or_copy", "delete_path", "
                  "combine_pdfs", "extract_pdf_pages", "fill_pdf_form", "edit_images", "zip_files", "extract_archive",
                  "download_file", "set_theme", "set_wallpaper", "set_volume", "change_volume", "mute",
                  "set_brightness", "take_screenshot", "email_save_attachments", "write_clipboard", "create_routine",
-                 "forget", "remember", "add_note", "todo", "set_timer", "set_reminder", "cancel_scheduled"}
+                 "forget", "remember", "add_note", "email_importance_rules", "todo", "set_timer", "set_reminder", "cancel_scheduled"}
 # Tools that already read their own change back and fail loudly when it didn't stick.
 SELF_CHECKED = {"write_file": "the file was read back and compared", "create_folder": "the folder was checked",
                 "move_or_copy": "the destination was checked", "set_theme": "the registry value was read back",

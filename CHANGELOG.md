@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+- **Sort email by importance.** Ask "sort my unread emails by importance" or "what's important in my inbox" and
+  ORION ranks them high / medium / low with a short reason for each: people you've written to, deadlines and
+  urgent wording (English, Spanish and Catalan), mail sent straight to you vs. copied, newsletters and automated
+  senders, sender-set priority, Gmail's own "important" marker and your stars. It only reads: nothing in the
+  mailbox is flagged, labelled, moved or marked. Tell ORION your own rules ("emails from my boss are always
+  important", "linkedin.com is low priority"); they are kept on this PC in `email_rules.json`.
+
 ## 2.6.0
 - **No more approval prompts by default.** ORION now acts without asking first: typing and clicking, opening or
   changing windows, bringing the browser to the front, deleting files (still to the Recycle Bin), power actions,

@@ -46,7 +46,8 @@ def _google(engine: "Engine") -> dict:
     mcp = [c for c in engine.connectors.list() if "google" in c["name"] or "workspace" in c["name"]]
     can, blocked = [], ["sending email still asks first, every time", "creating or changing calendar events directly"]
     if gmail:
-        can.append("read and search Gmail (email_inbox, email_search, email_read)")
+        can.append("read and search Gmail (email_inbox, email_search, email_read) and sort it by importance "
+                   "(email_by_importance)")
     if cals:
         can.append(f"read {len(cals)} Google calendar(s) (calendar_upcoming)")
     for c in mcp:
