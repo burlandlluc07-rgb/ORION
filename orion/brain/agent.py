@@ -23,7 +23,9 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from google.genai import types
 
-from ..tasks.tracker import Task
+from ..tasks.lifecycle import STEP_STATUS, TaskRecord
+from ..tasks.routing import executor_for
+from ..tasks.tracker import APPROVAL_TIMEOUT, Task
 from ..tools.kits import open_toolkit_declaration, select_kits
 from ..tools.registry import ToolContext, ToolError
 from . import router
@@ -37,6 +39,7 @@ log = logging.getLogger("orion.agent")
 
 MAX_ROUNDS = 10
 TOOL_TIMEOUT = 300
+CANCEL_GRACE = 5.0  # seconds a stopped step gets to finish cleanly before ORION ends its own workers
 SMART_HINTS = re.compile(
     r"\b(analy[sz]e|explain|why|compare|research|summari[sz]e|write|draft|essay|email|letter|code|script|debug|"
     r"plan|organi[sz]e|step[- ]by[- ]step|then|after that|each|every|all (?:the|my)|report|translate|review)\b",
@@ -67,6 +70,18 @@ BUILTIN_DECLS = [
 ]
 
 
+def desktop_label(label: str, desktop: str) -> str:
+    what = "uses your mouse, keyboard or focus" if desktop == "input" else "opens or changes a window on your screen"
+    return f"{label} — this {what}"
+
+
+def _target_of(args: dict) -> str:
+    for key in ("path", "output", "name", "app", "title", "url", "query", "to", "target", "destination", "command"):
+        if args.get(key):
+            return str(args[key])[:160]
+    return ""
+
+
 def pick_tier(text: str, has_media: bool = False) -> str:
     if has_media or len(text) > 280:
         return "smart"
@@ -93,42 +108,182 @@ class Agent:
         return reg.declarations(kits=loaded) + BUILTIN_DECLS + ([open_toolkit_declaration(rest)] if rest else [])
 
     # ── Tool execution (shared with the Live voice session) ────────────────
-    async def run_tool(self, name: str, args: dict, task: Task, conv_id: str | None) -> tuple[bool, str]:
+    async def run_tool(self, name: str, args: dict, task: Task, conv_id: str | None, *,
+                       origin: str = "assistant") -> tuple[bool, str]:
+        """Run one action through the router, the permission gates, the executor and verification.
+
+        ``origin`` says who chose the action: "assistant" (the model, a routine or a mission), "app" (a
+        Run button in ORION), "command" (the user's own instant command, matched word for word) or "user"
+        (the user's own phone button, which never needs an approval prompt). Every call gets a lifecycle
+        record on its step (see orion/tasks/lifecycle.py).
+        """
         e = self.e
         tool = e.registry.get(name)
         if tool is None:
             return False, f"Unknown or disabled tool: {name}"
         label = tool.describe_call(args)
         step = e.tracker.add_step(task, name, label, tool.risk)
-        if self.needs_approval(tool.risk, name):
+        executor = executor_for(tool, e.config.settings)
+        caps = executor.capabilities()
+        record = TaskRecord(id=step["id"], type=name, executor=executor.name, target=_target_of(args),
+                            task_id=task.id, origin=origin, capabilities=caps.to_dict())
+        record.on_change = lambda rec: step.__setitem__("lifecycle", rec.to_dict())
+        step["lifecycle"] = record.to_dict()
+
+        record.advance("validating")
+        try:
+            executor.validate(record, args)
+        except ToolError as exc:
+            return self._end(task, step, record, "failed", str(exc), ok=False)
+
+        need_risk = origin != "user" and self.needs_approval(tool.risk, name)
+        need_desktop = self.needs_desktop_permission(caps.desktop, origin)
+        scope = f"{name} on “{record.target}” for this task only" if record.target else f"{name} for this task only"
+        if need_risk or need_desktop:
+            record.advance("awaiting_permission", "foreground step" if need_desktop else f"{tool.risk} action")
             e.tracker.update_step(task, step, "waiting")
-            ok = await e.approvals.request(name, label, tool.risk, args, task)
+            ask = desktop_label(label, caps.desktop) if need_desktop else label
+            ok = await e.approvals.request(name, ask, tool.risk, args, task, desktop=need_desktop)
+            record.approval = {"granted": ok, "by": "user", "scope": scope, "desktop": need_desktop, "at": time.time()}
             if not ok:
+                record.advance("cancelled", "declined by the user")
                 e.tracker.update_step(task, step, "denied", "Declined by user")
                 return False, "The user declined this action. Don't retry it; ask what they'd prefer instead."
             e.tracker.update_step(task, step, "running")
+        else:
+            by = {"user": "the user's own control", "command": "the user's own command"}.get(origin, "policy")
+            record.approval = {"granted": True, "by": by, "scope": scope, "desktop": caps.desktop != "none",
+                               "at": time.time()}
         if task.cancel.is_set():
-            e.tracker.update_step(task, step, "stopped")
-            return False, "Stopped by user."
-        ctx = ToolContext(engine=e, cancel=task.cancel, conv_id=conv_id,
-                          progress=lambda msg: e.bus.emit("task.progress", task_id=task.id, step_id=step["id"], text=msg))
+            return self._end(task, step, record, "cancelled", "Stopped by user.", ok=False)
+
+        loop = asyncio.get_running_loop()
+
+        def progress(msg: str) -> None:
+            e.bus.emit("task.progress", task_id=task.id, step_id=step["id"], text=msg)
+            loop.call_soon_threadsafe(record.log, msg)
+
+        def escalate(reason: str) -> bool:
+            """Called from a tool's worker thread before it falls back to the real mouse or keyboard."""
+            if e.config.settings.desktop_actions == "allow":
+                loop.call_soon_threadsafe(record.log, f"foreground fallback allowed by settings: {reason}")
+                return True
+            loop.call_soon_threadsafe(record.advance, "awaiting_permission", f"fallback: {reason}")
+            fut = asyncio.run_coroutine_threadsafe(
+                e.approvals.request(name, desktop_label(f"{label} ({reason})", "input"), tool.risk, args, task,
+                                    desktop=True), loop)
+            try:
+                granted = bool(fut.result(timeout=APPROVAL_TIMEOUT + 10))
+            except Exception:
+                granted = False
+            loop.call_soon_threadsafe(record.advance, "running",
+                                      "fallback allowed" if granted else "fallback declined")
+            return granted
+
+        record.advance("running")
+        ctx = ToolContext(engine=e, cancel=task.cancel, conv_id=conv_id, progress=progress, escalate=escalate)
+        job = asyncio.ensure_future(executor.execute(record, args, ctx))
+        started = time.monotonic()
         try:
-            result = await asyncio.wait_for(tool.run(args, ctx), timeout=TOOL_TIMEOUT)
+            while True:
+                done, _ = await asyncio.wait({job}, timeout=0.25)
+                if done:
+                    result = job.result()
+                    break
+                if task.cancel.is_set():
+                    return await self._staged_cancel(job, executor, record, task, step, args)
+                if time.monotonic() - started > TOOL_TIMEOUT:
+                    return await self._timed_out(job, executor, record, task, step, name, args)
         except ToolError as exc:
-            e.tracker.update_step(task, step, "failed", str(exc))
-            return False, str(exc)
-        except asyncio.TimeoutError:
-            e.tracker.update_step(task, step, "failed", "Timed out")
-            return False, f"{name} timed out after {TOOL_TIMEOUT}s."
+            if task.cancel.is_set():  # the tool saw the stop and ended itself: the cooperative path
+                record.advance("cancel_requested", "stop requested; no new steps will start")
+                record.log(f"stopped cooperatively ({str(exc)[:120]})")
+                return self._end(task, step, record, "cancelled", "Stopped by user.", ok=False, note="stopped")
+            return self._end(task, step, record, "failed", str(exc), ok=False)
         except TypeError as exc:
-            e.tracker.update_step(task, step, "failed", f"Bad arguments: {exc}")
-            return False, f"Bad arguments for {name}: {exc}"
+            return self._end(task, step, record, "failed", f"Bad arguments for {name}: {exc}", ok=False,
+                             shown=f"Bad arguments: {exc}")
         except Exception as exc:
             log.exception("Tool %s crashed", name)
-            e.tracker.update_step(task, step, "failed", f"{type(exc).__name__}: {exc}")
-            return False, f"{type(exc).__name__}: {exc}"
-        e.tracker.update_step(task, step, "done", result)
+            return self._end(task, step, record, "failed", f"{type(exc).__name__}: {exc}", ok=False)
+        return await self._verify(executor, record, task, step, args, result)
+
+    async def _verify(self, executor, record: TaskRecord, task: Task, step: dict, args: dict, result: str,
+                      note: str = "") -> tuple[bool, str]:
+        """No step counts as done until its result has been checked (orion/tasks/verify.py)."""
+        record.outputs = [result[:300]]
+        record.advance("verifying", note)
+        try:
+            ver = await asyncio.to_thread(executor.verify, record, args, result)
+        except Exception as exc:
+            ver = {"status": "unverified", "reason": f"the check itself failed: {type(exc).__name__}: {exc}",
+                   "evidence": []}
+        record.verification = ver
+        if ver.get("status") == "failed":
+            warn = (f"\n\n⚠ ORION checked the result and it isn't right: {ver.get('reason')}. "
+                    "Tell the user exactly this; don't say it worked.")
+            record.advance("needs_attention", str(ver.get("reason", "")))
+            self.e.tracker.update_step(task, step, "attention", result + warn)
+            return True, result + warn
+        record.advance("completed", ver.get("status", ""))
+        self.e.tracker.update_step(task, step, "done", result)
         return True, result
+
+    async def _staged_cancel(self, job, executor, record: TaskRecord, task: Task, step: dict,
+                             args: dict) -> tuple[bool, str]:
+        """Stop in stages: no new work → cooperative cancel → a short cleanup interval → end ORION's own workers."""
+        record.advance("cancel_requested", "stop requested; no new steps will start")
+        executor.cancel(record)
+        finished = True
+        try:
+            result = await asyncio.wait_for(asyncio.shield(job), CANCEL_GRACE)
+        except asyncio.TimeoutError:
+            finished, result = False, None
+        except Exception as exc:  # the tool noticed the stop and raised, which is the cooperative path
+            result = None
+            record.log(f"stopped cooperatively ({type(exc).__name__}: {str(exc)[:120]})")
+        if not finished:
+            from ..tools.platform import kill_owned
+
+            n = kill_owned(task.cancel)
+            record.log(f"still running after {CANCEL_GRACE:.0f}s; ended {n} ORION-owned worker process(es); "
+                       "anything it still does is ignored")
+            job.add_done_callback(lambda j: j.cancelled() or j.exception())
+        if result is not None:  # it completed before the stop took effect: say so, don't pretend it didn't happen
+            record.log("the action finished before the stop took effect")
+            await self._verify(executor, record, task, step, args, result, note="finished before the stop")
+            return False, f"Stopped by user, but this step had already finished: {result[:200]}"
+        return self._end(task, step, record, "cancelled", "Stopped by user.", ok=False,
+                         note="stopped" if finished else "stop forced")
+
+    async def _timed_out(self, job, executor, record: TaskRecord, task: Task, step: dict, name: str,
+                         args: dict) -> tuple[bool, str]:
+        """A timeout doesn't mean nothing happened: check the result before reporting or retrying."""
+        job.add_done_callback(lambda j: j.cancelled() or j.exception())
+        record.log(f"timed out after {TOOL_TIMEOUT}s; checking whether it worked anyway")
+        record.advance("verifying", "timed out")
+        try:
+            ver = await asyncio.to_thread(executor.verify, record, args, "")
+        except Exception:
+            ver = {"status": "unverified", "evidence": []}
+        record.verification = ver
+        if ver.get("status") == "passed":
+            record.advance("completed", "timed out, but the result checks out")
+            msg = f"{name} took longer than {TOOL_TIMEOUT}s, but its result was checked and is there."
+            self.e.tracker.update_step(task, step, "done", msg)
+            return True, msg
+        record.advance("failed", "timed out")
+        self.e.tracker.update_step(task, step, "failed", "Timed out")
+        return False, (f"{name} timed out after {TOOL_TIMEOUT}s. It may have partly happened: check before "
+                       "retrying, and tell the user it is unconfirmed.")
+
+    def _end(self, task: Task, step: dict, record: TaskRecord, stage: str, message: str, *, ok: bool,
+             shown: str | None = None, note: str = "") -> tuple[bool, str]:
+        if stage == "cancelled" and record.stage == "running":
+            record.advance("cancel_requested")
+        record.advance(stage, note or message[:200])
+        self.e.tracker.update_step(task, step, STEP_STATUS[stage], shown if shown is not None else message)
+        return ok, message
 
     def needs_approval(self, risk: str, name: str) -> bool:
         mode = self.e.config.settings.approval_mode
@@ -137,6 +292,12 @@ class Agent:
         if mode == "auto_safe" and risk == "confirm":
             return False
         return True
+
+    def needs_desktop_permission(self, desktop: str, origin: str) -> bool:
+        """The foreground gate, separate from the risk gate: "trust" mode doesn't open it."""
+        if desktop == "none" or origin in ("user", "command"):
+            return False
+        return self.e.config.settings.desktop_actions != "allow"
 
     # ── Main entry point ───────────────────────────────────────────────────
     async def handle(self, text: str, conv_id: str | None = None, *, source: str = "text", mode: str = "auto",
@@ -184,7 +345,7 @@ class Agent:
         if route is None or self.e.registry.get(route.tool) is None:
             return None
         t0 = time.perf_counter()
-        ok, result = await self.run_tool(route.tool, route.args, task, cid)
+        ok, result = await self.run_tool(route.tool, route.args, task, cid, origin="command")
         if not ok and "declined" not in result and "Stopped" not in result and route.fallback \
                 and self.e.config.get_api_key():
             log.info("Fast path %s failed (%s); handing to Gemini", route.tool, result)

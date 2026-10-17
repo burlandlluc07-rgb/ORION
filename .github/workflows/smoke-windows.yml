@@ -1,0 +1,23 @@
+name: Windows smoke check (mouse and focus)
+on:
+  workflow_dispatch:
+  push:
+    branches: ["ci/windows-smoke-check", "feature/background-execution"]
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12" }
+      - name: Install ORION
+        run: python -m pip install -U pip && pip install -e .
+      - name: Background tasks must leave the mouse and focus alone; control cases prove the probe works
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python scripts/smoke_check.py --controls --out smoke_report.json
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with: { name: smoke-report, path: smoke_report.json }

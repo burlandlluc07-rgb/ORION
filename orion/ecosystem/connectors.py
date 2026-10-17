@@ -11,6 +11,10 @@ Configuration lives in ``connectors.json`` in the data folder::
     {"github": {"transport": "stdio", "command": "npx",
                 "args": ["-y", "@modelcontextprotocol/server-github"],
                 "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": "…"}, "enabled": true}}
+
+``"read_only": true`` on a connector only registers the tools the server marks read-only
+(``readOnlyHint``); every other tool is listed as blocked and can't be called. Use it to try a new
+account connector (for example Google Workspace) before allowing it to change anything.
 """
 
 from __future__ import annotations
@@ -104,6 +108,7 @@ class Connection:
         self.state = "stopped"  # stopped | starting | ready | error
         self.error: str | None = None
         self.tools: list[str] = []
+        self.blocked: list[str] = []  # tools not registered because the connector is read-only
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
 
@@ -153,7 +158,7 @@ class Connection:
                 await asyncio.wait_for(session.initialize(), timeout=60)
                 listed = await session.list_tools()
                 self.session = session
-                self.tools = []
+                self.tools, self.blocked = [], []
                 for t in listed.tools:
                     self._register(registry, t)
                 self.state = "ready"
@@ -179,6 +184,9 @@ class Connection:
         read_only = bool(getattr(ann, "readOnlyHint", False) or getattr(ann, "read_only_hint", False))
         destructive = bool(getattr(ann, "destructiveHint", False) or getattr(ann, "destructive_hint", False))
         remote_name = t.name
+        if self.cfg.get("read_only") and not read_only:
+            self.blocked.append(name)  # read-only connector: anything that might change data is never offered
+            return
         schema = getattr(t, "inputSchema", None) or getattr(t, "input_schema", None) or {}
 
         async def call(**kwargs: Any) -> str:
@@ -209,7 +217,8 @@ class Connection:
     def info(self) -> dict:
         safe_cfg = {k: v for k, v in self.cfg.items() if k != "env"}
         safe_cfg["env_keys"] = sorted((self.cfg.get("env") or {}).keys())
-        return {"name": self.name, "state": self.state, "error": self.error, "tools": self.tools, "config": safe_cfg}
+        return {"name": self.name, "state": self.state, "error": self.error, "tools": self.tools,
+                "blocked": self.blocked, "read_only": bool(self.cfg.get("read_only")), "config": safe_cfg}
 
 
 def _flatten(exc: BaseException) -> str:

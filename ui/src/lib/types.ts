@@ -18,7 +18,20 @@ export interface Conversation {
   pinned: boolean;
 }
 
-export type StepStatus = "running" | "waiting" | "done" | "failed" | "denied" | "stopped";
+export type StepStatus = "running" | "waiting" | "done" | "failed" | "denied" | "stopped" | "attention";
+
+/** The lifecycle record every step carries (orion/tasks/lifecycle.py). */
+export interface Lifecycle {
+  stage: string;
+  executor: string;
+  target: string;
+  origin: string;
+  history: { stage: string; at: number; note?: string }[];
+  approval: { granted: boolean; by: string; scope: string; desktop: boolean } | null;
+  logs: string[];
+  verification: { status: "passed" | "failed" | "unverified" | "not_applicable"; reason?: string; evidence: string[] } | null;
+  capabilities: { route: string; desktop: "none" | "visible" | "input" };
+}
 
 export interface Step {
   id: string;
@@ -29,6 +42,7 @@ export interface Step {
   result: string | null;
   started: number;
   ended: number | null;
+  lifecycle?: Lifecycle;
 }
 
 export interface PlanItem {
@@ -55,6 +69,7 @@ export interface Approval {
   args: Record<string, unknown>;
   task_id: string | null;
   expires: number;
+  desktop?: boolean;
 }
 
 export interface QuotaRow {
@@ -101,6 +116,8 @@ export interface Settings {
   fast_path: boolean;
   extra_models: boolean;
   approval_mode: "ask" | "auto_safe" | "trust";
+  desktop_actions: "ask" | "allow";
+  browser_mode: "background" | "visible";
   allowed_roots: string[];
   voice: VoiceSettings;
   hotkey_quickbar: string;

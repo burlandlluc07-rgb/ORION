@@ -37,6 +37,15 @@ class ToolContext:
     cancel: threading.Event = field(default_factory=threading.Event)
     progress: Callable[[str], None] = lambda _msg: None
     conv_id: str | None = None
+    # Ask the user before a tool falls back to their mouse, keyboard or focus. Blocking; call from tool threads.
+    escalate: Callable[[str], bool] = lambda _reason: False
+
+    def request_desktop(self, reason: str) -> bool:
+        """True when the user allowed this one foreground step (see Agent.run_tool's desktop gate)."""
+        try:
+            return bool(self.escalate(reason))
+        except Exception:
+            return False
 
     def check_cancelled(self) -> None:
         if self.cancel.is_set():

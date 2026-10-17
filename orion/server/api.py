@@ -349,7 +349,8 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
             raise HTTPException(404, "Unknown or disabled tool.")
         task = engine.tracker.start(f"Run {name.replace('_', ' ')}", None, "app")
         try:
-            ok, result = await asyncio.wait_for(engine.agent.run_tool(name, body.get("args") or {}, task, None),
+            ok, result = await asyncio.wait_for(engine.agent.run_tool(name, body.get("args") or {}, task, None,
+                                                                      origin="app"),
                                                 float(body.get("timeout", 300)))
         except asyncio.TimeoutError:
             task.cancel.set()
@@ -373,6 +374,12 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
         engine.plugins.load_all()
         engine.bus.emit("ecosystem.changed")
         return engine.plugins.list()
+
+    @app.get("/api/integrations", dependencies=[X])
+    async def integrations():
+        from ..ecosystem.integrations import status
+
+        return {"integrations": await asyncio.to_thread(status, engine)}
 
     @app.get("/api/connectors", dependencies=[X])
     async def connectors():
@@ -595,23 +602,16 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
         so they don't need AI-approval prompts — but they're still recorded as a task for the audit trail."""
         if name not in REMOTE_CONTROLS:
             raise HTTPException(403, "That control isn't available remotely.")
-        task = engine.tracker.start(f"Phone: {name.replace('_', ' ')}", None, "phone")
-        tool = engine.registry.get(name)
-        if tool is None:
-            engine.tracker.finish(task, "failed")
+        if engine.registry.get(name) is None:
             raise HTTPException(404, "Unknown control.")
-        from ..tools.registry import ToolContext
-
-        step = engine.tracker.add_step(task, name, tool.describe_call(body), tool.risk)
+        task = engine.tracker.start(f"Phone: {name.replace('_', ' ')}", None, "phone")
         try:
-            result = await asyncio.wait_for(tool.run(body, ToolContext(engine=engine, cancel=task.cancel)), 60)
-            engine.tracker.update_step(task, step, "done", result)
-            engine.tracker.finish(task)
-            return {"ok": True, "result": result}
-        except Exception as exc:
-            engine.tracker.update_step(task, step, "failed", str(exc))
-            engine.tracker.finish(task, "failed")
-            return {"ok": False, "error": str(exc)}
+            ok, result = await asyncio.wait_for(engine.agent.run_tool(name, body, task, None, origin="user"), 60)
+        except asyncio.TimeoutError:
+            task.cancel.set()
+            ok, result = False, "Timed out."
+        engine.tracker.finish(task, "done" if ok else "failed")
+        return {"ok": True, "result": result} if ok else {"ok": False, "error": result}
 
     # ── Desktop shell ──────────────────────────────────────────────────────
     @app.post("/api/open-folder/{which}", dependencies=[X])

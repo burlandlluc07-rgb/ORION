@@ -1,4 +1,8 @@
-"""Browser toolkit: ORION drives a real browser window (Microsoft Edge on Windows, no download needed).
+"""Browser toolkit: ORION drives its own browser (Microsoft Edge on Windows, no download needed).
+
+* By default the browser runs in the background with no window, so it never takes the screen, the mouse
+  or the keyboard focus. browser_show brings up a window (after the user allows it) when the user has to
+  sign in or solve a check themselves; browser_hide sends it back to the background.
 
 * A separate, persistent ORION browser profile: sign in to a site once (you type the password), and
   ORION stays signed in next time. Your everyday browser profile is never touched.
@@ -77,6 +81,8 @@ class Browser:
         self.names: dict[int, str] = {}  # ref → label from the latest snapshot (for approval summaries)
         self.host = ""
         self._lock = threading.Lock()
+        self.want_visible = False  # settings.browser_mode == "visible", or browser_show
+        self.visible = False  # the running browser has a window
 
     # Everything that touches Playwright runs on the worker thread.
     def call(self, fn: Callable[[], Any], timeout: float = 90) -> Any:
@@ -94,9 +100,14 @@ class Browser:
             self._pw = sync_playwright().start()
         profile = _data_dir()
         profile.mkdir(parents=True, exist_ok=True)
-        opts: dict[str, Any] = {"headless": os.environ.get("ORION_BROWSER_HEADLESS") == "1", "no_viewport": True,
-                                "args": ["--start-maximized", "--no-first-run", "--no-default-browser-check"],
-                                "accept_downloads": True}
+        headless = os.environ.get("ORION_BROWSER_HEADLESS") == "1" or not self.want_visible
+        opts: dict[str, Any] = {"headless": headless, "accept_downloads": True,
+                                "args": ["--no-first-run", "--no-default-browser-check"]}
+        if headless:
+            opts["viewport"] = {"width": 1366, "height": 900}
+        else:
+            opts["no_viewport"] = True
+            opts["args"].insert(0, "--start-maximized")
         exe = os.environ.get("ORION_BROWSER_PATH")
         # Keep the browser's security sandbox on (Playwright turns it off by default, which also shows a warning bar).
         opts["chromium_sandbox"] = not exe
@@ -113,6 +124,7 @@ class Browser:
                     raise ToolError("ORION's browser profile is open in another window; close it and try again.") from exc
         else:
             raise ToolError(f"Couldn't start a browser (Microsoft Edge or Chrome). {str(last)[:200]}")
+        self.visible = not headless
         self._ctx.set_default_timeout(ACTION_TIMEOUT)
         self._ctx.set_default_navigation_timeout(NAV_TIMEOUT)
         self._ctx.on("page", self._on_page)
@@ -123,6 +135,26 @@ class Browser:
         self._ctx = None
         self._page = None
         self.names = {}
+        self.visible = False
+
+    def set_visible(self, visible: bool) -> str:
+        """Switch between the background browser and a window, keeping the open page (worker thread only)."""
+        self.want_visible = visible
+        if self._ctx is None or self.visible == visible:
+            return ""
+        url = self._page.url if self._page is not None and not self._page.is_closed() else ""
+        self.close()
+        page = self.page()
+        if url and url != "about:blank":
+            try:
+                page.goto(url, wait_until="domcontentloaded")
+            except Exception:
+                pass
+        return url
+
+    def front(self, page: Any) -> None:
+        if self.visible:  # a hidden browser has no window to raise
+            page.bring_to_front()
 
     def _on_page(self, page: Any) -> None:
         self._page = page  # follow pop-ups and links that open a new tab
@@ -230,7 +262,7 @@ def browser_open(url: str, new_tab: bool = False) -> dict:
         except Exception as exc:
             raise ToolError(f"Couldn't open {target}: {str(exc).splitlines()[0][:200]}") from exc
         BROWSER.settle(page)
-        page.bring_to_front()
+        BROWSER.front(page)
         return BROWSER.state(page)
 
     return BROWSER.call(go)
@@ -404,7 +436,7 @@ def browser_tabs(action: Literal["list", "switch", "close"] = "list", index: int
             raise ToolError(f"No tab {index}; there are {len(pages)}.")
         if action == "switch":
             BROWSER._page = pages[index]
-            pages[index].bring_to_front()
+            BROWSER.front(pages[index])
             return BROWSER.state(pages[index], 50, 1200)
         pages[index].close()
         BROWSER._page = None
@@ -427,6 +459,31 @@ async def browser_look(question: str, ctx: ToolContext = None) -> str:  # type: 
         raise ToolError("Vision isn't available here.")
     shot = await asyncio.to_thread(BROWSER.call, lambda: BROWSER.page().screenshot(type="jpeg", quality=70))
     return await ctx.engine.brain.vision(question, shot, "image/jpeg")
+
+
+@tool(category="browser", kit=KIT, summary=lambda a: f"Show the browser window: {a.get('reason')}")
+def browser_show(reason: str) -> dict:
+    """Show ORION's browser in a window, when the USER has to do something there themselves: sign in, type a
+    password or card number, or solve a captcha. Everything else works in the background; don't call this
+    just to look at a page.
+
+    Args:
+        reason: What the user needs to do in the window, e.g. "sign in to your bank".
+    """
+    def show() -> dict:
+        BROWSER.set_visible(True)
+        page = BROWSER.page()
+        BROWSER.front(page)
+        return {"shown": True, **BROWSER.state(page, 30, 600)}
+
+    return BROWSER.call(show)
+
+
+@tool(category="browser", kit=KIT, summary=lambda a: "Send the browser back to the background")
+def browser_hide() -> str:
+    """Hide ORION's browser window again and keep working in the background (the open page and sign-ins stay)."""
+    BROWSER.call(lambda: BROWSER.set_visible(False))
+    return "The browser is running in the background again."
 
 
 @tool(category="browser", kit=KIT)

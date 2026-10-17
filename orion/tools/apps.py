@@ -19,7 +19,7 @@ from typing import Literal
 import psutil
 
 from .platform import IS_LINUX, IS_MAC, IS_WIN, open_target, powershell
-from .registry import ToolError, tool
+from .registry import ToolContext, ToolError, tool
 
 # Friendly aliases → canonical index names or direct commands.
 ALIASES: dict[str, str] = {
@@ -321,7 +321,7 @@ def _find_control(title: str, control: str):
 
 
 @tool(risk="confirm", category="apps", summary=lambda a: f"Click “{a.get('control')}” in {a.get('title')}")
-def click_control(title: str, control: str) -> str:
+def click_control(title: str, control: str, ctx: ToolContext = None) -> str:  # type: ignore[assignment]
     """Click/activate a button, tab, menu item or list item inside a window (UI Automation, no mouse needed).
 
     Args:
@@ -329,7 +329,7 @@ def click_control(title: str, control: str) -> str:
         control: The control's name or automation id (from inspect_window).
     """
     c = _find_control(title, control)
-    for method in ("invoke", "select", "toggle", "click_input"):
+    for method in ("invoke", "select", "toggle"):  # UI Automation patterns: no mouse, no focus change
         fn = getattr(c, method, None)
         if fn:
             try:
@@ -337,11 +337,14 @@ def click_control(title: str, control: str) -> str:
                 return f"Activated “{c.window_text()}”."
             except Exception:
                 continue
-    raise ToolError("That control can't be activated.")
+    if ctx is not None and ctx.request_desktop("this control only responds to a real mouse click"):
+        c.click_input()  # the user allowed this one foreground click
+        return f"Clicked “{c.window_text()}” with the mouse (you allowed it)."
+    raise ToolError("That control can't be activated in the background, and a real mouse click wasn't allowed.")
 
 
 @tool(risk="confirm", category="apps", summary=lambda a: f"Type into “{a.get('control')}” in {a.get('title')}")
-def set_control_text(title: str, control: str, text: str) -> str:
+def set_control_text(title: str, control: str, text: str, ctx: ToolContext = None) -> str:  # type: ignore[assignment]
     """Replace the text of an input field inside a window.
 
     Args:
@@ -351,8 +354,12 @@ def set_control_text(title: str, control: str, text: str) -> str:
     """
     c = _find_control(title, control)
     try:
-        c.set_edit_text(text)
+        c.set_edit_text(text)  # UI Automation value pattern: no keys, no focus change
+        return "Text set."
     except Exception:
+        pass
+    if ctx is not None and ctx.request_desktop("this field only accepts real typing"):
         c.set_focus()
         c.type_keys("^a{BACKSPACE}" + text, with_spaces=True)
-    return "Text set."
+        return "Text typed with the keyboard (you allowed it)."
+    raise ToolError("That field can't be filled in the background, and real typing wasn't allowed.")

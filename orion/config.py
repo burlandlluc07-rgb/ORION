@@ -90,6 +90,10 @@ class Settings(BaseModel):
     fast_path: bool = True  # answer simple commands locally with zero API calls
     approval_mode: str = "ask"  # "ask" | "auto_safe" (auto-approve low risk) | "trust" (never ask)
     allowed_roots: list[str] = Field(default_factory=list)  # extra folders file tools may touch
+    # Steps that use your desktop (mouse, keys, focus, or opening a window) when ORION decides on them itself:
+    # "ask" = ask every time (default) | "allow" = don't ask. Your own instant commands and phone buttons never ask.
+    desktop_actions: str = "ask"
+    browser_mode: str = "background"  # "background" = ORION's browser runs hidden | "visible" = in a window
 
     voice: VoiceSettings = Field(default_factory=VoiceSettings)
     hotkey_quickbar: str = "<alt>+<space>"
