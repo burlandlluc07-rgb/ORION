@@ -88,6 +88,9 @@ class Engine:
         self._apply_browser_mode()
         self.accounts.sync_tools()
         self.home.sync_tools()
+        from .ecosystem.integrations import status_tool
+
+        self.registry.add(status_tool(self))
 
     async def start(self) -> None:
         self._loop = asyncio.get_running_loop()

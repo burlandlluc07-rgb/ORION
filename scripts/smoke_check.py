@@ -183,6 +183,13 @@ def main() -> int:
         check("lifecycle: full record", [h["stage"] for h in rec.get("history", [])] ==
               ["queued", "validating", "awaiting_permission", "running", "verifying", "completed"], {"record": rec})
 
+        # Integration readiness is a read-only look: no prompt, nothing started, WhatsApp reported as blocked.
+        r = run_tool(c, "integration_status", {})
+        states = {i["id"]: i["state"] for i in c.get("/api/integrations").json()["integrations"]}
+        r["states"] = states
+        check("integrations: status is read-only and honest", r["ok"] and not r["asked"] and quiet(r) is not False
+              and states.get("whatsapp") == "blocked" and set(states) == {"google", "whatsapp", "autocad"}, r)
+
         if args.controls and IS_WIN:
             # 2. Media keys go to the shell as a message: no key press is injected.
             r = run_tool(c, "media_control", {"action": "stop"})

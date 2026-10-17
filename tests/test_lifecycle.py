@@ -293,3 +293,26 @@ async def test_phone_buttons_are_recorded_as_the_users_own_action(engine):
     task = engine.tracker.start("Phone: system status", None, "phone")
     ok, _ = await engine.agent.run_tool("system_status", {}, task, None, origin="user")
     assert ok and task.steps[0]["lifecycle"]["origin"] == "user"
+
+
+async def test_unanswered_desktop_request_expires_without_running(engine, no_side_effects, monkeypatch):
+    import orion.tasks.tracker as tracker_mod
+
+    monkeypatch.setattr(tracker_mod, "APPROVAL_TIMEOUT", 0.6)
+    task = engine.tracker.start("t", None)
+    ok, _ = await asyncio.wait_for(engine.agent.run_tool("open_app", {"name": "notepad"}, task, None), 5)
+    assert not ok and no_side_effects == []  # nobody answered: nothing opened
+    assert task.steps[0]["lifecycle"]["stage"] == "cancelled" and engine.approvals.list() == []
+
+
+async def test_stop_while_waiting_for_permission_runs_nothing(engine, no_side_effects):
+    task = engine.tracker.start("t", None)
+    run = asyncio.create_task(engine.agent.run_tool("type_text", {"text": "x"}, task, None))
+    for _ in range(40):
+        if engine.approvals.list():
+            break
+        await asyncio.sleep(0.05)
+    task.cancel.set()
+    ok, _ = await asyncio.wait_for(run, 5)
+    assert not ok and task.steps[0]["lifecycle"]["stage"] == "cancelled"
+    assert "running" not in stages(task.steps[0])

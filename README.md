@@ -110,6 +110,16 @@ worked on this week"*.
   the session.
 - **High-risk** tools (deleting, shell and Python, power, killing processes) always ask, unless you choose *Trust*
   mode.
+- **Background first.** Tasks run without your desktop: files are written with file libraries, commands run without a
+  window, the browser runs hidden, media and volume are sent as shell messages, and windows are placed without
+  taking focus. Anything that would open a visible window or use your mouse, keyboard or focus asks first, even in
+  Trust mode, and the approval covers that one action only (never "the rest of the session"). Change it under
+  *Settings → Using your desktop*. Your own instant commands and phone buttons don't ask.
+- **Every action has a record**: queued → validating → waiting for permission → running → verifying → completed,
+  or failed, cancelled, or *needs attention*. Results are checked independently where possible (documents are
+  reopened, files and zips checked, launched apps looked for); a result that turns out wrong is shown as *needs
+  attention*, never as done. A timed-out step is checked before ORION says anything. Stop asks a task to finish
+  cooperatively, then ends ORION's own worker processes after a few seconds.
 - The browser never types into password fields, and it asks before clicking or submitting. ORION is told to confirm
   before anything is bought, booked or sent.
 - File changes are limited to your user folder plus folders you add. Deletes go to the Recycle Bin. Writes and moves
@@ -135,6 +145,7 @@ worked on this week"*.
   skills/           SKILL.md playbooks (built-in + yours)                                │
   ecosystem/        MCP connectors · Python plugins                                      │
   tasks/            task tracker · approval broker · scheduler (routines, reminders)     │
+                    lifecycle records · router · result verification                    │
   memory/store.py   SQLite: conversations, FTS memory, tasks, routines, usage           │
   voice/            Gemini Live session · wake word · mic/speaker · edge-tts            │
 └────────────────────────────────────────────────────────────────────────────────────────┘

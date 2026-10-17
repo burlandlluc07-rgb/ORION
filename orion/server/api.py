@@ -375,6 +375,12 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
         engine.bus.emit("ecosystem.changed")
         return engine.plugins.list()
 
+    @app.get("/api/integrations", dependencies=[X])
+    async def integrations():
+        from ..ecosystem.integrations import status
+
+        return {"integrations": await asyncio.to_thread(status, engine)}
+
     @app.get("/api/connectors", dependencies=[X])
     async def connectors():
         return {"connectors": engine.connectors.list(), "catalog": CATALOG}
