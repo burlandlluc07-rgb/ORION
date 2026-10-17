@@ -2,8 +2,18 @@
 
 ## From your own WhatsApp (no setup)
 
-Add contacts in Ecosystem → Accounts → WhatsApp (name and number with country code), then ask
-"WhatsApp Mom that I'm on my way".
+Import your phone's contacts in Ecosystem → Accounts → WhatsApp → **Import contacts file**, or add people one
+by one (name and number with country code), then ask "WhatsApp Mom that I'm on my way".
+
+Getting the contacts file:
+
+- **Android:** Contacts app → Settings (or Fix & manage) → Export → .vcf file, then copy it to the PC.
+- **iPhone:** icloud.com → Contacts → select all → Export vCard (or contacts.google.com if your contacts sync to Google).
+- **Google Contacts:** contacts.google.com → Export → Google CSV or vCard.
+
+Enter your country code (e.g. 34) before importing so numbers saved without one still work. ORION keeps one
+number per person (mobile first), keeps contacts you added by hand, and stores them only on this PC. Names match
+loosely: "Marc" finds "Marc Puig" when only one Marc is saved; if there are two, ORION asks which one.
 
 - `whatsapp_send_personal`: ORION shows the recipient and exact text and asks yes or no (card, phone, or a
   spoken yes for voice requests). After a yes it opens **WhatsApp Desktop** on that chat with the message typed

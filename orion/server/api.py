@@ -521,6 +521,14 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
         except ToolError as exc:
             raise HTTPException(400, str(exc)) from exc
 
+    @app.post("/api/accounts/whatsapp/contacts/import", dependencies=[X])
+    async def import_whatsapp_contacts(body: dict = Body(...)):
+        try:
+            return await asyncio.to_thread(engine.whatsapp.import_contacts, str(body.get("content", "")),
+                                           str(body.get("country_code", "")))
+        except ToolError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
     @app.delete("/api/accounts/whatsapp/contacts/{name}", dependencies=[X])
     async def delete_whatsapp_contact(name: str):
         return engine.whatsapp.remove_contact(name)
