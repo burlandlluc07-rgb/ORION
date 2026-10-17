@@ -6,6 +6,7 @@ import {
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { Composer } from "../components/Composer";
+import { Logo } from "../components/Logo";
 import { Orb } from "../components/Orb";
 import { PlanList, StepList, TaskStatus } from "../components/TaskCard";
 import { timeAgo } from "../components/ui";
@@ -102,7 +103,7 @@ export function PhoneApp() {
   return (
     <div className={`phone tab-${tab}`}>
       <header className="phone-head">
-        <Orb size={30} state={s.voice.state === "unavailable" ? "standby" : s.voice.state} />
+        <Logo size={34} state={s.connected ? (s.voice.state === "unavailable" ? "standby" : s.voice.state) : "connecting"} />
         <div className="grow phone-head-text">
           <div className="phone-head-title ellipsis">{titles[tab]}</div>
           <div className="phone-head-sub"><span className={`dot ${s.connected ? "ok" : "warn pulse"}`} /> {s.connected ? "ORION · connected to your PC" : "Reconnecting…"}</div>
