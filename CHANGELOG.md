@@ -4,6 +4,8 @@
 - **Import your WhatsApp contacts.** In Accounts → WhatsApp, import your phone's contacts export (.vcf from
   Android, iPhone/iCloud or Google, or a Google Contacts CSV) instead of typing numbers. Ask by first name:
   "WhatsApp Marc" finds Marc Puig, and ORION asks which one when two people match.
+- **Or keep them in sync.** Connect your iCloud or Google contacts with an app password and ORION reads them
+  (read-only, over CardDAV) and refreshes every few hours, so new people work without re-importing.
 
 ## 2.7.0
 - **Sort email by importance.** Ask "sort my unread emails by importance" or "what's important in my inbox" and

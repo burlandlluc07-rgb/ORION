@@ -434,3 +434,122 @@ def test_import_api(engine):
     r = client.post("/api/accounts/whatsapp/contacts/import", json={"content": IPHONE_VCF})
     assert r.status_code == 200 and r.json()["imported"] == 2 and "699000111" not in r.text
     assert client.post("/api/accounts/whatsapp/contacts/import", json={"content": "x"}).status_code == 400
+
+
+# ── live contact sync over CardDAV (read-only) ───────────────────────────
+class FakeICloud:
+    """principal → address-book home → one address book → multiget, like contacts.icloud.com."""
+
+    def __init__(self):
+        self.cards = {"/1/carddavhome/card/a.vcf": "BEGIN:VCARD\nVERSION:3.0\nFN:Marc Puig\nTEL;type=CELL:+34 612 345 678\nEND:VCARD",
+                      "/1/carddavhome/card/b&c.vcf": "BEGIN:VCARD\nVERSION:3.0\nFN:Mum\nTEL;type=CELL:699 000 111\nEND:VCARD"}
+        self.methods: list[str] = []
+        self.password = "abcd-efgh-ijkl-mnop"
+
+    @staticmethod
+    def ms(*responses: str) -> httpx.Response:
+        body = '<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">'
+        return httpx.Response(207, text=body + "".join(responses) + "</d:multistatus>")
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        import base64
+        from xml.sax.saxutils import escape
+
+        self.methods.append(request.method)
+        user, _, pw = base64.b64decode(request.headers["authorization"].split()[1]).decode().partition(":")
+        if pw != self.password:
+            return httpx.Response(401)
+        path, body = request.url.path, request.content.decode()
+        if path == "/" and "current-user-principal" in body:
+            return self.ms("<d:response><d:href>/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype>"
+                           "<d:current-user-principal><d:href>/1/principal/</d:href></d:current-user-principal></d:prop></d:propstat></d:response>")
+        if path == "/1/principal/":
+            return self.ms("<d:response><d:href>/1/principal/</d:href><d:propstat><d:prop><c:addressbook-home-set>"
+                           "<d:href>/1/carddavhome/</d:href></c:addressbook-home-set></d:prop></d:propstat></d:response>")
+        if path == "/1/carddavhome/":
+            return self.ms("<d:response><d:href>/1/carddavhome/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop></d:propstat></d:response>",
+                           "<d:response><d:href>/1/carddavhome/card/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><c:addressbook/></d:resourcetype></d:prop></d:propstat></d:response>")
+        if path == "/1/carddavhome/card/" and request.headers.get("depth") == "0":  # pointed straight at the book (Google)
+            return self.ms("<d:response><d:href>/1/carddavhome/card/</d:href><d:propstat><d:prop><d:resourcetype>"
+                           "<d:collection/><c:addressbook/></d:resourcetype></d:prop></d:propstat></d:response>")
+        if path == "/1/carddavhome/card/" and request.method == "PROPFIND":
+            return self.ms("<d:response><d:href>/1/carddavhome/card/</d:href></d:response>",
+                           *(f"<d:response><d:href>{escape(h)}</d:href><d:propstat><d:prop><d:getetag>\"1\"</d:getetag></d:prop></d:propstat></d:response>" for h in self.cards))
+        if request.method == "REPORT":
+            return self.ms(*(f"<d:response><d:href>{escape(h)}</d:href><d:propstat><d:prop><c:address-data>{escape(v)}</c:address-data></d:prop></d:propstat></d:response>"
+                             for h, v in self.cards.items() if escape(h) in body))
+        return httpx.Response(404)
+
+
+@pytest.fixture
+def icloud(engine):
+    fake = FakeICloud()
+    engine.whatsapp.transport = httpx.MockTransport(fake)
+    return fake
+
+
+def connect_icloud(engine, password=" abcd-efgh-ijkl-mnop "):
+    return engine.whatsapp.connect_contacts({"provider": "icloud", "user": "me@icloud.com", "password": password,
+                                             "country_code": "34"})
+
+
+def test_sync_reads_icloud_contacts_and_only_reads(engine, icloud):
+    res = connect_icloud(engine)
+    assert res["contact_sync"]["count"] == 2 and res["contact_sync"]["label"].startswith("iCloud")
+    assert engine.whatsapp.resolve("marc") == ("Marc Puig", "34612345678")
+    assert engine.whatsapp.resolve("Mum") == ("Mum", "34699000111")  # national number got the country code
+    assert set(icloud.methods) <= {"PROPFIND", "REPORT"}  # never PUT or DELETE: contacts can't be changed
+    assert icloud.password not in json.dumps(res) and "612345678" not in json.dumps(res)
+    assert icloud.password not in (engine.config.root / "whatsapp.json").read_text()
+    assert all(c["synced"] for c in res["contacts"])
+
+
+def test_sync_with_an_address_book_url_like_google(engine, icloud):
+    res = engine.whatsapp.connect_contacts({"provider": "google", "user": "me@gmail.com", "password": icloud.password,
+                                            "url": "https://contacts.example/1/carddavhome/card/"})
+    assert res["contact_sync"]["count"] == 1  # Mum's number has no country code and none was given
+
+
+def test_sync_refresh_picks_up_new_and_removed_people(engine, icloud):
+    connect_icloud(engine)
+    engine.whatsapp.save_contact("Grandpa", "+34 611 000 999")
+    icloud.cards.pop("/1/carddavhome/card/a.vcf")
+    icloud.cards["/1/carddavhome/card/n.vcf"] = "BEGIN:VCARD\nFN:Nuria\nTEL;CELL:+34 655 000 111\nEND:VCARD"
+    engine.whatsapp.sync_contacts()  # not due yet: nothing fetched
+    assert "Marc Puig" in {c["name"] for c in engine.whatsapp.public()["contacts"]}
+    res = engine.whatsapp.sync_contacts(force=True)
+    assert {c["name"] for c in res["contacts"]} == {"Grandpa", "Mum", "Nuria"}  # hand-added contacts stay
+
+
+def test_sync_wrong_password_is_refused_and_nothing_saved(engine, icloud):
+    with pytest.raises(ToolError, match="app password"):
+        connect_icloud(engine, password="wrong")
+    assert engine.whatsapp.public()["contact_sync"] is None
+
+
+def test_background_refresh_failure_is_kept_not_raised(engine, icloud):
+    connect_icloud(engine)
+    icloud.password = "changed"
+    engine.whatsapp.data["contact_sync"]["last_sync"] = 0
+    res = engine.whatsapp.sync_contacts()
+    assert "refused" in res["contact_sync"]["error"] and res["contact_sync"]["count"] == 2  # old list kept
+
+
+def test_disconnect_sync_removes_synced_contacts(engine, icloud):
+    connect_icloud(engine)
+    engine.whatsapp.save_contact("Grandpa", "+34 611 000 999")
+    res = engine.whatsapp.disconnect_contacts()
+    assert res["contact_sync"] is None and [c["name"] for c in res["contacts"]] == ["Grandpa"]
+
+
+def test_contact_sync_api(engine, icloud):
+    from fastapi.testclient import TestClient
+
+    from orion.server.api import create_app
+
+    client = TestClient(create_app(engine, token="secret-token"), headers={"x-orion-token": "secret-token"})
+    r = client.put("/api/accounts/whatsapp/contact-sync",
+                   json={"provider": "icloud", "user": "me@icloud.com", "password": icloud.password, "country_code": "34"})
+    assert r.status_code == 200 and r.json()["contact_sync"]["count"] == 2 and icloud.password not in r.text
+    assert client.post("/api/accounts/whatsapp/contact-sync/now").json()["contact_sync"]["error"] == ""
+    assert client.delete("/api/accounts/whatsapp/contact-sync").json()["contact_sync"] is None
