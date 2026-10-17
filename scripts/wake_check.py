@@ -84,9 +84,10 @@ def run_command_cases() -> list[dict]:
         wav = tmp / f"{name}.wav"
         say(text, wav)
         res = detect_in_wav(str(wav), ["Hey ORION"], catalog=catalog)
-        good = [h for h in res["hits"] if h["confidence"] >= threshold_for(0.5)]
-        got = next((h["command"] for h in good if h.get("command") and h["confidence"] >= COMMAND_CONFIDENCE), None)
-        ok = bool(good) and got == want
+        woke = [h for h in res["hits"] + res["commands"] if h["confidence"] >= threshold_for(0.5)]
+        got = next((h["command"] for h in res["commands"] if h["command"] and h["confidence"] >= COMMAND_CONFIDENCE),
+                   None)
+        ok = bool(woke) and got == want
         out.append({"case": f"wake+{name}", "expect": want, "got": got, "ok": ok, "catalog": len(catalog), **res})
 
     # The persistent service: command check on a recorded utterance, offline dictation, offline voice.

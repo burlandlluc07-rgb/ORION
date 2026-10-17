@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.5.0
+- **Instant voice commands.** "Hey ORION, pause the music", "…set the volume to thirty", "…open Spotify",
+  "…set a timer for five minutes", "…lock the computer", "stop": about 2,500 everyday phrasings, including your
+  installed apps, are recognised offline by Windows together with the wake phrase and run straight away. There's
+  no transcription, no Gemini request and no quota. Anything ORION isn't sure about goes to Gemini as before.
+- **Smarter listening.** End of speech is detected with WebRTC voice activity detection instead of a volume
+  threshold. Short commands finish after about half a second; longer sentences get room to pause for breath.
+  What you say right after the wake phrase is no longer lost.
+- **Follow-ups without the wake word.** After a reply, ORION keeps listening for a few seconds (Classic mode).
+- **Interrupt by talking.** Speak over ORION and it stops to listen (Classic). It tells your voice apart from
+  its own echo. The wake word always cuts it off.
+- **Knows what "this" is.** "Summarise this", "translate the selected text", "reply to this": ORION reads the
+  window you were last using and the text selected in it through Windows UI Automation. No keys are pressed and
+  the clipboard is untouched. There's also a new `current_context` tool.
+- **Gets your names right.** People and projects from your vault are given to the transcriber as spelling hints.
+- **Never goes silent.** If the neural voice can't be reached, replies are spoken with an installed Windows voice.
+  When offline, Windows dictation stands in for transcription, so offline commands still work by voice.
+- **Feels quicker.** A quick offline transcript appears while Gemini's accurate one is on its way. A soft chime
+  plays when ORION starts listening. Spoken "yes/no" approvals are understood offline.
+- Settings → Voice: Instant commands, Follow-up listening, Interrupt by talking and Listening chime toggles.
+
 ## 2.4.0
 - **Choose your own wake word.** Any phrase or name ("Hey ORION", "Hey Friday", "Hey Jarvis"…), several at once,
   in the speech languages Windows supports. It runs on Windows' built-in offline recogniser, so there's no download

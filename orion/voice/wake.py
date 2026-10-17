@@ -80,29 +80,32 @@ public static class OrionSpeech {
     var info = Pick(culture);
     if (info == null) { Say("ERR:NORECOGNIZER"); return 3; }
     var c = info.Culture;
-    var done = new ManualResetEvent(false);
+    var engines = new List<SpeechRecognitionEngine>(); int pending = 0; var done = new ManualResetEvent(false);
     if ((mic || !string.IsNullOrEmpty(wav)) && wake.Count > 0) {
-      var listener = new SpeechRecognitionEngine(info);
-      try { listener.UpdateRecognizerSetting("AdaptationOn", 0); } catch { }  // always-on mic: don't drift
-      // Two grammars: the phrase + an optional wildcard (wake up and listen), and the phrase + an instant command.
+      // Two recognisers on the same audio. One hears the wake phrase + anything (proven reliable on its own); the
+      // other hears the wake phrase + an instant command. In a single recogniser they compete, and a question like
+      // "Hey Orion, what's the weather?" gets rejected by both.
       var lead = B(c); lead.Append(new Choices(wake.ToArray())); lead.AppendWildcard();
-      listener.LoadGrammar(Named(lead, "wake"));
-      if (cmds.Count > 0) {
-        var wc = B(c); wc.Append(new Choices(wake.ToArray())); wc.Append(new Choices(cmds.ToArray()));
-        listener.LoadGrammar(Named(wc, "wakecmd"));
+      var grammars = new List<Grammar> { Named(lead, "wake") };
+      if (cmds.Count > 0) { var wc = B(c); wc.Append(new Choices(wake.ToArray())); wc.Append(new Choices(cmds.ToArray())); grammars.Add(Named(wc, "wakecmd")); }
+      foreach (var g in grammars) {
+        var tag = g.Name == "wake" ? "HIT:" : "CMD:";
+        var listener = new SpeechRecognitionEngine(info);
+        try { listener.UpdateRecognizerSetting("AdaptationOn", 0); } catch { }  // always-on mic: don't drift
+        listener.LoadGrammar(g);
+        listener.SpeechRecognized += (s, e) => Say(tag + F(MinConf(e.Result)) + ":" + Clean(e.Result.Text));
+        if (tag == "HIT:") {
+          listener.SpeechRecognitionRejected += (s, e) => {  // near-misses: shown in Settings for tuning, never a wake
+            var a = e.Result == null ? null : e.Result.Alternates.FirstOrDefault(x => x.Grammar != null && x.Grammar.Name == "wake");
+            if (a != null && a.Confidence >= 0.3) Say("NEAR:" + F(MinConf(a)) + ":" + Clean(a.Text));
+          };
+        }
+        listener.RecognizeCompleted += (s, e) => { if (e.Error != null) Say("ERR:" + Clean(e.Error.Message)); if (Interlocked.Decrement(ref pending) == 0) done.Set(); };
+        if (!string.IsNullOrEmpty(wav)) { listener.SetInputToWaveFile(wav); }
+        else { try { listener.SetInputToDefaultAudioDevice(); } catch { Say("ERR:NOMIC"); return 4; } }
+        engines.Add(listener); pending++;
       }
-      listener.SpeechRecognized += (s, e) => {
-        var n = e.Result.Grammar == null ? "" : e.Result.Grammar.Name;
-        if (n == "wake" || n == "wakecmd") Say("HIT:" + F(MinConf(e.Result)) + ":" + Clean(e.Result.Text));
-      };
-      listener.SpeechRecognitionRejected += (s, e) => {  // near-misses: shown in Settings for tuning, never a wake
-        var a = e.Result == null ? null : e.Result.Alternates.FirstOrDefault(x => x.Grammar != null && (x.Grammar.Name == "wake" || x.Grammar.Name == "wakecmd"));
-        if (a != null && a.Confidence >= 0.3) Say("NEAR:" + F(MinConf(a)) + ":" + Clean(a.Text));
-      };
-      listener.RecognizeCompleted += (s, e) => { if (e.Error != null) Say("ERR:" + Clean(e.Error.Message)); done.Set(); };
-      if (!string.IsNullOrEmpty(wav)) { listener.SetInputToWaveFile(wav); }
-      else { try { listener.SetInputToDefaultAudioDevice(); } catch { Say("ERR:NOMIC"); return 4; } }
-      listener.RecognizeAsync(RecognizeMode.Multiple);
+      foreach (var l in engines) l.RecognizeAsync(RecognizeMode.Multiple);
     }
     Say("READY:" + c.Name);
     if (!string.IsNullOrEmpty(wav)) { done.WaitOne(); Say("END"); return 0; }
@@ -166,6 +169,8 @@ try {
 exit [OrionSpeech]::Run($Culture, $Spec, $Wav, $Mic -eq 1)
 """
 
+MERGE_WINDOW = 0.35  # seconds to wait for the other recogniser's verdict on the same utterance
+
 ERRORS = {
     "NOSPEECH": "Windows speech components aren't available on this PC.",
     "NORECOGNIZER": "No Windows speech recogniser is installed. Add one in Windows Settings → Time & language → "
@@ -202,7 +207,7 @@ def match_phrase(text: str, phrases: list[str]) -> str:
 def parse_line(line: str) -> tuple[str, float, str] | None:
     """'HIT:0.912:Hey ORION' → ("hit", 0.912, "Hey ORION"); READY/ERR/END → (kind, 0, detail)."""
     line = line.strip()
-    for tag, kind in (("HIT:", "hit"), ("NEAR:", "near")):
+    for tag, kind in (("HIT:", "hit"), ("CMD:", "cmd"), ("NEAR:", "near")):
         if line.startswith(tag):
             _, conf, text = line.split(":", 2)
             try:
@@ -279,7 +284,7 @@ def detect_in_wav(wav: str, phrases: list[str], culture: str = "", timeout: floa
     finally:
         for f in (spec, Path(str(spec) + ".cs")):
             f.unlink(missing_ok=True)
-    out: dict = {"ready": None, "hits": [], "near": [], "error": None}
+    out: dict = {"ready": None, "hits": [], "commands": [], "near": [], "error": None}
     for raw in (res.stdout or b"").decode("utf-8", "replace").splitlines():
         p = parse_line(raw)
         if not p:
@@ -287,10 +292,10 @@ def detect_in_wav(wav: str, phrases: list[str], culture: str = "", timeout: floa
         if p[0] == "ready":
             out["ready"] = p[2]
         elif p[0] in ("hit", "near"):
-            item = {"phrase": match_phrase(p[2], clean), "confidence": p[1]}
-            if catalog:
-                item["command"] = lookup(catalog, p[2], clean)
-            out["hits" if p[0] == "hit" else "near"].append(item)
+            out["hits" if p[0] == "hit" else "near"].append({"phrase": match_phrase(p[2], clean), "confidence": p[1]})
+        elif p[0] == "cmd" and catalog:
+            out["commands"].append({"phrase": match_phrase(p[2], clean), "confidence": p[1],
+                                    "command": lookup(catalog, p[2], clean)})
         elif p[0] == "err":
             out["error"] = ERRORS.get(p[2], p[2])
     if res.returncode not in (0, None) and not out["error"]:
@@ -323,6 +328,8 @@ class SpeechService:
         self._pending: dict[str, concurrent.futures.Future] = {}
         self._write_lock = threading.Lock()
         self._spec: Path | None = None
+        self._held: list | None = None
+        self._merge_lock = threading.Lock()
         self._thread = threading.Thread(target=self._run, name="speech-service", daemon=True)
 
     def start(self, wait: float = 45) -> bool:
@@ -367,11 +374,31 @@ class SpeechService:
             self._ready.set()
         elif kind == "near":
             self.on_heard(match_phrase(text, self.phrases), conf, False)
-        elif kind == "hit":
-            accepted = conf >= self.threshold
-            self.on_heard(match_phrase(text, self.phrases), conf, accepted)
-            if accepted:
-                self.on_hit(match_phrase(text, self.phrases), conf, lookup(self.catalog, text, self.phrases))
+        elif kind in ("hit", "cmd"):
+            phrase = match_phrase(text, self.phrases)
+            command = lookup(self.catalog, text, self.phrases) if kind == "cmd" else None
+            if kind == "hit":
+                self.on_heard(phrase, conf, conf >= self.threshold)
+            if conf < self.threshold:
+                return
+            self._merge(phrase, conf, command)
+
+    def _merge(self, phrase: str, conf: float, command: str | None) -> None:
+        """The wake and command recognisers each report the same utterance: send one hit, with the command if any."""
+        with self._merge_lock:
+            if self._held is None:
+                self._held = [phrase, conf, command]
+                t = threading.Timer(MERGE_WINDOW, self._release)
+                t.daemon = True
+                t.start()
+            elif command and not self._held[2]:
+                self._held = [phrase, conf, command]
+
+    def _release(self) -> None:
+        with self._merge_lock:
+            held, self._held = self._held, None
+        if held:
+            self.on_hit(*held)
 
     def _run(self) -> None:
         from ..tools.platform import CREATE_NO_WINDOW

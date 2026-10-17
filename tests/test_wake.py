@@ -9,6 +9,7 @@ def test_parse_recogniser_output():
     assert wake.parse_line("ERR:NORECOGNIZER") == ("err", 0.0, "NORECOGNIZER")
     assert wake.parse_line("END") == ("end", 0.0, "")
     assert wake.parse_line("NEAR:0.540:Hey Orion") == ("near", 0.54, "Hey Orion")
+    assert wake.parse_line("CMD:0.930:Hey Orion pause") == ("cmd", 0.93, "Hey Orion pause")
     assert wake.parse_line("some noise") is None
 
 
@@ -65,9 +66,7 @@ class FakeProc:
         self.closed = True
 
 
-def test_speech_service_routes_hits_by_threshold_and_commands(monkeypatch):
-    lines = [b"READY:en-GB\n", b"HIT:0.950:Hey Orion ...\n", b"HIT:0.300:Hey Orion\n", b"NEAR:0.540:Hey Orion\n",
-             b"HIT:0.930:Hey Orion pause the music\n"]
+def _service(monkeypatch, lines):
     procs = []
     monkeypatch.setattr(wake.subprocess, "Popen", lambda *a, **k: procs.append(FakeProc(lines)) or procs[-1])
     hits, heard, errors = [], [], []
@@ -76,14 +75,23 @@ def test_speech_service_routes_hits_by_threshold_and_commands(monkeypatch):
     assert sp.start(5) and sp.language == "en-GB"
     import time
 
-    for _ in range(100):
-        if len(heard) == 4:
-            break
-        time.sleep(0.02)
-    assert hits == [("Hey Orion", None), ("Hey Orion", "pause")]
-    assert heard == [True, False, False, True] and not errors
+    time.sleep(wake.MERGE_WINDOW + 0.25)
     sp._stop.set()
     procs[0].closed = True
+    return hits, heard, errors
+
+
+def test_wake_and_command_recognisers_merge_into_one_hit(monkeypatch):
+    hits, heard, errors = _service(monkeypatch, [
+        b"READY:en-GB\n", b"HIT:0.950:Hey Orion ...\n", b"HIT:0.300:Hey Orion\n", b"NEAR:0.540:Hey Orion\n",
+        b"CMD:0.930:Hey Orion pause the music\n"])
+    assert hits == [("Hey Orion", "pause")]  # one wake, carrying the instant command
+    assert heard == [True, False, False] and not errors
+
+
+def test_plain_wake_without_command(monkeypatch):
+    hits, _, _ = _service(monkeypatch, [b"READY:en-GB\n", b"HIT:0.950:Hey Orion ...\n"])
+    assert hits == [("Hey Orion", None)]
     with pytest.raises(ValueError):
         wake.SpeechService([""], {}, listen=True)
 

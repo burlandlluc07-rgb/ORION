@@ -86,14 +86,17 @@ class Foreground:
             self.hwnd, self.title, self.app, self.at = hwnd, title, app, time.time()
 
     def _is_own(self, pid: int) -> bool:
-        """ORION's window is a WebView2 child process of ORION: treat the whole family as "us"."""
+        """ORION's window is drawn by WebView2 child processes of ORION: those count as "us" (apps ORION launched
+        don't)."""
         import psutil
 
         try:
-            for parent in psutil.Process(pid).parents():
-                if parent.pid in self._own:
-                    self._own.add(pid)
-                    return True
+            proc = psutil.Process(pid)
+            if proc.name().lower() != "msedgewebview2.exe":
+                return False
+            if any(parent.pid in self._own for parent in proc.parents()):
+                self._own.add(pid)
+                return True
         except Exception:
             pass
         return False
