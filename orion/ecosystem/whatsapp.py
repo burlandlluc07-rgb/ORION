@@ -50,6 +50,7 @@ from typing import Callable
 import httpx
 
 from ..tools import platform
+from . import carddav
 from ..tools.registry import Registry, Tool, ToolError, schema_for
 
 log = logging.getLogger("orion.whatsapp")
@@ -59,6 +60,8 @@ API_VERSION = "v21.0"
 KEYRING_SERVICE = "ORION"
 SECRET_KEY = "whatsapp:token"
 SOURCE = "account:whatsapp"
+SYNC_KEY, SYNC_FILE = "contacts:carddav", ".contacts_key"
+SYNC_EVERY = 6 * 3600  # seconds between background refreshes of a synced address book
 MAX_TEXT = 4096  # the Cloud API's limit for a text message body
 
 # Cloud API error codes worth explaining in plain words (developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes)
@@ -277,41 +280,41 @@ class WhatsApp:
     def _write(self) -> None:
         self.path.write_text(json.dumps(self.data, indent=2), "utf-8")
 
-    def _set_token(self, token: str) -> None:
+    def _set_token(self, token: str, key: str = SECRET_KEY, file: str = ".whatsapp_key") -> None:
         try:
             import keyring
 
-            keyring.set_password(KEYRING_SERVICE, SECRET_KEY, token)
+            keyring.set_password(KEYRING_SERVICE, key, token)
             return
         except Exception:
             pass
-        f = self.root / ".whatsapp_key"
+        f = self.root / file
         f.write_text(token, "utf-8")
         try:
             os.chmod(f, 0o600)
         except OSError:
             pass
 
-    def _token(self) -> str:
+    def _token(self, key: str = SECRET_KEY, file: str = ".whatsapp_key") -> str:
         try:
             import keyring
 
-            tok = keyring.get_password(KEYRING_SERVICE, SECRET_KEY)
+            tok = keyring.get_password(KEYRING_SERVICE, key)
             if tok:
                 return tok
         except Exception:
             pass
-        f = self.root / ".whatsapp_key"
+        f = self.root / file
         return f.read_text("utf-8").strip() if f.exists() else ""
 
-    def _clear_token(self) -> None:
+    def _clear_token(self, key: str = SECRET_KEY, file: str = ".whatsapp_key") -> None:
         try:
             import keyring
 
-            keyring.delete_password(KEYRING_SERVICE, SECRET_KEY)
+            keyring.delete_password(KEYRING_SERVICE, key)
         except Exception:
             pass
-        (self.root / ".whatsapp_key").unlink(missing_ok=True)
+        (self.root / file).unlink(missing_ok=True)
 
     # ── public config API ──────────────────────────────────────────────────
     @property
@@ -329,7 +332,9 @@ class WhatsApp:
             "verified_name": d.get("verified_name", ""),
             "display_number": mask(d.get("display_number", "")),
             "has_token": bool(d.get("phone_number_id")) and bool(self._token()),
-            "contacts": [{"name": n, "number": mask(v)} for n, v in sorted(d.get("contacts", {}).items())],
+            "contacts": [{"name": n, "number": mask(v), **({} if n in d.get("contacts", {}) else {"synced": True})}
+                         for n, v in sorted(self._all_contacts().items())],
+            "contact_sync": self._sync_public(),
         }
 
     def configure(self, cfg: dict) -> dict:
@@ -391,6 +396,88 @@ class WhatsApp:
         log.info("whatsapp: imported %d contacts (%d skipped)", len(found), skipped)
         return {**self.public(), "imported": len(found), "skipped": skipped}
 
+    # ── live contact sync (CardDAV, read-only) ───────────────────────────────
+    def _all_contacts(self) -> dict[str, str]:
+        """Synced address book first, then imported/hand-added contacts, which win on the same name."""
+        return {**self.data.get("synced", {}), **self.data.get("contacts", {})}
+
+    def _sync_public(self) -> dict | None:
+        cfg = self.data.get("contact_sync")
+        if not cfg:
+            return None
+        return {"provider": cfg.get("provider", ""), "label": carddav.PRESETS.get(cfg.get("provider", ""), {}).get("label", ""),
+                "user": cfg.get("user", ""), "count": len(self.data.get("synced", {})),
+                "last_sync": cfg.get("last_sync", 0), "error": cfg.get("error", "")}
+
+    def _fetch_synced(self, cfg: dict, password: str) -> tuple[dict[str, str], int]:
+        with carddav.CardDAV(cfg["url"], cfg["user"], password, transport=self.transport) as dav:
+            cards = dav.cards()
+        return parse_contacts("\n".join(cards), cfg.get("country_code", ""))
+
+    def connect_contacts(self, cfg: dict) -> dict:
+        """Keep contacts in sync with an iCloud/Google/CardDAV address book. Checked by a first sync before saving."""
+        provider = str(cfg.get("provider", "custom"))
+        preset = carddav.PRESETS.get(provider, carddav.PRESETS["custom"])
+        user = str(cfg.get("user", "")).strip()
+        password = re.sub(r"\s", "", str(cfg.get("password", ""))) or self._token(SYNC_KEY, SYNC_FILE)
+        url = str(cfg.get("url", "")).strip() or preset["url"]
+        if not user or not password:
+            raise ToolError("Enter the account's email and an app password.")
+        if not url.startswith("https://"):
+            raise ToolError("Enter the CardDAV address (it starts with https://).")
+        new = {"provider": provider, "user": user, "url": url,
+               "country_code": re.sub(r"\D", "", str(cfg.get("country_code", "")))}
+        found, _ = self._fetch_synced(new, password)
+        with self._lock:
+            self.data["contact_sync"] = {**new, "last_sync": time.time()}
+            self.data["synced"] = found
+            self._write()
+        self._set_token(password, SYNC_KEY, SYNC_FILE)
+        log.info("whatsapp: contact sync connected (%s, %d contacts)", provider, len(found))
+        return self.public()
+
+    def sync_contacts(self, force: bool = False) -> dict:
+        """Refresh the synced address book (when it's due, or now with ``force``). Failures are kept, not raised."""
+        cfg = self.data.get("contact_sync")
+        if not cfg or (not force and time.time() - cfg.get("last_sync", 0) < SYNC_EVERY):
+            return self.public()
+        try:
+            found, _ = self._fetch_synced(cfg, self._token(SYNC_KEY, SYNC_FILE))
+        except ToolError as exc:
+            with self._lock:
+                cfg["error"] = str(exc)
+                self._write()
+            log.warning("whatsapp: contact sync failed: %s", exc)
+            if force:
+                raise
+            return self.public()
+        with self._lock:
+            self.data["synced"] = found
+            cfg.update(last_sync=time.time(), error="")
+            self._write()
+        log.info("whatsapp: contact sync refreshed (%d contacts)", len(found))
+        return self.public()
+
+    def disconnect_contacts(self) -> dict:
+        with self._lock:
+            self.data.pop("contact_sync", None)
+            self.data.pop("synced", None)
+            self._write()
+        self._clear_token(SYNC_KEY, SYNC_FILE)
+        return self.public()
+
+    def start_background_sync(self) -> None:
+        """Refresh a connected address book now and then, off the main thread (never while a message is approved)."""
+        def loop() -> None:
+            time.sleep(30)
+            while True:
+                try:
+                    self.sync_contacts()
+                except Exception:  # never let a network hiccup kill the loop
+                    log.exception("whatsapp: background contact sync")
+                time.sleep(SYNC_EVERY / 6)
+        threading.Thread(target=loop, name="orion-contact-sync", daemon=True).start()
+
     def remove_contact(self, name: str) -> dict:
         with self._lock:
             contacts = self.data.get("contacts", {})
@@ -426,7 +513,7 @@ class WhatsApp:
         only when that points at one person; otherwise the error lists who it could be, so ORION asks which.
         """
         t = re.sub(r"\s+", " ", str(to or "")).strip()
-        contacts = self.data.get("contacts", {})
+        contacts = self._all_contacts()
         if re.fullmatch(r"[+\d\s().\-]{6,}", t):
             num = normalize_number(t)
             named = next((n for n, v in contacts.items() if v == num), "")

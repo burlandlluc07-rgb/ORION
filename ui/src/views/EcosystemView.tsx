@@ -434,7 +434,8 @@ function AccountsTab() {
 // ── WhatsApp (Cloud API) ──────────────────────────────────────────────────
 interface WhatsAppInfo {
   configured: boolean; dry_run: boolean; phone_number_id: string; business_account_id: string;
-  verified_name: string; display_number: string; has_token: boolean; contacts: { name: string; number: string }[];
+  verified_name: string; display_number: string; has_token: boolean; contacts: { name: string; number: string; synced?: boolean }[];
+  contact_sync: { provider: string; label: string; user: string; count: number; last_sync: number; error: string } | null;
 }
 
 function WhatsAppSection() {
@@ -450,6 +451,10 @@ function WhatsAppSection() {
   const [cc, setCc] = useState("");
   const [filter, setFilter] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const [sProv, setSProv] = useState("icloud");
+  const [sUser, setSUser] = useState("");
+  const [sPass, setSPass] = useState("");
+  const [sUrl, setSUrl] = useState("");
   useEffect(() => { api.get<WhatsAppInfo>("/api/accounts/whatsapp").then(setInfo); }, []);
   if (!info) return null;
 
@@ -477,6 +482,20 @@ function WhatsAppSection() {
       toast({ title: `Imported ${r.imported} contacts${r.skipped ? ` (${r.skipped} skipped: no usable number)` : ""}`, tone: "success" });
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); if (fileRef.current) fileRef.current.value = ""; }
   };
+  const connectSync = async () => {
+    setErr(""); setBusy(true);
+    try {
+      const r = await api.put<WhatsAppInfo>("/api/accounts/whatsapp/contact-sync", { provider: sProv, user: sUser, password: sPass, url: sUrl, country_code: cc });
+      setInfo(r); setSPass("");
+      toast({ title: `Synced ${r.contact_sync?.count ?? 0} contacts`, tone: "success" });
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  };
+  const syncNow = async () => {
+    setErr(""); setBusy(true);
+    try { setInfo(await api.post<WhatsAppInfo>("/api/accounts/whatsapp/contact-sync/now", {})); }
+    catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  };
+  const sync = info.contact_sync;
   const q = filter.trim().toLowerCase();
   const shown = info.contacts.filter((c) => !q || c.name.toLowerCase().includes(q));
 
@@ -523,12 +542,41 @@ function WhatsAppSection() {
           <button className="btn" disabled={busy} onClick={() => fileRef.current?.click()}><Plus size={13} /> Import contacts file</button>
           {info.contacts.length > 0 && <span className="fh muted">{info.contacts.length} saved</span>}
         </div>
+        {sync ? (
+          <div className="field" style={{ padding: 0 }}>
+            <div><div className="fl">Synced with {sync.label || "CardDAV"} · {sync.user}</div>
+              <div className="fh">{sync.error ? sync.error : `${sync.count} contacts, refreshed every few hours (read-only)${sync.last_sync ? ` · last ${new Date(sync.last_sync * 1000).toLocaleString()}` : ""}`}</div></div>
+            <div className="fc row">
+              <button className="btn sm" disabled={busy} onClick={syncNow}>{busy ? <Loader2 size={12} className="spin" /> : "Sync now"}</button>
+              <button className="btn sm danger" onClick={() => api.del<WhatsAppInfo>("/api/accounts/whatsapp/contact-sync").then(setInfo)}><Trash2 size={12} /></button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="fh muted" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
+              <b>Or keep them in sync</b> with your iCloud (iPhone) or another CardDAV address book, read-only, using an app password like your email. Android/Google contacts can't sync this way (Google only allows its own sign-in), so use the file import above.
+              {sProv === "icloud" ? " Create one at account.apple.com → Sign-In and Security → App-Specific Passwords."
+                : " Enter your provider's CardDAV address."}
+            </div>
+            <div className="row" style={{ flexWrap: "wrap" }}>
+              <select className="input" style={{ width: 150 }} value={sProv} onChange={(e) => setSProv(e.target.value)}>
+                <option value="icloud">iCloud (iPhone)</option><option value="custom">Other (CardDAV)</option>
+              </select>
+              <input className="input grow" value={sUser} placeholder="Account email" onChange={(e) => setSUser(e.target.value)} />
+              <input className="input grow" type="password" value={sPass} placeholder="App password" onChange={(e) => setSPass(e.target.value)} />
+              {sProv === "custom" && <input className="input grow" value={sUrl} placeholder="https://… CardDAV address" onChange={(e) => setSUrl(e.target.value)} />}
+              <button className="btn" disabled={busy || !sUser || !sPass || (sProv === "custom" && !sUrl)} onClick={connectSync}>
+                {busy ? <><Loader2 size={13} className="spin" /> Syncing…</> : "Keep in sync"}</button>
+            </div>
+          </>
+        )}
         {info.contacts.length > 8 && <input className="input" value={filter} placeholder="Search contacts" onChange={(e) => setFilter(e.target.value)} />}
       </div>
       {shown.slice(0, 30).map((c) => (
         <div key={c.name} className="field">
           <div><div className="fl">{c.name}</div><div className="fh">{c.number}</div></div>
-          <div className="fc"><button className="btn sm ghost" onClick={() => api.del<WhatsAppInfo>(`/api/accounts/whatsapp/contacts/${encodeURIComponent(c.name)}`).then(setInfo)}><Trash2 size={12} /></button></div>
+          <div className="fc">{c.synced ? <span className="fh muted">synced</span>
+            : <button className="btn sm ghost" onClick={() => api.del<WhatsAppInfo>(`/api/accounts/whatsapp/contacts/${encodeURIComponent(c.name)}`).then(setInfo)}><Trash2 size={12} /></button>}</div>
         </div>
       ))}
       {shown.length > 30 && <div className="fh muted" style={{ padding: "0 18px" }}>…and {shown.length - 30} more; search to find someone.</div>}
