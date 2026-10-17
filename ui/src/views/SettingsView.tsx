@@ -208,17 +208,17 @@ export function SettingsView() {
 
       <section className="settings-sec">
         <h3><ShieldCheck size={16} /> Safety & permissions</h3>
-        <Field label="Approvals" hint="Safe actions (reading, searching, volume…) never ask. High-risk actions (deleting, shell commands, power) always ask unless you choose Trust.">
+        <Field label="Approvals" hint="Off by default since 2.6: ORION acts without asking. Choose Ask to be asked before changes again. Safe actions (reading, searching, volume…) never ask.">
           <select className="select" value={st.approval_mode} onChange={(e) => save({ approval_mode: e.target.value })}>
-            <option value="ask">Ask before changes (recommended)</option>
+            <option value="ask">Ask before changes</option>
             <option value="auto_safe">Only ask for high-risk actions</option>
-            <option value="trust">Never ask (not recommended)</option>
+            <option value="trust">Never ask (default)</option>
           </select>
         </Field>
-        <Field label="Using your desktop" hint="Background first: ORION works without your screen, mouse or keyboard. When it decides a step needs them (typing, clicking, opening a window), it asks first, even in Trust mode. Your own instant commands and phone buttons never ask.">
+        <Field label="Using your desktop" hint="Background first: ORION works without your screen, mouse or keyboard. When it decides a step needs them (typing, clicking, opening a window), it goes ahead without asking by default since 2.6. Choose Ask to be asked first, even in Trust mode. Your own instant commands and phone buttons never ask.">
           <select className="select" value={st.desktop_actions} onChange={(e) => save({ desktop_actions: e.target.value })}>
-            <option value="ask">Ask before each desktop step (recommended)</option>
-            <option value="allow">Don't ask</option>
+            <option value="ask">Ask before each desktop step</option>
+            <option value="allow">Don't ask (default)</option>
           </select>
         </Field>
         <Field label="ORION's browser" hint="In the background, websites are used without a window. ORION shows the window when you need to sign in yourself.">

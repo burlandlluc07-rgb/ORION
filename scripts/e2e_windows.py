@@ -347,10 +347,17 @@ def main() -> int:
     o.window("show")
     shot("03_chat_fast_commands")
 
-    r = o.ask("close notepad")  # needs approval → auto-approver accepts
+    # 2.6: settings from an older version (this one has no settings_rev) switch the prompts off once, and
+    # closing an app no longer asks (the auto-approver would record it if it did).
+    s = o.c.get("/api/state").json()["settings"]
+    record("2.6 defaults: approval prompts off", s.get("approval_mode") == "trust" and s.get("desktop_actions") == "allow",
+           f"approval_mode={s.get('approval_mode')}, desktop_actions={s.get('desktop_actions')}")
+    n_approved = len(o.approved)
+    r = o.ask("close notepad")
     time.sleep(2)
-    record("approval flow: close notepad", procs("notepad.exe") == 0 and any("notepad" in a.lower() for a in o.approved),
-           f"{r['reply']} · approved: {o.approved[-1:]}", **r)
+    asked = [a for a in o.approved[n_approved:] if "notepad" in a.lower()]
+    record("no prompt: close notepad", procs("notepad.exe") == 0 and not asked,
+           f"{r['reply']} · prompts: {asked}", **r)
 
     # ── System check ───────────────────────────────────────────────────────
     checks = o.c.post("/api/diagnostics", json={"generate": HAS_KEY}).json()

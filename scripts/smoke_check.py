@@ -10,8 +10,9 @@ Usage (from the repository root, with ORION's dependencies installed):
 
 Without --controls it only runs harmless background tasks in a temporary folder: no API key is set,
 no app is opened, nothing is sent. --controls (for a throwaway CI desktop only) adds the full set:
-foreground requests that are denied and approved, the background browser, staged cancellation, an
-honest network failure and a restart.
+a foreground step that runs without a prompt (the 2.6 default), the permission gates switched back on
+in settings with requests denied and approved, the background browser, staged cancellation, an honest
+network failure and a restart.
 """
 
 from __future__ import annotations
@@ -182,17 +183,17 @@ def main() -> int:
             r = run_tool(c, name, targs)
             ok = r["ok"] and (name != "read_file" or "hello from the smoke check" in r["result"])
             check(f"background: {name}", ok and not r["asked"] and quiet(r) is not False, r)
-        # A document is written with file libraries, approved like any change, and reopened to verify it.
+        # A document is written with file libraries and reopened to verify it. Since 2.6 changes don't ask.
         doc = str(sample / "report.docx")
-        r = run_tool(c, "create_document", {"path": doc, "content": "Background check report", "title": "Check"},
-                     decision="approve")
+        r = run_tool(c, "create_document", {"path": doc, "content": "Background check report", "title": "Check"})
         rec = last_step(c, "create_document")
         r["lifecycle_stage"] = rec.get("stage")
         r["verification"] = (rec.get("verification") or {}).get("status")
-        check("background: create_document verified", r["ok"] and r["verification"] == "passed"
-              and not r["asked_desktop"] and quiet(r) is not False, r)
+        check("background: create_document verified, no prompt", r["ok"] and r["verification"] == "passed"
+              and not r["asked"] and quiet(r) is not False, r)
         check("lifecycle: full record", [h["stage"] for h in rec.get("history", [])] ==
-              ["queued", "validating", "awaiting_permission", "running", "verifying", "completed"], {"record": rec})
+              ["queued", "validating", "running", "verifying", "completed"]
+              and (rec.get("approval") or {}).get("by") == "policy", {"record": rec})
 
         # Integration readiness is a read-only look: no prompt, nothing started, WhatsApp reported as blocked.
         r = run_tool(c, "integration_status", {})
@@ -233,7 +234,18 @@ def main() -> int:
             r = run_tool(c, "browser_open", {"url": page}, settle=1.0)
             check("background: browser_open has no window", r["ok"] and "ORION check" in r["result"] and quiet(r), r)
             run_tool(c, "browser_close", {})
-            # 4. Foreground actions ask first; a "no" means nothing happens.
+            # 4. The 2.6 default: a foreground step runs without a prompt, and is still recorded and checked.
+            r = run_tool(c, "open_app", {"name": "notepad"}, settle=2.0)
+            rec = last_step(c, "open_app")
+            r["lifecycle_stage"] = rec.get("stage")
+            check("default: open_app runs without a prompt", r["ok"] and not r["asked"] and r["focus_changed"]
+                  and rec.get("stage") in ("completed", "needs_attention")
+                  and (rec.get("approval") or {}).get("desktop") is True, r)
+            subprocess.run(["taskkill", "/IM", "notepad.exe", "/F"], capture_output=True)
+            time.sleep(1.0)
+            # With the gates switched back on in settings, foreground actions ask first; a "no" means nothing
+            # happens.
+            c.patch("/api/settings", json={"approval_mode": "ask", "desktop_actions": "ask"})
             r = run_tool(c, "open_app", {"name": "notepad"}, decision="deny", settle=2.0)
             check("gate: open_app denied changes nothing", not r["ok"] and r["asked_desktop"] and quiet(r), r)
             r = run_tool(c, "type_text", {"text": "should never be typed"}, decision="deny", settle=0.5)
