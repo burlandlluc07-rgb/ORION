@@ -139,7 +139,15 @@ def run_context_case() -> list[dict]:
         snap = context.snapshot()
         ok = "quick brown fox" in snap["selection"] and "notepad" in (snap["app"] or "").lower()
         ctx = context.context_for("summarise this")
-        return [{"case": "context_selection", "ok": ok and "quick brown fox" in ctx, **snap}]
+        errors: list = []
+        if not ok:
+            try:
+                context.read_selection(context.FOREGROUND.hwnd, errors)
+            except Exception as exc:
+                import traceback
+
+                errors.append(traceback.format_exc()[-800:] + str(exc))
+        return [{"case": "context_selection", "ok": ok and "quick brown fox" in ctx, "errors": errors, **snap}]
     finally:
         try:
             app.kill()

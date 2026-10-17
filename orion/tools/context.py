@@ -118,12 +118,12 @@ def _uia():
 
 
 def _selection_from(element) -> str:
-    from comtypes.gen.UIAutomationClient import IUIAutomationTextPattern  # type: ignore
+    from pywinauto.uia_defines import IUIA  # type: ignore
 
     pat = element.GetCurrentPattern(UIA_TEXT_PATTERN)
     if not pat:
         return ""
-    tp = pat.QueryInterface(IUIAutomationTextPattern)
+    tp = pat.QueryInterface(IUIA().UIA_dll.IUIAutomationTextPattern)
     ranges = tp.GetSelection()
     if not ranges:
         return ""
@@ -131,10 +131,15 @@ def _selection_from(element) -> str:
     return "\n".join(p for p in parts if p).strip()
 
 
-def read_selection(hwnd: int) -> str:
-    """Selected text in that window: its focused control first, otherwise the first text control in it."""
+def read_selection(hwnd: int, errors: list | None = None) -> str:
+    """Selected text in that window: its focused control first, then its text controls."""
     if not IS_WIN or not hwnd:
         return ""
+
+    def note(where: str, exc: Exception) -> None:
+        if errors is not None:
+            errors.append(f"{where}: {type(exc).__name__}: {exc}")
+
     uia = _uia()
     try:
         focused = uia.GetFocusedElement()
@@ -143,18 +148,36 @@ def read_selection(hwnd: int) -> str:
             text = _selection_from(focused)
             if text:
                 return text
-    except Exception:
-        pass
-    root = uia.ElementFromHandle(hwnd)
-    cond = uia.CreatePropertyCondition(UIA_IS_TEXT_PATTERN_AVAILABLE, True)
-    found = root.FindAll(TREESCOPE_DESCENDANTS, cond)
-    for i in range(min(found.Length if found else 0, 8)):
-        try:
-            text = _selection_from(found.GetElement(i))
-            if text:
-                return text
-        except Exception:
-            continue
+    except Exception as exc:
+        note("focused", exc)
+    try:
+        root = uia.ElementFromHandle(hwnd)
+        cond = uia.CreatePropertyCondition(UIA_IS_TEXT_PATTERN_AVAILABLE, True)
+        found = root.FindAll(TREESCOPE_DESCENDANTS, cond)
+        for i in range(min(found.Length if found else 0, 8)):
+            try:
+                text = _selection_from(found.GetElement(i))
+                if text:
+                    return text
+            except Exception as exc:
+                note(f"descendant {i}", exc)
+    except Exception as exc:
+        note("search", exc)
+    try:  # pywinauto's wrappers, as a second route to the same UI Automation data
+        from pywinauto import Desktop  # type: ignore
+
+        win = Desktop(backend="uia").window(handle=hwnd)
+        for ctl in win.descendants(control_type="Edit")[:4] + win.descendants(control_type="Document")[:4]:
+            try:
+                ranges = ctl.iface_text.GetSelection()
+                parts = [ranges.GetElement(i).GetText(MAX_SELECTION) for i in range(min(ranges.Length, 5))]
+                text = "\n".join(p for p in parts if p).strip()
+                if text:
+                    return text
+            except Exception as exc:
+                note("wrapper", exc)
+    except Exception as exc:
+        note("wrappers", exc)
     return ""
 
 
