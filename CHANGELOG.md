@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+- **Background agent.** The standalone background agent now runs inside ORION (`orion/background`). Ask ORION to
+  "queue a background task", or use `/api/background`. Tasks work on files in the agent's own folders, run
+  commands with no window and search the web, and never use the mouse, keyboard, focus or a window. Risky steps
+  wait for your OK in ORION's approval prompt (also pushed to paired phones), and both tasks and pending approvals
+  survive restarts. Every Gemini request goes through ORION's free-tier governor, so the agent and the assistant
+  share one budget. It starts with ORION, so "Start with Windows" covers it; turn it off with the
+  `background_agent` setting.
+
 ## 2.5.0
 - **Instant voice commands.** "Hey ORION, pause the music", "…set the volume to thirty", "…open Spotify",
   "…set a timer for five minutes", "…lock the computer", "stop": about 2,500 everyday phrasings, including your

@@ -29,6 +29,7 @@ OUT = Path("e2e")
 OUT.mkdir(exist_ok=True)
 HAS_KEY = bool(os.environ.get("GEMINI_API_KEY"))
 DESKTOP = Path.home() / "Desktop"
+BG_WORK = HOME / "bg-work"  # the background agent's only allowed folder in this run
 
 for _stream in (sys.stdout, sys.stderr):  # the runner console is cp1252; keep emoji/quotes from crashing prints
     try:
@@ -263,9 +264,46 @@ def wake_checks() -> None:
                       for r in results) + f" | lang={results[0]['ready']} err={results[0]['error']}")
 
 
+def desktop_probe() -> tuple:
+    import ctypes
+    from ctypes import wintypes
+
+    pt = wintypes.POINT()
+    ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
+    return (pt.x, pt.y), int(ctypes.windll.user32.GetForegroundWindow() or 0)
+
+
+def background_agent_check(o: "Orion") -> None:
+    """The in-process background agent on live Gemini: files, a windowless shell command and an overwrite
+    that waits for ORION's approval prompt (answered by the auto-approver), with the desktop left alone."""
+    (BG_WORK / "notes.txt").write_text("Buy milk, call the dentist on Friday.", "utf-8")
+    before = desktop_probe()
+    n_approved = len(o.approved)
+    t = o.c.post("/api/background/tasks", json={"prompt": (
+        "Read notes.txt and write a one-line summary of it to summary.md. Then run the shell command "
+        "`echo orion-bg-ok` and include its output in your answer. Finally overwrite notes.txt with the single "
+        "word done.")}).json()
+    task, t0 = t, time.time()
+    while time.time() - t0 < 300 and task.get("status") not in ("completed", "failed", "cancelled"):
+        time.sleep(2)
+        task = o.c.get(f"/api/background/tasks/{t['id']}").json()
+    after = desktop_probe()
+    summary = BG_WORK / "summary.md"
+    notes = (BG_WORK / "notes.txt").read_text("utf-8").strip().lower()
+    asked = [a for a in o.approved[n_approved:] if a.startswith("Background task")]
+    ok = (task.get("status") == "completed" and summary.exists() and notes.rstrip(".") == "done" and bool(asked)
+          and before == after)
+    record("gemini: background agent task (files, shell, approval)", ok,
+           f"{task.get('status')} in {time.time() - t0:.0f}s; summary={'yes' if summary.exists() else 'no'}; "
+           f"notes={notes[:30]!r}; approvals={len(asked)}; desktop unchanged={before == after}; "
+           f"{(task.get('result') or task.get('error') or '')[:200]}")
+
+
 def main() -> int:
     HOME.mkdir(parents=True, exist_ok=True)
     (HOME / "settings.json").write_text(json.dumps({"user_name": "Lluc", "onboarded": True, "voice": {"mode": "classic"}}))
+    BG_WORK.mkdir(parents=True, exist_ok=True)
+    (HOME / "background-agent.toml").write_text(f'[safety]\nallowed_paths = ["{BG_WORK.as_posix()}"]\n', "utf-8")
     proc = subprocess.Popen([str(EXE)], env=os.environ.copy())
     for _ in range(90):
         if (HOME / "instance.json").exists():
@@ -449,6 +487,8 @@ def main() -> int:
                f"{(mm.get('summary') or '')[:200]}", report=report.read_text('utf-8')[:1500] if report.exists() else None)
         o.window("show")
         shot("09_after_mission")
+
+        background_agent_check(o)
 
         q = o.c.get("/api/quota").json()["models"]
         record("free-tier usage", True, ", ".join(f"{m['model']}: {m['rpd_used']}/{m['rpd']} today" for m in q))

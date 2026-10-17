@@ -93,6 +93,9 @@ class Settings(BaseModel):
     # Steps that use your desktop (mouse, keys, focus, or opening a window) when ORION decides on them itself:
     # "ask" = ask every time (default) | "allow" = don't ask. Your own instant commands and phone buttons never ask.
     desktop_actions: str = "ask"
+    # The background agent: a task queue that works on files in its own folders, shell commands with no
+    # window and web search, never the desktop. Its tasks wait for your OK on risky steps and survive restarts.
+    background_agent: bool = True
     browser_mode: str = "background"  # "background" = ORION's browser runs hidden | "visible" = in a window
 
     voice: VoiceSettings = Field(default_factory=VoiceSettings)

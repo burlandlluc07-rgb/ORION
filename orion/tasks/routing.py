@@ -57,6 +57,8 @@ SELF_CHECKED = {"write_file": "the file was read back and compared", "create_fol
                 "set_volume": "the volume level was read back"}
 COOPERATIVE = {"run_command", "run_python", "search_files", "download_file", "clean_temp_files", "internet_speed_test",
                "install_app", "app_updates", "start_mission"}
+# Hands work to the background agent (orion/background), which has its own allowlist and approval gate.
+BACKGROUND_AGENT = {"queue_background_task", "cancel_background_task"}
 ROLLBACK = {"write_file", "move_or_copy", "delete_path", "create_document", "edit_document", "create_pdf",
             "create_spreadsheet", "update_spreadsheet", "create_presentation"}
 
@@ -88,6 +90,8 @@ def capabilities_for(tool: "Tool", settings: "Settings | None" = None, browser_v
                             evidence="UI Automation reports the control state")
     if name in EXTERNAL or (source.startswith(("account:", "home")) and tool.risk != "safe"):
         return Capabilities(route="api_mcp", changes_external=True, evidence="the service's response")
+    if name in BACKGROUND_AGENT:
+        return Capabilities(route="local", changes_local=True, evidence="the background agent's task record")
     route = "cli" if name in CLI else "api_mcp" if name in API or source.startswith(("account:", "home")) else "local"
     return Capabilities(route=route, changes_local=name in LOCAL_CHANGES or tool.risk != "safe",
                         cancellable=name in COOPERATIVE, rollback=name in ROLLBACK,
