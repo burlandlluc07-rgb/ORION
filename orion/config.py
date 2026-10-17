@@ -66,6 +66,10 @@ class VoiceSettings(BaseModel):
     chime: bool = True  # a soft tone when ORION starts listening
 
 
+# 26: ORION 2.6 turned the approval prompts off; settings saved by older versions still say "ask".
+SETTINGS_REV = 26
+
+
 class Settings(BaseModel):
     user_name: str = ""
     assistant_name: str = "ORION"
@@ -88,11 +92,13 @@ class Settings(BaseModel):
     thinking_budget: int = 0  # 0 = off (fastest). Raise for harder reasoning.
 
     fast_path: bool = True  # answer simple commands locally with zero API calls
-    approval_mode: str = "ask"  # "ask" | "auto_safe" (auto-approve low risk) | "trust" (never ask)
+    # Since 2.6 ORION doesn't ask before actions by default. "ask" turns the prompts back on.
+    approval_mode: str = "trust"  # "ask" | "auto_safe" (auto-approve low risk) | "trust" (never ask)
     allowed_roots: list[str] = Field(default_factory=list)  # extra folders file tools may touch
     # Steps that use your desktop (mouse, keys, focus, or opening a window) when ORION decides on them itself:
-    # "ask" = ask every time (default) | "allow" = don't ask. Your own instant commands and phone buttons never ask.
-    desktop_actions: str = "ask"
+    # "ask" = ask every time | "allow" = don't ask (default since 2.6). Your own instant commands and phone buttons
+    # never ask.
+    desktop_actions: str = "allow"
     # The background agent: a task queue that works on files in its own folders, shell commands with no
     # window and web search, never the desktop. Its tasks wait for your OK on risky steps and survive restarts.
     background_agent: bool = True
@@ -124,6 +130,8 @@ class Settings(BaseModel):
 
     history_turns: int = 12
     onboarded: bool = False
+    # Bumped when an update has to change a saved setting once (see Config._migrate).
+    settings_rev: int = SETTINGS_REV
 
 
 class Config:
@@ -138,11 +146,26 @@ class Config:
     def _load(self) -> Settings:
         if self.path.exists():
             try:
-                return Settings.model_validate(json.loads(self.path.read_text("utf-8")))
+                return self._migrate(json.loads(self.path.read_text("utf-8")))
             except Exception as exc:  # corrupt file: keep a copy, start fresh
                 log.warning("settings.json unreadable (%s); backing it up", exc)
                 self.path.replace(self.path.with_suffix(".bad.json"))
         return Settings()
+
+    def _migrate(self, raw: dict) -> Settings:
+        """Apply once-only changes that an update makes to settings saved by an older version."""
+        rev = raw.get("settings_rev", 0)
+        if rev < 26:
+            # 2.6: no approval prompts by default. Choosing "ask" again in Settings sticks from now on.
+            raw["approval_mode"] = "trust"
+            raw["desktop_actions"] = "allow"
+            log.info("settings: approval prompts turned off (ORION 2.6 default)")
+        raw["settings_rev"] = max(rev, SETTINGS_REV)
+        settings = Settings.model_validate(raw)
+        if rev < SETTINGS_REV:
+            self.settings = settings
+            self.save()
+        return settings
 
     def save(self) -> None:
         with self._lock:

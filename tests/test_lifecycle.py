@@ -11,6 +11,11 @@ from orion.tasks.routing import capabilities_for
 from orion.tools.registry import Tool, ToolContext, ToolError, schema_for
 
 
+@pytest.fixture(autouse=True)
+def _gates_on(prompts_on):
+    """These tests exercise the permission gates, which are off by default since 2.6."""
+
+
 def add_tool(engine, fn, name=None, risk="safe"):
     schema, ctx_param, desc = schema_for(fn)
     t = Tool(name=name or fn.__name__, description=desc, parameters=schema, fn=fn, risk=risk, wants_context=ctx_param)

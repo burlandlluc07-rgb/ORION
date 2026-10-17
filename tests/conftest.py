@@ -20,6 +20,13 @@ def config(tmp_path, monkeypatch):
 
 
 @pytest.fixture
+def prompts_on(config):
+    """Approval prompts are off by default since 2.6; tests of the gates themselves turn them back on."""
+    config.settings.approval_mode = "ask"
+    config.settings.desktop_actions = "ask"
+
+
+@pytest.fixture
 async def engine(config):
     e = Engine(config)
     e.bus.bind(asyncio.get_running_loop())

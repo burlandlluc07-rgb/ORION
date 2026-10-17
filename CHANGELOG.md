@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## 2.6.0
+- **No more approval prompts by default.** ORION now acts without asking first: typing and clicking, opening or
+  changing windows, bringing the browser to the front, deleting files (still to the Recycle Bin), power actions,
+  installing software, shell commands, sending email, browser clicks and form submissions, smart-home locks and
+  alarms, and every other "confirm" or "danger" action. Settings saved by older
+  versions are switched over once on the first start of 2.6. To get the prompts back, open Settings → Safety &
+  permissions and set **Approvals** to *Ask before changes* and **Using your desktop** to *Ask before each desktop
+  step*; that choice is kept. Work still runs in the background first, every action still gets its lifecycle
+  record and result check, and Stop still cancels. **Be aware:** with prompts off, instructions hidden in a web
+  page, email or file that ORION reads could make it take these actions without you seeing a prompt.
+- Background-agent tasks keep their own OK step for commands that aren't on the safe list.
 - **Background agent.** The standalone background agent now runs inside ORION (`orion/background`). Ask ORION to
   "queue a background task", or use `/api/background`. Tasks work on files in the agent's own folders, run
   commands with no window and search the web, and never use the mouse, keyboard, focus or a window. Risky steps

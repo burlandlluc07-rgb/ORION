@@ -79,7 +79,7 @@ async def test_tool_call_round_trip(engine):
     assert task["steps"][0]["status"] == "done"
 
 
-async def test_risky_tool_waits_for_approval(engine):
+async def test_risky_tool_waits_for_approval(engine, prompts_on):
     seen = add_probe(engine, risk="confirm")
     engine.brain = FakeBrain([[call("probe", x="go")], [types.Part(text="ok")]])
     events = engine.bus.subscribe()
@@ -97,7 +97,7 @@ async def test_risky_tool_waits_for_approval(engine):
     assert seen == ["go"] and res["reply"] == "ok"
 
 
-async def test_denied_tool_is_not_run(engine):
+async def test_denied_tool_is_not_run(engine, prompts_on):
     seen = add_probe(engine, risk="danger")
     engine.brain = FakeBrain([[call("probe", x="nope")], [types.Part(text="Understood.")]])
     events = engine.bus.subscribe()
@@ -114,6 +114,19 @@ async def test_denied_tool_is_not_run(engine):
     assert seen == []
     resp = engine.brain.calls[1]["contents"][-1].parts[0].function_response.response
     assert "declined" in resp["error"]
+
+
+async def test_no_prompts_by_default_since_2_6(engine, no_side_effects):
+    assert engine.config.settings.approval_mode == "trust" and engine.config.settings.desktop_actions == "allow"
+    seen = add_probe(engine, risk="danger")
+    engine.brain = FakeBrain([[call("probe", x="d")], [types.Part(text="done")]])
+    await asyncio.wait_for(engine.agent.handle("probe d"), 5)
+    assert seen == ["d"] and engine.approvals.list() == []
+    task = engine.tracker.start("t", None)
+    ok, _ = await asyncio.wait_for(engine.agent.run_tool("open_website", {"url": "example.com"}, task, None), 5)
+    assert ok and no_side_effects == ["https://example.com"] and engine.approvals.list() == []
+    rec = task.steps[0]["lifecycle"]
+    assert rec["approval"]["by"] == "policy" and rec["approval"]["desktop"] and rec["stage"] == "completed"
 
 
 async def test_trust_mode_skips_approval(engine):
