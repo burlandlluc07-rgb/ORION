@@ -59,6 +59,11 @@ class VoiceSettings(BaseModel):
     input_device: int | None = None
     output_device: int | None = None
     speak_replies: bool = True
+    instant_commands: bool = True  # common commands run offline the moment they're heard (Windows)
+    follow_up: bool = True  # after a reply, keep listening briefly so you can carry on without the wake word
+    follow_up_seconds: float = 6.0
+    barge_in: bool = True  # talk over ORION to interrupt it (classic mode; Live always allows it)
+    chime: bool = True  # a soft tone when ORION starts listening
 
 
 class Settings(BaseModel):

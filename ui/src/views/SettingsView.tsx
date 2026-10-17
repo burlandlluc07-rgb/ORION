@@ -145,6 +145,22 @@ export function SettingsView() {
         <Field label="Speak replies" hint="Read answers aloud for voice requests, timers and reminders.">
           <Toggle on={st.voice.speak_replies} onChange={(v) => saveVoice({ speak_replies: v })} />
         </Field>
+        <Field label="Instant commands" hint="Volume, media, timers, apps, folders, lock, screenshots… run the moment they're heard, offline, with no Gemini request. Try “Hey ORION, pause the music”.">
+          <Toggle on={st.voice.instant_commands} onChange={(v) => saveVoice({ instant_commands: v })} />
+        </Field>
+        {st.voice.mode === "classic" && (
+          <>
+            <Field label="Follow-up listening" hint="After a reply, keep listening for a few seconds so you can carry on without the wake word.">
+              <Toggle on={st.voice.follow_up} onChange={(v) => saveVoice({ follow_up: v })} />
+            </Field>
+            <Field label="Interrupt by talking" hint="Start speaking while ORION is talking and it stops to listen.">
+              <Toggle on={st.voice.barge_in} onChange={(v) => saveVoice({ barge_in: v })} />
+            </Field>
+          </>
+        )}
+        <Field label="Listening chime" hint="A soft tone when ORION starts listening.">
+          <Toggle on={st.voice.chime} onChange={(v) => saveVoice({ chime: v })} />
+        </Field>
         <Field label="Microphone">
           <select className="select" value={st.voice.input_device ?? ""} onChange={(e) => saveVoice({ input_device: e.target.value === "" ? null : Number(e.target.value) })}>
             <option value="">System default</option>

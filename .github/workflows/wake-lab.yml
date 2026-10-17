@@ -13,5 +13,7 @@ jobs:
         run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\wake_lab.ps1
       - uses: actions/setup-python@v6
         with: { python-version: "3.12" }
-      - name: ORION's own wake detector on synthesised speech
+      - name: Install ORION
+        run: python -m pip install -e .
+      - name: Wake word, instant commands, offline dictation/voice and screen context on real Windows
         run: python scripts/wake_check.py

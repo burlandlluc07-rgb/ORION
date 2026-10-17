@@ -151,7 +151,7 @@ export function ChatView() {
             {s.transcript && (
               <div className={`msg ${s.transcript.role === "user" ? "user" : "assistant"}`} style={{ opacity: 0.6 }}>
                 <div className="who">{s.transcript.role === "user" ? "You" : (s.engine?.settings.assistant_name ?? "ORION")}</div>
-                <div className="body">{s.transcript.text}</div>
+                <div className="body">{s.transcript.text}{s.transcript.tentative ? " …" : ""}</div>
               </div>
             )}
             {approvals.map((a, i) => <ApprovalCard key={a.id} a={a} hotkey={i === approvals.length - 1} />)}

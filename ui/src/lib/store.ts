@@ -27,7 +27,7 @@ interface Store {
   approvals: Approval[];
   vitals: Vitals | null;
   voice: VoiceStatus;
-  transcript: { role: string; text: string } | null;
+  transcript: { role: string; text: string; tentative?: boolean } | null;
   heard: { phrase: string; confidence: number; accepted: boolean; at: number } | null;
   models: string[];
   toasts: Toast[];
@@ -199,7 +199,7 @@ export const useStore = create<Store>((set, get) => ({
         set({ heard: { phrase: ev.phrase, confidence: ev.confidence, accepted: ev.accepted, at: Date.now() } });
         break;
       case "voice.transcript":
-        set({ transcript: { role: ev.role, text: ev.text } });
+        set({ transcript: { role: ev.role, text: ev.text, tentative: !!ev.tentative } });
         break;
       case "audio.level":
         if (ev.source === "mic") levels.mic = ev.level;

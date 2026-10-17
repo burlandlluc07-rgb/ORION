@@ -2,7 +2,8 @@
 
 Uses Microsoft Edge's neural voices via ``edge-tts`` (free, no key, very
 natural — "en-GB-RyanNeural" is a convincing JARVIS) and decodes MP3 with
-``miniaudio``. Falls back to the offline OS voice (pyttsx3/SAPI) when offline.
+``miniaudio``. When the neural voice can't be reached (offline, slow network) it falls back to an installed
+Windows voice through the offline speech service, so ORION never goes silent.
 Speech is synthesised sentence by sentence so playback starts quickly.
 """
 
@@ -11,20 +12,36 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
+from typing import Callable
 
 from .audio import SPK_RATE, Speaker
 
 log = logging.getLogger("orion.tts")
 
 VOICES = [
-    {"id": "en-GB-RyanNeural", "label": "Ryan — British, composed (JARVIS)"},
-    {"id": "en-GB-ThomasNeural", "label": "Thomas — British, warm"},
-    {"id": "en-GB-SoniaNeural", "label": "Sonia — British, crisp (FRIDAY)"},
-    {"id": "en-US-GuyNeural", "label": "Guy — American, confident"},
-    {"id": "en-US-AndrewNeural", "label": "Andrew — American, natural"},
-    {"id": "en-US-AriaNeural", "label": "Aria — American, bright"},
-    {"id": "en-AU-WilliamNeural", "label": "William — Australian"},
+    {"id": "en-GB-RyanNeural", "label": "Ryan — British, composed (JARVIS)", "gender": "male"},
+    {"id": "en-GB-ThomasNeural", "label": "Thomas — British, warm", "gender": "male"},
+    {"id": "en-GB-SoniaNeural", "label": "Sonia — British, crisp (FRIDAY)", "gender": "female"},
+    {"id": "en-US-GuyNeural", "label": "Guy — American, confident", "gender": "male"},
+    {"id": "en-US-AndrewNeural", "label": "Andrew — American, natural", "gender": "male"},
+    {"id": "en-US-AriaNeural", "label": "Aria — American, bright", "gender": "female"},
+    {"id": "en-AU-WilliamNeural", "label": "William — Australian", "gender": "male"},
 ]
+EDGE_TIMEOUT = 6.0  # a sentence normally synthesises in well under a second
+EDGE_RETRY = 60.0  # after a failure, use the backup voice for this long before trying the neural voice again
+
+
+def backup_voice_hints(voice: str, rate: str = "+0%") -> tuple[str, str, int]:
+    """(culture, gender, SAPI rate) for the offline Windows voice closest to the chosen neural voice."""
+    culture = "-".join(voice.split("-")[:2]) if voice.count("-") >= 2 else "en-GB"
+    gender = next((v["gender"] for v in VOICES if v["id"] == voice), "")
+    if not gender:  # a voice picked outside the list: guess from common Edge voice names
+        gender = "female" if re.search(r"Sonia|Aria|Jenny|Libby|Maisie|Natasha|Emma|Ava|Michelle|Clara|Elsa|Denise",
+                                       voice) else "male"
+    m = re.match(r"([+-]\d+)%", rate or "")
+    sapi = max(-10, min(10, round(int(m.group(1)) / 10))) if m else 0
+    return culture, gender, sapi
 
 
 def speakable(text: str) -> str:
@@ -53,6 +70,8 @@ class TTS:
         self.voice = voice
         self.rate = rate
         self._gen = 0
+        self.backup: Callable[[str, str, str, int], bytes] | None = None  # offline voice (set by the voice manager)
+        self._edge_down_until = 0.0
 
     async def _synth_edge(self, text: str) -> bytes:
         import edge_tts
@@ -69,12 +88,25 @@ class TTS:
                                    sample_rate=SPK_RATE)
         return decoded.samples.tobytes()
 
-    def _speak_offline(self, text: str) -> None:
-        import pyttsx3  # type: ignore
-
-        eng = pyttsx3.init()
-        eng.say(text)
-        eng.runAndWait()
+    async def synth(self, text: str) -> bytes:
+        """One sentence → 24 kHz PCM: the neural voice, or the offline Windows voice when that's unreachable."""
+        if time.monotonic() >= self._edge_down_until:
+            try:
+                pcm = await asyncio.wait_for(self._synth_edge(text), EDGE_TIMEOUT)
+                if pcm:
+                    return pcm
+                raise RuntimeError("no audio returned")
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                if self.backup is None:
+                    raise
+                log.warning("Neural voice unavailable (%s); using the offline Windows voice", exc or "timed out")
+                self._edge_down_until = time.monotonic() + EDGE_RETRY
+        if self.backup is None:
+            raise RuntimeError("the neural voice is unavailable and there's no offline voice")
+        culture, gender, rate = backup_voice_hints(self.voice, self.rate)
+        return await asyncio.to_thread(self.backup, text, culture, gender, rate)
 
     async def speak(self, text: str) -> None:
         text = speakable(text)
@@ -84,21 +116,17 @@ class TTS:
         gen = self._gen
         chunks = sentences(text)
         # Pipeline: synthesise the next sentence while the current one plays.
-        pending = asyncio.create_task(self._synth_edge(chunks[0]))
+        pending = asyncio.create_task(self.synth(chunks[0]))
         for i in range(len(chunks)):
             try:
                 pcm = await pending
             except Exception as exc:
-                log.warning("edge-tts failed (%s); using offline voice", exc)
-                try:
-                    await asyncio.to_thread(self._speak_offline, " ".join(chunks[i:]))
-                except Exception:
-                    log.warning("No offline TTS available")
+                log.warning("Speech failed: %s", exc)
                 return
             if gen != self._gen:
                 return
             if i + 1 < len(chunks):
-                pending = asyncio.create_task(self._synth_edge(chunks[i + 1]))
+                pending = asyncio.create_task(self.synth(chunks[i + 1]))
             self.speaker.play(pcm)
         await self.speaker.wait_done()
 
@@ -136,7 +164,7 @@ class SpeechStream:
         clean = speakable(text)
         if len(clean) > 1 and self.gen == self.tts._gen:
             # Start synthesising right away; playback below keeps sentence order.
-            self.q.put_nowait(asyncio.create_task(self.tts._synth_edge(clean)))
+            self.q.put_nowait(asyncio.create_task(self.tts.synth(clean)))
 
     def finish(self) -> None:
         self._emit(self.buf)

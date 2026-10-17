@@ -259,6 +259,12 @@ class Agent:
         extra = f"ACTIVE SKILL — follow these instructions:\n{skill_body}" if skill_body else ""
         if extra_system:
             extra = f"{extra_system}\n\n{extra}".strip()
+        if source in ("text", "voice", "phone", "hotkey"):
+            from ..tools.context import context_for
+
+            ctx = await asyncio.to_thread(context_for, text)  # "summarise this" → the selected text / active window
+            if ctx:
+                extra = f"{extra}\n\n{ctx}".strip()
         system = self.system_prompt(text, voice=source == "voice", extra=extra)
 
         user_parts: list[types.Part] = []

@@ -215,10 +215,13 @@ class GeminiBrain:
                    "pixel coordinates relative to the image size.",
         )
 
-    async def transcribe(self, wav: bytes) -> str:
+    async def transcribe(self, wav: bytes, hints: list[str] | None = None) -> str:
+        prompt = ("Transcribe this speech verbatim. Output only the transcript, nothing else. "
+                  "If there is no intelligible speech, output nothing.")
+        if hints:
+            prompt += " Names that may come up (spell them exactly like this): " + ", ".join(hints[:60]) + "."
         contents = [types.Content(role="user", parts=[
             types.Part.from_bytes(data=wav, mime_type="audio/wav"),
-            types.Part(text="Transcribe this speech verbatim. Output only the transcript, nothing else. "
-                            "If there is no intelligible speech, output nothing."),
+            types.Part(text=prompt),
         ])]
         return (await self.generate_text(contents, tier="fast")).strip()

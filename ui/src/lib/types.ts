@@ -80,6 +80,11 @@ export interface VoiceSettings {
   input_device: number | null;
   output_device: number | null;
   speak_replies: boolean;
+  instant_commands: boolean;
+  follow_up: boolean;
+  follow_up_seconds: number;
+  barge_in: boolean;
+  chime: boolean;
 }
 
 export interface Settings {

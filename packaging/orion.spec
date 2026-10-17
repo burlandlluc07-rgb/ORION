@@ -12,7 +12,7 @@ hidden = (
     + collect_submodules("webview")
     + collect_submodules("pystray")
     + collect_submodules("keyring.backends")
-    + ["pycaw.pycaw", "comtypes.stream", "pywinauto", "screen_brightness_control", "miniaudio", "edge_tts", "ddgs",
+    + ["pycaw.pycaw", "comtypes.stream", "pywinauto", "screen_brightness_control", "miniaudio", "edge_tts", "webrtcvad", "ddgs",
        "mcp.client.stdio", "mcp.client.streamable_http", "qrcode.image.svg", "pywebpush", "py_vapid", "icalendar", "recurring_ical_events", "openwakeword", "pypdf", "docx", "openpyxl", "pptx", "fpdf"]
     + collect_submodules("playwright")
 )

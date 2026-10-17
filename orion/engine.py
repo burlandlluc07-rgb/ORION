@@ -26,7 +26,7 @@ from .tools.registry import Registry, decorated_tools
 
 log = logging.getLogger("orion.engine")
 
-CORE_TOOL_MODULES = ["system", "apps", "files", "web", "screen", "productivity", "shell", "office", "media", "browser", "windows"]
+CORE_TOOL_MODULES = ["system", "apps", "files", "web", "screen", "productivity", "shell", "office", "media", "browser", "windows", "context"]
 
 
 class Engine:
@@ -95,8 +95,10 @@ class Engine:
         self.skills.load()
         self.plugins.load_all()
         from .tools.apps import INDEX
+        from .tools.context import FOREGROUND
 
         INDEX.build_async()
+        FOREGROUND.start()  # remembers the window you were last in, for "this"/"the selected text"
         self.scheduler = Scheduler(self.store, self.notify, self._run_routine, lambda: self.bus.emit("routines.changed"))
         self.scheduler.start()
         self._bg.append(asyncio.create_task(self.connectors.start_all(), name="connectors"))
