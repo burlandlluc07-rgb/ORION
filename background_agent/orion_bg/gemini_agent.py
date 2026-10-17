@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from typing import Any
 
 from .agent_loop import CONTINUE, DONE, EMPTY, MAX_TOKENS, REFUSAL, TOOLS, AgentLoop, Turn
@@ -26,6 +27,7 @@ KEYRING_SERVICE = "ORION"
 KEYRING_USER = "gemini_api_key"
 
 RETRY_CODES = (429, 500, 502, 503, 504)
+QUOTA_COOLDOWN = 600.0  # seconds a model is skipped after a quota error
 BLOCKED = {"SAFETY", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "RECITATION",
            "IMAGE_SAFETY", "IMAGE_PROHIBITED_CONTENT"}
 NUDGE = ("(Your last reply was empty. Continue the task from where you left off. "
@@ -67,6 +69,8 @@ class GeminiAgentRunner(AgentLoop):
         super().__init__(cfg, toolbox)
         self.gcfg = cfg["gemini"]
         self._client = client
+        self._exhausted: dict[str, float] = {}
+        self.last_model: str | None = None
         if cfg["agent"].get("web_search"):
             self.toolbox.add(Tool(
                 "web_search",
@@ -116,23 +120,41 @@ class GeminiAgentRunner(AgentLoop):
             cfg["thinking_config"] = types.ThinkingConfig(thinking_budget=int(budget))
         return types.GenerateContentConfig(**cfg)
 
+    def _models(self) -> list[str]:
+        """Primary model first, then fallbacks not marked out of quota."""
+        now = time.monotonic()
+        chain = [self.gcfg["model"], *self.gcfg.get("fallback_models", [])]
+        usable = [m for m in dict.fromkeys(chain) if self._exhausted.get(m, 0) <= now]
+        return usable or [chain[-1]]
+
     def _generate(self, contents: Any, config: Any, ctx: RunContext) -> Any:
-        """generate_content with backoff on rate limits and overload."""
+        """generate_content with backoff on overload, and on a quota error (429)
+        a switch to the next model in [gemini].fallback_models, like ORION does."""
         from google.genai import errors
 
         client = self._get_client()
         attempts = int(self.gcfg.get("retries", 3)) + 1
-        for attempt in range(attempts):
+        models = self._models()
+        index, attempt = 0, 0
+        while True:
             ctx.check()
+            model = models[index]
             try:
-                return client.models.generate_content(model=self.gcfg["model"], contents=contents, config=config)
+                response = client.models.generate_content(model=model, contents=contents, config=config)
+                self.last_model = model
+                return response
             except errors.APIError as exc:
-                if exc.code not in RETRY_CODES or attempt == attempts - 1:
+                if exc.code == 429 and index + 1 < len(models):
+                    self._exhausted[model] = time.monotonic() + QUOTA_COOLDOWN
+                    log.warning("Gemini %s is out of quota; switching to %s", model, models[index + 1])
+                    index += 1
+                    continue
+                attempt += 1
+                if exc.code not in RETRY_CODES or attempt >= attempts:
                     raise
-                wait = min(60.0, 5.0 * (2 ** attempt))
-                log.warning("Gemini %s; retrying in %.0f s", exc.code, wait)
+                wait = min(60.0, 5.0 * (2 ** (attempt - 1)))
+                log.warning("Gemini %s on %s; retrying in %.0f s", exc.code, model, wait)
                 ctx.sleep(wait)
-        raise AssertionError("unreachable")
 
     def describe_error(self, exc: Exception) -> str | None:
         try:

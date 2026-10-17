@@ -264,7 +264,9 @@ def live_gemini():
     done3 = wait_task(t3["id"], timeout=240)
     expect(done3["status"] == "completed", f"{done3['status']}: {done3.get('error')}")
     expect("canberra" in done3["result"].lower(), done3["result"])
-    return {"write": done["result"][:200], "overwrite": done2["result"][:200], "search": done3["result"][:200]}
+    switched = [l for l in log_text().splitlines() if "out of quota; switching" in l]
+    return {"write": done["result"][:200], "overwrite": done2["result"][:200], "search": done3["result"][:200],
+            "model_switches": [l[-120:] for l in switched]}
 
 
 @check("clean stop: exit code 0 and daemon.json removed")

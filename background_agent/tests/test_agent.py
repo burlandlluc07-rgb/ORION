@@ -151,6 +151,8 @@ def test_fallbacks_off_uses_plain_messages(make_agent, cfg):
 
 
 def test_claude_without_key_fails_cleanly(make_agent, cfg):
+    import pytest
+    pytest.importorskip("anthropic")
     agent = make_agent(runners={"agent": ClaudeAgentRunner(cfg)})
     agent.start()
     done = agent.wait(agent.submit("x")["id"], 5)

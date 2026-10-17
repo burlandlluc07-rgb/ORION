@@ -43,6 +43,8 @@ DEFAULTS: dict[str, Any] = {
     },
     "gemini": {
         "model": "gemini-flash-latest",  # ORION's "smart" model
+        # Used in order when the model above is out of quota (HTTP 429).
+        "fallback_models": ["gemini-flash-lite-latest"],
         # The key is read from this variable, then GOOGLE_API_KEY, then the key
         # ORION saved in the Windows credential vault.
         "api_key_env": "GEMINI_API_KEY",
@@ -110,6 +112,7 @@ web_search = true
 
 [gemini]
 model = "gemini-flash-latest"
+fallback_models = ["gemini-flash-lite-latest"]
 api_key_env = "GEMINI_API_KEY"
 
 [notify]

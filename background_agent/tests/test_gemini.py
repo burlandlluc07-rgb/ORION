@@ -146,3 +146,29 @@ def test_no_key_fails_cleanly(make_agent):
     agent.start()
     done = agent.wait(agent.submit("x")["id"], 5)
     assert done["status"] == "failed" and "GEMINI_API_KEY" in done["error"]
+
+
+def quota_error():
+    from google.genai import errors
+    return errors.ClientError(429, {"error": {"code": 429, "message": "You exceeded your current quota", "status": "RESOURCE_EXHAUSTED"}})
+
+
+def test_quota_error_falls_back_to_next_model(make_agent, cfg):
+    runner_cfg = cfg  # fallback_models defaults to gemini-flash-lite-latest
+    client = FakeGenai([quota_error(), gemini_reply(("list_dir", {"path": "."})), gemini_reply("done on lite")])
+    runner = GeminiAgentRunner(runner_cfg, client=client)
+    agent = make_agent(runners={"agent": runner})
+    agent.start()
+    assert agent.wait(agent.submit("x")["id"], 5)["result"] == "done on lite"
+    models = [c["model"] for c in client.models.calls]
+    # the exhausted model is skipped for the rest of the task
+    assert models == ["gemini-flash-latest", "gemini-flash-lite-latest", "gemini-flash-lite-latest"]
+
+
+def test_quota_error_on_last_model_fails(make_agent, cfg):
+    from orion_bg import config
+    single = config.Config(config._merge(cfg, {"gemini": {"fallback_models": []}}))
+    agent = make_agent(runners={"agent": GeminiAgentRunner(single, client=FakeGenai([quota_error()]))})
+    agent.start()
+    done = agent.wait(agent.submit("x")["id"], 5)
+    assert done["status"] == "failed" and "429" in done["error"]
