@@ -554,14 +554,13 @@ function WhatsAppSection() {
         ) : (
           <>
             <div className="fh muted" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
-              <b>Or keep them in sync</b> with your iCloud (iPhone) or Google (Android) contacts, read-only, using an app password like your email.
+              <b>Or keep them in sync</b> with your iCloud (iPhone) or another CardDAV address book, read-only, using an app password like your email. Android/Google contacts can't sync this way (Google only allows its own sign-in), so use the file import above.
               {sProv === "icloud" ? " Create one at account.apple.com → Sign-In and Security → App-Specific Passwords."
-                : sProv === "google" ? " Create one at myaccount.google.com/apppasswords. If Google refuses it, use the file import above."
                 : " Enter your provider's CardDAV address."}
             </div>
             <div className="row" style={{ flexWrap: "wrap" }}>
               <select className="input" style={{ width: 150 }} value={sProv} onChange={(e) => setSProv(e.target.value)}>
-                <option value="icloud">iCloud (iPhone)</option><option value="google">Google (Android)</option><option value="custom">Other (CardDAV)</option>
+                <option value="icloud">iCloud (iPhone)</option><option value="custom">Other (CardDAV)</option>
               </select>
               <input className="input grow" value={sUser} placeholder="Account email" onChange={(e) => setSUser(e.target.value)} />
               <input className="input grow" type="password" value={sPass} placeholder="App password" onChange={(e) => setSPass(e.target.value)} />

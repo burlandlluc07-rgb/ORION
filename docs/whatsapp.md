@@ -11,12 +11,12 @@ Getting the contacts file:
 - **iPhone:** icloud.com → Contacts → select all → Export vCard (or contacts.google.com if your contacts sync to Google).
 - **Google Contacts:** contacts.google.com → Export → Google CSV or vCard.
 
-**Or keep them in sync:** under the import button, choose iCloud (iPhone) or Google (Android), enter the
-account email and an *app password* (iCloud: account.apple.com → Sign-In and Security → App-Specific Passwords;
-Google: myaccount.google.com/apppasswords), and press **Keep in sync**. ORION reads the address book over
+**Or keep them in sync:** under the import button, choose iCloud (iPhone) or another CardDAV provider, enter
+the account email and an *app password* (iCloud: account.apple.com → Sign-In and Security → App-Specific
+Passwords), and press **Keep in sync**. ORION reads the address book over
 CardDAV, read-only (it never changes your contacts), and refreshes it every few hours, so new people are found
-without re-importing. The app password goes in the Windows credential vault. Google may refuse app passwords for
-contacts; if it does, the error says so and the file import still works.
+without re-importing. The app password goes in the Windows credential vault. Google Contacts (Android) can't sync this
+way, because Google's CardDAV only accepts its own OAuth sign-in; use the file import for those.
 
 Enter your country code (e.g. 34) before importing or syncing so numbers saved without one still work. ORION keeps one
 number per person (mobile first), keeps contacts you added by hand, and stores them only on this PC. Names match

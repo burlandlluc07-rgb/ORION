@@ -504,8 +504,8 @@ def test_sync_reads_icloud_contacts_and_only_reads(engine, icloud):
     assert all(c["synced"] for c in res["contacts"])
 
 
-def test_sync_with_an_address_book_url_like_google(engine, icloud):
-    res = engine.whatsapp.connect_contacts({"provider": "google", "user": "me@gmail.com", "password": icloud.password,
+def test_sync_with_a_direct_address_book_url(engine, icloud):
+    res = engine.whatsapp.connect_contacts({"provider": "custom", "user": "me@gmail.com", "password": icloud.password,
                                             "url": "https://contacts.example/1/carddavhome/card/"})
     assert res["contact_sync"]["count"] == 1  # Mum's number has no country code and none was given
 

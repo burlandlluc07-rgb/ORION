@@ -1,4 +1,7 @@
-"""Read an address book over CardDAV (iCloud, Google, Fastmail, Nextcloud…) with an app password.
+"""Read an address book over CardDAV (iCloud, Fastmail, Nextcloud…) with an app password.
+
+Google Contacts is not offered: Google's CardDAV accepts only OAuth 2.0 sign-in and rejects app passwords
+(developers.google.com/people/carddav), so Android users import a contacts file instead.
 
 Read-only: only PROPFIND and REPORT requests are sent, never PUT or DELETE, so nothing in the user's contacts
 can change. Discovery follows RFC 6764/6352: the server's principal, then its address-book home, then every
@@ -20,9 +23,6 @@ NS = {"d": DAV, "c": CARD}
 PRESETS = {
     "icloud": {"label": "iCloud (iPhone)", "url": "https://contacts.icloud.com/",
                "help": "Create an app-specific password at account.apple.com → Sign-In and Security."},
-    "google": {"label": "Google (Android)", "url": "https://www.googleapis.com/carddav/v1/principals/{user}/lists/default/",
-               "help": "Turn on 2-Step Verification, then create an app password at myaccount.google.com/apppasswords. "
-                       "If Google refuses it, export your contacts as a file and import that instead."},
     "custom": {"label": "Other (CardDAV)", "url": "", "help": "Use your provider's CardDAV address."},
 }
 BATCH = 100
@@ -70,7 +70,7 @@ class CardDAV:
         url = self.url
         for resp in self._request("PROPFIND", url, _propfind("0", "d:resourcetype", "d:current-user-principal"), "0"):
             if resp.find(".//d:resourcetype/c:addressbook", NS) is not None:
-                return [url]  # already pointed at an address book (e.g. Google's lists/default)
+                return [url]  # already pointed at an address book
             principal = self._href(resp.find(".//d:current-user-principal", NS), url)
             if principal:
                 url = principal
