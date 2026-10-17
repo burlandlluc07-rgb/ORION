@@ -14,7 +14,8 @@ KITS: dict[str, str] = {
     "documents": "Word, Excel and PowerPoint files, PDFs (create, merge, split, forms), images (resize, convert), "
                  "zip archives, downloads and searching inside files",
     "browser": "drive a real web browser: open sites, read pages, click, type, fill forms, log-in sessions",
-    "email": "the user's mailbox: inbox, search, read, send, reply, forward, attachments, archive, folders, contacts",
+    "email": "the user's mailbox: inbox, sort by importance, search, read, send, reply, forward, attachments, "
+             "archive, folders, contacts",
     "windows": "Windows settings and maintenance: Wi-Fi, Bluetooth, dark mode, wallpaper, install/uninstall apps, "
                "startup apps, network and speed test, Windows Update, window layouts, cleanup, power plans",
     "home": "smart-home devices, scenes, locks and alarms",

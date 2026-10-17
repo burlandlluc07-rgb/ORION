@@ -56,14 +56,23 @@ class FakeImap:
             for uid, m in msgs.items():
                 h = email.message_from_bytes(m["raw"])
                 hay = {"FROM": h.get("From", ""), "TO": h.get("To", ""), "CC": h.get("Cc", ""), "ALL": "x"}.get(field, "")
-                if field == "ALL" or needle in hay.lower():
+                if field == "UNSEEN":
+                    if "\\Seen" not in m["flags"]:
+                        hits.append(str(uid).encode())
+                elif field == "ALL" or needle in hay.lower():
                     hits.append(str(uid).encode())
             return "OK", [b" ".join(hits)]
+        if cmd == "FETCH" and b"," in args[0]:  # several uids in one round trip
+            out = []
+            for u in args[0].split(b","):
+                out += [x for x in self.uid("FETCH", u, *args[1:])[1] if x]
+            return "OK", out
         uid = int(args[0])
         if uid not in msgs:
             return "OK", [None]
         if cmd == "FETCH":
-            return "OK", [(f"{uid} (UID {uid} FLAGS ({' '.join(msgs[uid]['flags'])}) BODY[] {{1}}".encode(),
+            labels = f" X-GM-LABELS ({' '.join(msgs[uid].get('labels', ()))})" if "X-GM-LABELS" in args[-1] else ""
+            return "OK", [(f"{uid} (UID {uid} FLAGS ({' '.join(msgs[uid]['flags'])}){labels} BODY[] {{1}}".encode(),
                            msgs[uid]["raw"]), b")"]
         if cmd == "STORE":
             flag = args[2].strip("()")
