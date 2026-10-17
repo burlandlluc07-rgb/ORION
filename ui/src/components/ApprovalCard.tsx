@@ -35,25 +35,25 @@ export function ApprovalCard({ a, hotkey = false }: { a: Approval; hotkey?: bool
   const args = Object.entries(a.args);
   return (
     <div className={`approval ${a.risk === "danger" ? "danger" : ""}`} role="alertdialog" aria-label="Approval required">
-      <div className="row">
-        {a.risk === "danger" ? <ShieldX size={18} style={{ color: "var(--bad)" }} /> : <ShieldAlert size={18} style={{ color: "var(--warn)" }} />}
+      <div className="row" style={{ alignItems: "flex-start", gap: 12 }}>
+        <span className="ap-icon">{a.risk === "danger" ? <ShieldX size={17} /> : <ShieldAlert size={17} />}</span>
         <div className="grow">
-          <div className="muted" style={{ fontSize: 12 }}>{a.desktop ? "ORION wants to use your desktop to" : "ORION wants to"}</div>
+          <div className="ap-kicker">{a.desktop ? "ORION wants to use your desktop to" : "ORION wants to"}</div>
           <div className="what">{a.label}</div>
-          {a.desktop && <div className="muted" style={{ fontSize: 12 }}>Allowed for this one step only. Your mouse, keyboard or active window may be used.</div>}
+          {a.desktop && <div className="ap-kicker" style={{ marginTop: 4 }}>Allowed for this one step only. Your mouse, keyboard or active window may be used.</div>}
         </div>
-        <span className={`badge ${a.risk}`}>{a.risk === "danger" ? "high risk" : "needs approval"}</span>
+        <span className={`badge ${a.risk}`}>{a.risk === "danger" ? "High risk" : "Needs approval"}</span>
       </div>
       {args.length > 0 && (
         <div className="args">{args.map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`).join("\n")}</div>
       )}
       <div className="actions">
-        <button className="btn primary" disabled={busy} onClick={() => decide("approve")}>Allow <kbd style={{ color: "inherit", borderColor: "currentColor", opacity: 0.6 }}>Ctrl ⏎</kbd></button>
+        <button className="btn primary" disabled={busy} onClick={() => decide("approve")}>Allow <kbd>Ctrl ⏎</kbd></button>
         {a.risk !== "danger" && !a.desktop && <button className="btn" disabled={busy} onClick={() => decide("always")}>Allow for this session</button>}
         <button className="btn ghost" disabled={busy} onClick={() => decide("deny")}>Deny</button>
         <span className="grow" />
-        {voiceOn && <span className="muted" style={{ fontSize: 12 }}>or say “yes” / “no”</span>}
-        <span className="muted" style={{ fontSize: 12 }}>{left}s</span>
+        {voiceOn && <span className="timer">or say “yes” / “no”</span>}
+        <span className="timer" title="Not done if you don't answer in time">{left >= 60 ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` : `${left}s`}</span>
       </div>
     </div>
   );
