@@ -38,6 +38,7 @@ a = Analysis(
     pathex=[str(ROOT)],
     datas=datas,
     hiddenimports=hidden,
+    hookspath=[str(ROOT / "packaging" / "hooks")],
     excludes=["tkinter", "matplotlib", "pandas", "scipy", "IPython", "pytest"],
     noarchive=False,
 )
