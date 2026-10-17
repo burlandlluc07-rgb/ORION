@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.7.1
 - **Import your WhatsApp contacts.** In Accounts → WhatsApp, import your phone's contacts export (.vcf from
   Android, iPhone/iCloud or Google, or a Google Contacts CSV) instead of typing numbers. Ask by first name:
   "WhatsApp Marc" finds Marc Puig, and ORION asks which one when two people match.
