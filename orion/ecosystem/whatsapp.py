@@ -23,6 +23,9 @@ and it needs no Meta setup.
 opens WhatsApp Desktop on the chat with the message typed in and presses Enter there. That one Enter is a
 foreground step, so it is pressed only while WhatsApp is the active window.
 
+Contacts can be typed in one by one or imported in bulk from a phone's contacts export (a ``.vcf`` vCard file,
+or a Google Contacts CSV), so names like "Mum" or "Marc" resolve without anyone typing numbers.
+
 Settings live in ``whatsapp.json`` in ORION's data folder; the access token goes into the OS credential
 vault (Windows Credential Manager) and is never logged or shown. Phone numbers are masked in labels,
 results and logs. ``dry_run`` builds and approves the exact request without contacting Meta.
@@ -30,9 +33,12 @@ results and logs. ``dry_run`` builds and approves the exact request without cont
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import logging
 import os
+import quopri
 import re
 import sys
 import threading
@@ -163,6 +169,87 @@ def press_send_in_whatsapp(text: str, timeout: float = 20.0) -> str:
     return "cleared" if state is False else "pressed"
 
 
+def _local_to_international(raw: str, country_code: str) -> str:
+    """Normalize a number from an address book; national numbers get ``country_code`` (their trunk 0 dropped)."""
+    digits = re.sub(r"[^\d+]", "", str(raw or "").strip().removeprefix("tel:"))
+    if not digits.startswith(("+", "00")):
+        if not country_code:
+            raise ToolError("no country code")
+        digits = country_code + re.sub(r"^0", "", digits)
+    return normalize_number(digits)
+
+
+def _vcard_entries(text: str) -> list[tuple[str, list[tuple[str, str]]]]:
+    """(name, [(type, number)]) for each card in a vCard 2.1/3.0/4.0 file (Android, iPhone, iCloud, Google)."""
+    text = re.sub(r"=\r?\n", "", text) if "QUOTED-PRINTABLE" in text.upper() else text  # QP soft breaks
+    lines = re.sub(r"\r?\n[ \t]", "", text).splitlines()  # unfold
+    out, name, n_name, phones = [], "", "", []
+    for line in lines:
+        if ":" not in line:
+            continue
+        head, _, value = line.partition(":")
+        key, *params = head.split(";")
+        key = key.split(".")[-1].upper()  # item1.TEL → TEL
+        upper = [p.upper() for p in params]
+        if any("QUOTED-PRINTABLE" in p for p in upper):
+            value = quopri.decodestring(value.encode()).decode("utf-8", "replace")
+        if key == "BEGIN":
+            name, n_name, phones = "", "", []
+        elif key == "FN":
+            name = value.replace("\\,", ",").strip()
+        elif key == "N":
+            parts = [x.strip() for x in value.replace("\\,", ",").split(";")]
+            n_name = " ".join(x for x in (parts[3:4] + parts[1:3] + parts[:1]) if x)  # prefix, given, middle, family
+        elif key == "TEL":
+            phones.append((" ".join(upper), value.strip()))
+        elif key == "END" and phones and (name or n_name):
+            out.append((name or n_name, phones))
+    return out
+
+
+def _csv_entries(text: str) -> list[tuple[str, list[tuple[str, str]]]]:
+    """Same, for a Google Contacts / Outlook CSV export."""
+    out = []
+    for row in csv.DictReader(io.StringIO(text.lstrip("\ufeff"))):
+        row = {str(k or "").strip().lower(): str(v or "").strip() for k, v in row.items()}
+        name = row.get("name") or " ".join(x for x in (row.get("first name") or row.get("given name"),
+                                                         row.get("middle name") or row.get("additional name"),
+                                                         row.get("last name") or row.get("family name")) if x)
+        phones = []
+        for k, v in row.items():
+            if v and re.fullmatch(r"phone \d+ - value|(mobile|primary|home|business|other) phone", k):
+                label = row.get(k.replace("value", "label"), "") if "value" in k else k
+                phones += [(label.upper(), p.strip()) for p in v.split(":::")]  # Google joins several with :::
+        if name and phones:
+            out.append((name, phones))
+    return out
+
+
+def parse_contacts(text: str, country_code: str = "") -> tuple[dict[str, str], int]:
+    """({name: number}, skipped) from a .vcf or .csv contacts export, one number per person (mobile first)."""
+    cc = re.sub(r"\D", "", str(country_code or ""))
+    entries = _vcard_entries(text) if "BEGIN:VCARD" in text.upper() else _csv_entries(text)
+    found: dict[str, str] = {}
+    skipped = 0
+    for name, phones in entries:
+        name = re.sub(r"\s+", " ", name).strip()[:40]
+        ranked = sorted(phones, key=lambda p: 0 if re.search(r"CELL|MOBILE|IPHONE|WHATSAPP", p[0]) else 1)
+        for _, raw in ranked:
+            try:
+                num = _local_to_international(raw, cc)
+                break
+            except ToolError:
+                continue
+        else:
+            skipped += 1
+            continue
+        key, n = name, 2
+        while key in found and found[key] != num:  # two people with the same name
+            key, n = f"{name} ({n})", n + 1
+        found[key] = num
+    return found, skipped
+
+
 def mask(number: str) -> str:
     """Enough to recognise a number on screen, not enough to leak it: ``+•••••••5678``."""
     d = re.sub(r"\D", "", str(number or ""))
@@ -288,6 +375,22 @@ class WhatsApp:
             self._write()
         return self.public()
 
+    def import_contacts(self, content: str, country_code: str = "") -> dict:
+        """Add every person with a phone number from a phone's contacts export; same-named entries are updated."""
+        if len(content) > 20_000_000:
+            raise ToolError("That file is too large for a contacts export.")
+        found, skipped = parse_contacts(content, country_code)
+        if not found:
+            hint = (" Some numbers have no country code: enter yours (e.g. 34 for Spain) and import again."
+                    if skipped and not re.sub(r"\D", "", country_code) else "")
+            raise ToolError("No contacts with phone numbers were found in that file. Export them from your phone's "
+                            "Contacts app as a .vcf (vCard) file, or from contacts.google.com as a CSV." + hint)
+        with self._lock:
+            self.data.setdefault("contacts", {}).update(found)
+            self._write()
+        log.info("whatsapp: imported %d contacts (%d skipped)", len(found), skipped)
+        return {**self.public(), "imported": len(found), "skipped": skipped}
+
     def remove_contact(self, name: str) -> dict:
         with self._lock:
             contacts = self.data.get("contacts", {})
@@ -317,19 +420,36 @@ class WhatsApp:
 
     # ── recipients ─────────────────────────────────────────────────────────
     def resolve(self, to: str) -> tuple[str, str]:
-        """(display name, number) for a saved contact name or a phone number."""
-        t = str(to or "").strip()
+        """(display name, number) for a saved contact name or a phone number.
+
+        A name matches exactly first, then by whole words ("Marc" finds "Marc Puig") or by the start of a name, but
+        only when that points at one person; otherwise the error lists who it could be, so ORION asks which.
+        """
+        t = re.sub(r"\s+", " ", str(to or "")).strip()
         contacts = self.data.get("contacts", {})
-        for name, num in contacts.items():
-            if name.lower() == t.lower():
-                return name, num
         if re.fullmatch(r"[+\d\s().\-]{6,}", t):
             num = normalize_number(t)
             named = next((n for n, v in contacts.items() if v == num), "")
             return named, num
-        names = ", ".join(sorted(contacts)) or "none saved yet"
-        raise ToolError(f"No WhatsApp contact called “{t}”. Saved contacts: {names}. Use a saved name or a phone "
-                        "number with its country code; contacts are added in Accounts → WhatsApp.")
+        low = t.lower()
+        for name, num in contacts.items():
+            if name.lower() == low:
+                return name, num
+        words = low.split()
+        for match in (lambda n: all(w in n.lower().split() for w in words),
+                      lambda n: n.lower().startswith(low)):
+            hits = [n for n in contacts if words and match(n)]
+            if len({contacts[n] for n in hits}) == 1:
+                return hits[0], contacts[hits[0]]
+            if len(hits) > 1:
+                shown = ", ".join(sorted(hits)[:8]) + (" …" if len(hits) > 8 else "")
+                raise ToolError(f"More than one WhatsApp contact matches “{t}”: {shown}. Ask the user which one "
+                                "and use that full name.")
+        if not contacts:
+            raise ToolError("No WhatsApp contacts are saved yet. Use a phone number with its country code, or add or "
+                            "import contacts in Accounts → WhatsApp.")
+        raise ToolError(f"No WhatsApp contact called “{t}” among {len(contacts)} saved contacts. Use a phone number "
+                        "with its country code, or add the person in Accounts → WhatsApp.")
 
     def _who(self, to: str) -> str:
         try:
@@ -493,9 +613,15 @@ class WhatsApp:
         return (f"ORION pressed Send in WhatsApp for the message to {who}, but couldn't read WhatsApp's window to "
                 "confirm it went. Say it was sent but unconfirmed.")
 
-    def whatsapp_contacts(self) -> list[dict]:
-        """List the saved WhatsApp contacts (names and masked numbers) that whatsapp_send accepts by name."""
-        return self.public()["contacts"]
+    def whatsapp_contacts(self, search: str = "") -> list[dict]:
+        """Find saved WhatsApp contacts (names and masked numbers) that the WhatsApp tools accept by name.
+
+        Args:
+            search: Part of a name to look for. Leave empty to list them all (up to 50).
+        """
+        q = str(search or "").strip().lower()
+        hits = [c for c in self.public()["contacts"] if not q or all(w in c["name"].lower() for w in q.split())]
+        return hits[:50] or [{"note": "No saved contact matches that." if q else "No contacts saved yet."}]
 
     def whatsapp_templates(self) -> list[dict]:
         """List the WhatsApp message templates on the user's business account, with language, status and body

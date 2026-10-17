@@ -1,7 +1,7 @@
 import {
   Blocks, Cable, CalendarDays, FolderOpen, Lightbulb, Loader2, Mail, MessageCircle, Plug, Plus, Puzzle, RefreshCw, Sparkles, Trash2, UserRound, Wrench,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Markdown } from "../components/Markdown";
 import { Modal, Toggle } from "../components/ui";
 import { api } from "../lib/api";
@@ -447,6 +447,9 @@ function WhatsAppSection() {
   const [cNum, setCNum] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [cc, setCc] = useState("");
+  const [filter, setFilter] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
   useEffect(() => { api.get<WhatsAppInfo>("/api/accounts/whatsapp").then(setInfo); }, []);
   if (!info) return null;
 
@@ -464,6 +467,19 @@ function WhatsAppSection() {
     catch (e) { setErr((e as Error).message); }
   };
 
+  const importFile = async (file: File | undefined) => {
+    if (!file) return;
+    setErr(""); setBusy(true);
+    try {
+      const r = await api.post<WhatsAppInfo & { imported: number; skipped: number }>("/api/accounts/whatsapp/contacts/import",
+        { content: await file.text(), country_code: cc });
+      setInfo(r);
+      toast({ title: `Imported ${r.imported} contacts${r.skipped ? ` (${r.skipped} skipped: no usable number)` : ""}`, tone: "success" });
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); if (fileRef.current) fileRef.current.value = ""; }
+  };
+  const q = filter.trim().toLowerCase();
+  const shown = info.contacts.filter((c) => !q || c.name.toLowerCase().includes(q));
+
   return (
     <section className="settings-sec">
       <h3><MessageCircle size={16} /> WhatsApp</h3>
@@ -477,7 +493,7 @@ function WhatsAppSection() {
       {(!info.configured || info.dry_run) && (
         <div className="modal-body">
           <div className="fh muted" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
-            <b>Your own WhatsApp</b> works without any setup: add contacts below, then ask ORION to WhatsApp someone. It asks you
+            <b>Your own WhatsApp</b> works without any setup: import your phone's contacts below (or add people one by one), then ask ORION to WhatsApp someone by name. It asks you
             yes or no with the exact message, then opens WhatsApp Desktop and presses Send (or just types it in for you to send).
           </div>
           <div className="fh muted" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
@@ -496,12 +512,26 @@ function WhatsAppSection() {
           </div>
         </div>
       )}
-      {info.contacts.map((c) => (
+      <div className="modal-body">
+        <div className="fh muted" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
+          <b>Import contacts:</b> on Android, Contacts → Settings → Export to a .vcf file; on iPhone, icloud.com → Contacts → select all → Export vCard;
+          or contacts.google.com → Export as Google CSV. Your country code fills in numbers saved without one.
+        </div>
+        <div className="row">
+          <input className="input" style={{ width: 150 }} value={cc} placeholder="Country code, e.g. 34" onChange={(e) => setCc(e.target.value)} />
+          <input ref={fileRef} type="file" accept=".vcf,.vcard,.csv,text/vcard,text/csv" style={{ display: "none" }} onChange={(e) => importFile(e.target.files?.[0])} />
+          <button className="btn" disabled={busy} onClick={() => fileRef.current?.click()}><Plus size={13} /> Import contacts file</button>
+          {info.contacts.length > 0 && <span className="fh muted">{info.contacts.length} saved</span>}
+        </div>
+        {info.contacts.length > 8 && <input className="input" value={filter} placeholder="Search contacts" onChange={(e) => setFilter(e.target.value)} />}
+      </div>
+      {shown.slice(0, 30).map((c) => (
         <div key={c.name} className="field">
           <div><div className="fl">{c.name}</div><div className="fh">{c.number}</div></div>
           <div className="fc"><button className="btn sm ghost" onClick={() => api.del<WhatsAppInfo>(`/api/accounts/whatsapp/contacts/${encodeURIComponent(c.name)}`).then(setInfo)}><Trash2 size={12} /></button></div>
         </div>
       ))}
+      {shown.length > 30 && <div className="fh muted" style={{ padding: "0 18px" }}>…and {shown.length - 30} more; search to find someone.</div>}
       {(
         <div className="modal-body">
           <div className="row">

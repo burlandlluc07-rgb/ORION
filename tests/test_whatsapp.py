@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 from orion.ecosystem.integrations import status
-from orion.ecosystem.whatsapp import mask, normalize_number
+from orion.ecosystem.whatsapp import mask, normalize_number, parse_contacts
 from orion.tools.kits import select_kits
 from orion.tools.registry import ToolError
 
@@ -222,9 +222,9 @@ async def test_meta_errors_are_explained_and_reported_as_failed(engine, meta):
     assert task.steps[0]["lifecycle"]["stage"] == "failed"
 
 
-def test_unknown_recipient_lists_saved_contacts(engine, meta):
+def test_unknown_recipient_is_an_error(engine, meta):
     setup_real(engine, meta)
-    with pytest.raises(ToolError, match="Saved contacts: Mom"):
+    with pytest.raises(ToolError, match="No WhatsApp contact called “Grandpa”"):
         engine.whatsapp.whatsapp_send("Grandpa", "hi")
     assert meta.sends == []
 
@@ -325,3 +325,112 @@ def test_personal_send_needs_the_desktop_app_and_one_line(engine, no_side_effect
     with pytest.raises(ToolError, match="first line"):
         engine.whatsapp.whatsapp_send_personal("Mom", "line one\nline two")
     assert no_side_effects == []
+
+
+# ── importing contacts from a phone export ───────────────────────────────
+ANDROID_VCF = """BEGIN:VCARD\r
+VERSION:2.1\r
+N:Puig;Marc;;;\r
+FN:Marc Puig\r
+TEL;HOME:93 123 45 67\r
+TEL;CELL:612 345 678\r
+END:VCARD\r
+BEGIN:VCARD\r
+VERSION:2.1\r
+N;CHARSET=UTF-8;ENCODING=QUOTED-PRINTABLE:Garc=C3=ADa;Laia;;;\r
+FN;CHARSET=UTF-8;ENCODING=QUOTED-PRINTABLE:Laia Garc=C3=ADa\r
+TEL;CELL:+44 7700 900123\r
+END:VCARD\r
+BEGIN:VCARD\r
+VERSION:2.1\r
+FN:Pizza place (no phone)\r
+EMAIL:pizza@example.com\r
+END:VCARD\r
+"""
+
+IPHONE_VCF = """BEGIN:VCARD
+VERSION:3.0
+N:Burland;Mum;;;
+FN:Mum
+item1.TEL;type=pref:+34 699 000 111
+item1.X-ABLabel:_$!<Mobile>!$_
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+N:Puig;Marc;;;
+FN:Marc Pu
+ ig Jr
+TEL;type=CELL;type=VOICE;type=pref:0034 600 111 222
+END:VCARD
+"""
+
+GOOGLE_CSV = """\ufeffFirst Name,Middle Name,Last Name,Phone 1 - Label,Phone 1 - Value,Phone 2 - Label,Phone 2 - Value
+Jordi,,Vidal,Mobile,+34 655 444 333 ::: +34 911 222 333,,
+Ana,,Soler,Work,912 000 000,Mobile,611 222 333
+"""
+
+
+def test_parse_android_vcard_prefers_mobile_and_adds_country_code():
+    found, skipped = parse_contacts(ANDROID_VCF, "+34")
+    assert found == {"Marc Puig": "34612345678", "Laia García": "447700900123"}
+    assert skipped == 0  # the card with no phone isn't a person to message, so it isn't counted
+
+
+def test_parse_without_country_code_skips_national_numbers():
+    found, skipped = parse_contacts(ANDROID_VCF)
+    assert found == {"Laia García": "447700900123"} and skipped == 1
+
+
+def test_parse_iphone_vcard_with_folded_lines_and_item_groups():
+    found, _ = parse_contacts(IPHONE_VCF)
+    assert found == {"Mum": "34699000111", "Marc Puig Jr": "34600111222"}
+
+
+def test_parse_google_csv():
+    found, _ = parse_contacts(GOOGLE_CSV, "34")
+    assert found == {"Jordi Vidal": "34655444333", "Ana Soler": "34611222333"}
+
+
+def test_same_name_twice_keeps_both():
+    vcf = "".join(f"BEGIN:VCARD\nFN:Alex\nTEL;CELL:+3460000000{i}\nEND:VCARD\n" for i in (1, 2))
+    assert parse_contacts(vcf)[0] == {"Alex": "34600000001", "Alex (2)": "34600000002"}
+
+
+def test_import_then_send_by_first_name(engine):
+    res = engine.whatsapp.import_contacts(ANDROID_VCF, "34")
+    assert res["imported"] == 2 and {c["name"] for c in res["contacts"]} == {"Marc Puig", "Laia García"}
+    assert "612345678" not in json.dumps(res)  # numbers stay masked
+    assert engine.whatsapp.resolve("marc") == ("Marc Puig", "34612345678")
+    assert engine.whatsapp.resolve("Laia") == ("Laia García", "447700900123")
+    assert engine.whatsapp.whatsapp_contacts("laia") == [{"name": "Laia García", "number": "+••••••••0123"}]
+
+
+def test_ambiguous_name_asks_which_one(engine):
+    engine.whatsapp.import_contacts(ANDROID_VCF + IPHONE_VCF, "34")
+    with pytest.raises(ToolError, match="More than one WhatsApp contact matches “Marc”: Marc Puig, Marc Puig Jr"):
+        engine.whatsapp.resolve("Marc")
+    assert engine.whatsapp.resolve("Marc Puig")[1] == "34612345678"  # an exact name still wins
+
+
+def test_import_keeps_contacts_added_by_hand(engine):
+    engine.whatsapp.save_contact("Grandpa", "+34 611 000 999")
+    engine.whatsapp.import_contacts(IPHONE_VCF)
+    assert {c["name"] for c in engine.whatsapp.public()["contacts"]} == {"Grandpa", "Mum", "Marc Puig Jr"}
+
+
+def test_import_with_nothing_usable_explains(engine):
+    with pytest.raises(ToolError, match="enter yours"):
+        engine.whatsapp.import_contacts(ANDROID_VCF.replace("+44 7700 900123", "7700 900123"))
+    with pytest.raises(ToolError, match="No contacts with phone numbers"):
+        engine.whatsapp.import_contacts("hello")
+
+
+def test_import_api(engine):
+    from fastapi.testclient import TestClient
+
+    from orion.server.api import create_app
+
+    client = TestClient(create_app(engine, token="secret-token"), headers={"x-orion-token": "secret-token"})
+    r = client.post("/api/accounts/whatsapp/contacts/import", json={"content": IPHONE_VCF})
+    assert r.status_code == 200 and r.json()["imported"] == 2 and "699000111" not in r.text
+    assert client.post("/api/accounts/whatsapp/contacts/import", json={"content": "x"}).status_code == 400
