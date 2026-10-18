@@ -277,6 +277,9 @@ export function SettingsView() {
             <option value="allow">Don't ask (default)</option>
           </select>
         </Field>
+        <Field label="Answer approvals with yes or no" hint="When ORION is waiting for your OK, type or say a plain “yes” or “no” on your PC or phone instead of tapping. It answers only the one waiting request. Anything unclear doesn't count, so the request keeps waiting. Yes never means “allow for this session”.">
+          <Toggle on={st.voice_approvals !== false} onChange={(v) => save({ voice_approvals: v })} />
+        </Field>
         <Field label="ORION's browser" hint="In the background, websites are used without a window. ORION shows the window when you need to sign in yourself.">
           <select className="select" value={st.browser_mode} onChange={(e) => save({ browser_mode: e.target.value })}>
             <option value="background">Background (recommended)</option>

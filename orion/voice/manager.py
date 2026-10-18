@@ -100,6 +100,7 @@ class VoiceManager:
         self._approval_offset = 0
         self._last_user_text = ""
         engine.approvals.on_voice_request = self.on_approval
+        engine.approvals.voice_active = lambda: self.live.running
 
     # ── State ──────────────────────────────────────────────────────────────
     def set_state(self, state: str, detail: str = "") -> None:
@@ -552,8 +553,8 @@ class VoiceManager:
 
     # ── Spoken approvals ───────────────────────────────────────────────────
     async def on_approval(self, info: dict) -> None:
-        """A voice-initiated task hit a risky step: ask out loud and accept "yes"/"no"."""
-        if not self.available or self.mode == "off":
+        """A risky step needs an OK while you're talking to ORION: ask out loud and accept "yes"/"no"."""
+        if not self.available or self.mode == "off" or not self.e.config.settings.voice_approvals:
             return
         self._approval_id = info["id"]
         self._approval_offset = len(self._last_user_text)

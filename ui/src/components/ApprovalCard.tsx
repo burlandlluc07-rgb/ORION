@@ -7,6 +7,7 @@ import type { Approval } from "../lib/types";
 export function ApprovalCard({ a, hotkey = false }: { a: Approval; hotkey?: boolean }) {
   const [busy, setBusy] = useState(false);
   const voiceOn = useStore((s) => ["listening", "speaking", "thinking", "working"].includes(s.voice.state));
+  const replyOn = useStore((s) => s.engine?.settings?.voice_approvals !== false);
   const [left, setLeft] = useState(Math.max(0, Math.round(a.expires - Date.now() / 1000)));
   useEffect(() => {
     const t = setInterval(() => setLeft(Math.max(0, Math.round(a.expires - Date.now() / 1000))), 1000);
@@ -52,7 +53,7 @@ export function ApprovalCard({ a, hotkey = false }: { a: Approval; hotkey?: bool
         {a.risk !== "danger" && !a.desktop && <button className="btn" disabled={busy} onClick={() => decide("always")}>Allow for this session</button>}
         <button className="btn ghost" disabled={busy} onClick={() => decide("deny")}>Deny</button>
         <span className="grow" />
-        {voiceOn && <span className="timer">or say “yes” / “no”</span>}
+        {replyOn && <span className="timer">{voiceOn ? "or say “yes” / “no”" : "or type “yes” / “no”"}</span>}
         <span className="timer" title="Not done if you don't answer in time">{left >= 60 ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` : `${left}s`}</span>
       </div>
     </div>

@@ -118,6 +118,28 @@ def parse_yes_no(text: str) -> bool | None:
     return yes
 
 
+# A typed or spoken message only answers an approval when it is a short, plain yes or no. Anything longer or
+# mixed ("yes but send it to Ana instead") is an ordinary message and the approval keeps waiting.
+_REPLY_MAX_WORDS = 6
+_YES_ONLY = {"yes", "yeah", "yep", "yup", "sure", "ok", "okay", "do", "it", "go", "ahead", "for", "approve",
+             "approved", "confirm", "confirmed", "proceed", "affirmative", "allow", "please", "absolutely", "of",
+             "course", "send", "that", "orion", "thanks", "thank", "you", "fine", "right", "now"}
+# An approval must have been on screen this long before a yes counts, so a "yes" typed for something else
+# can't land on a prompt that popped up a moment before it was sent.
+REPLY_MIN_AGE = 1.0
+
+
+def parse_approval_reply(text: str) -> bool | None:
+    """Like :func:`parse_yes_no`, but stricter: None unless the whole message is a short yes or no."""
+    words = re.findall(r"[a-z']+", text.lower())
+    if not words or len(words) > _REPLY_MAX_WORDS:
+        return None
+    answer = parse_yes_no(text)
+    if answer is True and not all(w in _YES_ONLY for w in words):
+        return None
+    return answer
+
+
 class ApprovalBroker:
     """Asks the UI (and, for voice tasks, the user's voice) to approve a risky step."""
 
@@ -127,6 +149,7 @@ class ApprovalBroker:
         self.session_allow: set[str] = set()
         self.on_voice_request: Callable[[dict], Awaitable[None]] | None = None
         self.on_request: Callable[[dict], None] | None = None  # e.g. push the approval to paired phones
+        self.voice_active: Callable[[], bool] | None = None  # a voice session is open: ask out loud for any task
 
     async def request(self, tool: str, label: str, risk: str, args: dict[str, Any], task: Task | None,
                       desktop: bool = False) -> bool:
@@ -144,7 +167,7 @@ class ApprovalBroker:
         fut: asyncio.Future = asyncio.get_running_loop().create_future()
         info = {"id": aid, "tool": tool, "label": label, "risk": risk, "args": _preview(args),
                 "task_id": task.id if task else None, "expires": time.time() + APPROVAL_TIMEOUT,
-                "desktop": desktop}
+                "desktop": desktop, "created": time.time(), "source": task.source if task else None}
         self.pending[aid] = (fut, info)
         self.bus.emit("approval.request", approval=info)
         if self.on_request is not None:
@@ -152,7 +175,13 @@ class ApprovalBroker:
                 self.on_request(info)
             except Exception:
                 pass
-        if task is not None and task.source == "voice" and self.on_voice_request is not None:
+        spoken = task is not None and task.source == "voice"
+        if not spoken and self.voice_active is not None:
+            try:
+                spoken = self.voice_active()
+            except Exception:
+                spoken = False
+        if spoken and self.on_voice_request is not None:
             asyncio.create_task(self.on_voice_request(info))
         try:
             while True:
@@ -179,6 +208,32 @@ class ApprovalBroker:
             return False
         item[0].set_result(decision)
         return True
+
+    def answer_from_text(self, text: str, conv_id: str | None = None, tasks: dict | None = None) -> dict | None:
+        """Treat a typed or spoken message as the answer to one pending approval.
+
+        Returns ``{"id", "approved"}`` when it answered one, ``{"ambiguous": n}`` when it was a clear yes/no
+        but several approvals are waiting (none is touched), else None (not an answer: handle the message
+        normally and leave every approval pending). A yes approves that one step only, never the session."""
+        answer = parse_approval_reply(text)
+        if answer is None:
+            return None
+        now = time.time()
+        waiting = [info for fut, info in self.pending.values()
+                   if not fut.done() and now - info.get("created", 0) >= REPLY_MIN_AGE]
+        if len(waiting) > 1 and conv_id and tasks is not None:
+            here = [i for i in waiting if i.get("task_id") and getattr(tasks.get(i["task_id"]), "conv_id", None) == conv_id]
+            if len(here) == 1:
+                waiting = here
+        if not waiting:
+            return None
+        if len(waiting) > 1:
+            return {"ambiguous": len(waiting)}
+        info = waiting[0]
+        if not self.respond(info["id"], "approve" if answer else "deny"):
+            return None
+        self.bus.emit("approval.answered", id=info["id"], approved=answer)
+        return {"id": info["id"], "approved": answer, "label": info["label"]}
 
     def voice_pending(self) -> dict | None:
         """The most recent approval that can be answered by voice."""
