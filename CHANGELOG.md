@@ -1,5 +1,38 @@
 # Changelog
 
+## 2.9.0
+Five new things since 2.8.0. 2.8.0 was never published, so everything in it is in this release too (summary at the end).
+
+### New
+- **Auto-correct while typing.** When you finish a word, common typos and missing apostrophes are fixed in place
+  ("i dont think teh" becomes "I don't think the"). A small pill shows the fix with Undo; Backspace or Ctrl+Z right
+  after puts your word back and ORION leaves it alone. Links, paths, code, names and commands are never touched.
+  Turn it off in Settings → Personal → "Auto-correct while typing". Works on the PC and in the phone app.
+- **Answer approvals with yes or no.** When ORION waits for your OK, type "yes" or "no" in the chat on your PC or
+  phone, use phone push-to-talk, or say it during a voice session, instead of tapping Allow or Deny. Only a short,
+  plain yes or no counts, a yes approves that one step only, and if it can't tell which approval you mean it asks
+  you to tap. Toggle: Settings → Safety & permissions → "Answer approvals with yes or no".
+- **What ORION did.** A new screen in the sidebar (and a section in the phone app's Activity tab) lists every action
+  newest first: what it did, when, how it ran (API, script, headless browser, app automation, your screen or the
+  background agent), who approved it and the proof it worked, or the error. Filter by Worked / Problems / Declined /
+  Running, by route, or search. It reads what ORION already records and stays on your PC and paired phones.
+- **Title bar in ORION's colours.** The window's title bar is dark grey in dark mode and light grey in light mode
+  and follows theme changes. Minimize, maximize, close, dragging, Snap and resizing stay normal Windows ones.
+- **More work without taking your screen.** Minimizing, restoring and closing a window no longer brings it to the
+  front, volume and media keys no longer press real keys, filling a classic text box no longer moves your focus,
+  and ORION can now find minimized windows. Buttons get two more background tries before it falls back to the real
+  mouse, which still asks first.
+
+### Also in this release (from 2.8.0)
+- **A new look** closer to Claude's desktop app, still black, white and grey, with an animated Orion logo, an
+  activity panel, clearer approval cards and reorganised Settings.
+- **A phone app made for touch**, with a full-screen Screen tab (pinch to zoom, tap to click).
+- **Backup brain** for when Gemini's free quota runs out (OmniRoute, OpenRouter, Groq or any OpenAI-compatible
+  service). Setup: docs/backup-brain.md.
+- **Sort email by importance**, read-only, and it learns from your corrections.
+- **WhatsApp messages from your own number**, shown to you first and sent only after your yes.
+- **Your contacts**, imported from your phone's export (.vcf or Google CSV) or kept in sync over CardDAV.
+
 ## 2.8.0
 A new look for ORION on your PC and your phone. This release also includes everything from 2.7.0, 2.7.1 and 2.7.2,
 which were never published, so if you're coming from 2.6.0 all of it is new.
