@@ -13,11 +13,26 @@ from google.genai import errors, types
 from ..config import Config
 from ..events import EventBus
 from .backup import BackupBrain, BackupError, NeedsGemini
-from .governor import Governor, QuotaExhausted
+from .governor import Governor, QuotaExhausted, is_gemma
 
 log = logging.getLogger("orion.gemini")
 
 RETRYABLE = {429, 500, 502, 503, 504}
+# Large instruction-tuned Gemma models ("gemma-4-31b-it", "gemma-4-26b-a4b-it"); not the small on-device "3n"/"e4b" ones.
+GEMMA = re.compile(r"gemma-(\d+)-(\d+)b(?:-a\d+b)?-it")
+
+
+def _gemma_refused(model: str, exc: errors.APIError) -> bool:
+    """Gemma turned down something only Gemini supports (a 400): move on instead of failing the request."""
+    return exc.code == 400 and is_gemma(model)
+
+
+def _has_audio(contents: list[types.Content]) -> bool:
+    for c in contents:
+        for p in c.parts or []:
+            if p.inline_data and (p.inline_data.mime_type or "").startswith("audio/"):
+                return True
+    return False
 
 
 class BrainError(Exception):
@@ -91,6 +106,7 @@ class GeminiBrain:
         names: list[str] = []
         live: list[str] = []
         spares: list[tuple[tuple[int, ...], str]] = []
+        gemmas: list[tuple[tuple[int, ...], str]] = []
         async for m in await self.client.aio.models.list(config={"page_size": 200}):
             name = m.name.removeprefix("models/")
             names.append(name)
@@ -100,8 +116,14 @@ class GeminiBrain:
             stable = re.fullmatch(r"gemini-(\d+(?:\.\d+)?)-flash(?:-lite)?", name)
             if stable and "generateContent" in actions:
                 spares.append((tuple(int(x) for x in stable.group(1).split(".")), name))
+            gemma = GEMMA.fullmatch(name)
+            if gemma and "generateContent" in actions:
+                gemmas.append(((int(gemma.group(1)), int(gemma.group(2))), name))
         # Stable Flash models, newest first: each has its own free quota, so they extend the day.
-        self.governor.set_extra([n for _, n in sorted(spares, reverse=True)][:4])
+        # Then the two biggest models of the newest Gemma generation, which have quotas of their own too.
+        newest = max((g for (g, _), _ in gemmas), default=None)
+        gemma_models = [n for (g, _), n in sorted(gemmas, reverse=True) if g == newest][:2]
+        self.governor.set_extra([n for _, n in sorted(spares, reverse=True)][:4] + gemma_models)
         pref = self.config.settings.model_live
         if pref != "auto" and pref in live:
             self.live_model = pref
@@ -120,10 +142,14 @@ class GeminiBrain:
             cfg["tools"] = [types.Tool(function_declarations=[types.FunctionDeclaration(**d) for d in tools])]
             cfg["automatic_function_calling"] = types.AutomaticFunctionCallingConfig(disable=True)
         budget = self.config.settings.thinking_budget
-        if "lite" not in model or budget:
+        if not is_gemma(model) and ("lite" not in model or budget):
             # Thinking adds latency; keep it off unless the user raised the budget.
             cfg["thinking_config"] = types.ThinkingConfig(thinking_budget=budget)
         return types.GenerateContentConfig(**cfg)
+
+    def _not_for(self, contents: list[types.Content]) -> set[str]:
+        """Models to skip for this request: Gemma can't hear, so audio (voice transcription) stays on Flash."""
+        return {m for m in self.governor.extra if is_gemma(m)} if _has_audio(contents) else set()
 
     # ── Backup brain ───────────────────────────────────────────────────────
     def _use_backup(self, exc: BaseException) -> bool:
@@ -185,7 +211,7 @@ class GeminiBrain:
     ) -> AsyncIterator[tuple[str, Any]]:
         """Gemini only: falls back to the next model in the tier chain if a request fails before
         anything was yielded."""
-        tried: set[str] = set()
+        tried = self._not_for(contents)
         last_exc: BaseException | None = None
         for _ in range(6):
             model = await self.governor.acquire(tier, exclude=tried, max_wait=180 if patient else 30)
@@ -220,7 +246,7 @@ class GeminiBrain:
                 if exc.code == 429:
                     delay = self.governor.cool_down(model, str(exc))
                     log.warning("Rate limited on %s for %.0fs: %s", model, delay, str(exc)[:400])
-                if yielded or exc.code not in RETRYABLE | {404}:
+                if yielded or (exc.code not in RETRYABLE | {404} and not _gemma_refused(model, exc)):
                     raise
                 log.warning("Model %s failed (%s); falling back", model, exc.code)
             except QuotaExhausted:
@@ -252,7 +278,7 @@ class GeminiBrain:
     async def _gemini_text(self, contents: list[types.Content], *, system: str | None, tier: str,
                            json_mode: bool, patient: bool) -> str:
         extra = {"response_mime_type": "application/json"} if json_mode else {}
-        tried: set[str] = set()
+        tried = self._not_for(contents)
         last_exc: BaseException | None = None
         for attempt in range(6):
             model = await self.governor.acquire(tier, exclude=tried, max_wait=180 if patient else 30)
@@ -265,7 +291,7 @@ class GeminiBrain:
                 if exc.code == 429:
                     delay = self.governor.cool_down(model, str(exc))
                     log.warning("Rate limited on %s for %.0fs: %s", model, delay, str(exc)[:400])
-                if exc.code not in RETRYABLE | {404}:
+                if exc.code not in RETRYABLE | {404} and not _gemma_refused(model, exc):
                     raise
                 log.warning("Model %s failed (%s); %s", model, exc.code, "retrying" if attempt == 0 else "falling back")
                 if attempt == 0 and exc.code in (500, 502, 503, 504):

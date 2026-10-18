@@ -9,7 +9,9 @@ Keeps ORION inside Gemini's free quotas *before* Google starts returning 429s:
 * cools a model down when the API still answers 429, honouring retryDelay,
 * learns each model's real limits from Google's 429 details (free-tier numbers
   change and are no longer published), and remembers long cooldowns across restarts,
-* spreads work over extra discovered models, since each has its own free quota.
+* spreads work over extra discovered models, since each has its own free quota:
+  spare Flash models first, then Gemma (weaker, text and images only) as the last stop
+  before the backup brain.
 """
 
 from __future__ import annotations
@@ -76,6 +78,10 @@ def parse_quota(text: str) -> tuple[str | None, int | None]:
     return None, None
 
 
+def is_gemma(model: str) -> bool:
+    return model.startswith("gemma-")
+
+
 class QuotaExhausted(Exception):
     def __init__(self, message: str, retry_after: float | None = None) -> None:
         super().__init__(message)
@@ -104,7 +110,12 @@ class Governor:
         learned = (self.store.kv_get("learned_limits", {}) or {}).get(model, {})
         lim = self.config.settings.model_limits.get(model)
         if lim is None:
-            lim = ModelLimits(rpm=15, rpd=500) if "lite" in model else ModelLimits(rpm=5, rpd=20)
+            if is_gemma(model):
+                lim = ModelLimits(rpm=15, rpd=1500)  # starting guess; corrected by Google's first 429
+            elif "lite" in model:
+                lim = ModelLimits(rpm=15, rpd=500)
+            else:
+                lim = ModelLimits(rpm=5, rpd=20)
         if learned:
             lim = ModelLimits(rpm=learned.get("rpm", lim.rpm), rpd=learned.get("rpd", lim.rpd))
         return lim
@@ -119,9 +130,11 @@ class Governor:
         s = self.config.settings
         order = [s.model_smart, s.model_fast] if tier == "smart" else [s.model_fast, s.model_smart]
         if s.extra_models:
-            lite = [m for m in self.extra if "lite" in m]
-            full = [m for m in self.extra if "lite" not in m]
+            flash = [m for m in self.extra if not is_gemma(m)]
+            lite = [m for m in flash if "lite" in m]
+            full = [m for m in flash if "lite" not in m]
             order += (full + lite) if tier == "smart" else (lite + full)
+            order += [m for m in self.extra if is_gemma(m)]  # last: weaker than any Flash model
         return list(dict.fromkeys(m for m in order if m))
 
     def used_today(self, model: str) -> int:

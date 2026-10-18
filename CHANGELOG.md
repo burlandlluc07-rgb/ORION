@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased (3.0.1)
+### New
+- **More free answers a day with Gemma.** When every free Flash model has used up its daily quota, ORION now
+  keeps going on Google's free Gemma 4 models with the same key, before it switches to the backup brain. Gemma has
+  its own daily quota, separate from Flash. It's less capable than Flash, so it comes last. Voice transcription
+  stays on Flash because Gemma can't hear audio. ORION starts from a guess at Gemma's limits and corrects it the
+  first time Google reports the real one. The "Spare models" switch in Settings turns this off along with the
+  other spare models.
+
 ### Fixed
 - **Backup brain on Groq's free plan answers instead of saying it's rate-limited.** Groq's free plan allows 8,000
   tokens a minute, and ORION's full request (instructions plus about 75 tools) cost most of that, so a plain "hi" used
