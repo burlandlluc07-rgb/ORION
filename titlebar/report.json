@@ -1,0 +1,27 @@
+[
+  {
+    "name": "dark theme: caption is dark",
+    "ok": true,
+    "detail": "caption pixel (14, 14, 14)"
+  },
+  {
+    "name": "light theme: caption is light",
+    "ok": true,
+    "detail": "caption pixel (243, 243, 242)"
+  },
+  {
+    "name": "switching back to dark",
+    "ok": true,
+    "detail": "caption pixel (14, 14, 14)"
+  },
+  {
+    "name": "window controls and resize border kept",
+    "ok": true,
+    "detail": "missing: none"
+  },
+  {
+    "name": "maximize / minimize / restore",
+    "ok": true,
+    "detail": "maximized=True minimized=True"
+  }
+]
