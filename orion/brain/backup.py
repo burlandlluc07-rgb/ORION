@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any, AsyncIterator
 from urllib.parse import urlparse
@@ -43,7 +44,7 @@ PRESETS: dict[str, Preset] = {
                         "https://github.com/diegosouzapw/OmniRoute", needs_key=False),
     "openrouter": Preset("OpenRouter (free models)", "https://openrouter.ai/api/v1", "",
                          "https://openrouter.ai/keys"),
-    "groq": Preset("Groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile",
+    "groq": Preset("Groq", "https://api.groq.com/openai/v1", "",  # Groq retires models often: pick from its list
                    "https://console.groq.com/keys"),
     "custom": Preset("Custom (OpenAI-compatible)", "", "", "", needs_key=False),
 }
@@ -71,7 +72,12 @@ def pick_default_model(provider: str, models: list[str]) -> str:
         return free[0] if free else ""
     if "auto" in models:
         return "auto"
-    return models[0]
+    chat = [m for m in models if not re.search(r"whisper|guard|tts|embed|playai|orpheus|moderation|image|audio", m, re.I)]
+    for want in ("llama-3.3-70b", "gpt-oss-120b", "llama-4", "qwen", "gpt-oss", "llama", "kimi", "mistral", "gemma"):
+        hit = next((m for m in chat if want in m.lower()), None)
+        if hit:
+            return hit
+    return chat[0] if chat else ""
 
 
 # ── Gemini → OpenAI translation ────────────────────────────────────────────

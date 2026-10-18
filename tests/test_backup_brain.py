@@ -98,6 +98,8 @@ def test_default_model_pick():
     assert pick_default_model("openrouter", ["openai/gpt-5", "google/gemma-3-27b-it:free"]) == "google/gemma-3-27b-it:free"
     assert pick_default_model("openrouter", ["openai/gpt-5"]) == ""
     assert pick_default_model("omniroute", ["x", "auto"]) == "auto"
+    groq = ["whisper-large-v3", "meta-llama/llama-guard-4-12b", "openai/gpt-oss-120b", "qwen/qwen3-32b"]
+    assert pick_default_model("groq", groq) == "openai/gpt-oss-120b"
 
 
 # ── Switching over ─────────────────────────────────────────────────────────
