@@ -8,7 +8,15 @@ from fastapi.testclient import TestClient
 from google.genai import errors, types
 
 from orion.brain import backup
-from orion.brain.backup import BackupError, NeedsGemini, pick_default_model, to_messages, to_tools
+from orion.brain.backup import (
+    BackupError,
+    NeedsGemini,
+    estimate_tokens,
+    fit_body,
+    pick_default_model,
+    to_messages,
+    to_tools,
+)
 from orion.brain.governor import QuotaExhausted
 from orion.server.api import create_app
 
@@ -193,6 +201,117 @@ async def test_unreachable_omniroute_says_so(on_omniroute, monkeypatch):
             pass
 
 
+# ── Requests too big for a small plan (Groq's 8000 tokens per minute) ─────
+def groq_limit(limit=8000):
+    """A Groq-like server that refuses requests over ``limit`` tokens (prompt + max_tokens) with its real 413.
+    Its tokenizer counts about 0.6 of ORION's cautious estimate, as Groq's did for the request Lluc saw."""
+    seen: list[dict] = []
+
+    def handle(req: httpx.Request) -> httpx.Response:
+        body = json.loads(req.content)
+        seen.append(body)
+        requested = int((estimate_tokens(body) - body["max_tokens"]) * 0.6) + body["max_tokens"]
+        if requested > limit:
+            return httpx.Response(413, json={"error": {"type": "tokens", "code": "rate_limit_exceeded", "message": (
+                "Request too large for model `openai/gpt-oss-120b` in organization `org_01m2ea95jfe3hv76mztrtrfgc0` "
+                f"service tier `on_demand` on tokens per minute (TPM): Limit {limit}, Requested {requested}, please "
+                "reduce your message size and try again.")}})
+        if body.get("stream"):
+            return httpx.Response(200, text=sse({"choices": [{"delta": {"content": "Fits now"}}]}),
+                                  headers={"content-type": "text/event-stream"})
+        return httpx.Response(200, json={"choices": [{"message": {"content": "Fits now"}}]})
+    return seen, handle
+
+
+def big_history(engine, turns=12):
+    """A real ORION request: its own system prompt and every tool, plus a long chat with tool calls."""
+    contents = []
+    for i in range(turns):
+        contents.append(types.Content(role="user", parts=[types.Part(text=f"question {i} " + "words " * 150)]))
+        contents.append(types.Content(role="model", parts=[types.Part.from_function_call(name="web_search", args={"q": str(i)})]))
+        contents.append(types.Content(role="user", parts=[types.Part.from_function_response(
+            name="web_search", response={"result": "found " * 600})]))
+        contents.append(types.Content(role="model", parts=[types.Part(text=f"answer {i} " + "text " * 100)]))
+    contents.append(types.Content(role="user", parts=[types.Part(text="what's on my calendar tomorrow?")]))
+    system = engine.agent.system_prompt("what's on my calendar tomorrow?")
+    engine.agent._kits["c"] = {"calendar"}
+    return contents, system, engine.agent.tool_declarations("c")
+
+
+async def test_too_large_request_is_trimmed_to_fit_and_sent_again(on_omniroute, monkeypatch):
+    engine = on_omniroute
+    gemini_out(engine, monkeypatch)
+    seen, handle = groq_limit()
+    real = httpx.AsyncClient
+    monkeypatch.setattr(backup.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handle), **kw))
+    contents, system, tools = big_history(engine)
+
+    out = [kv async for kv in engine.brain.stream(contents, system=system, tools=tools)]
+    assert "".join(v.text for k, v in out if k == "part") == "Fits now"
+    assert len(seen) == 2 and seen[1]["max_tokens"] < seen[0]["max_tokens"]
+    fitted = seen[1]["messages"]
+    assert fitted[0]["role"] == "system" and fitted[-1] == {"role": "user", "content": "what's on my calendar tomorrow?"}
+    names = {t["function"]["name"] for t in seen[1]["tools"]}
+    assert len(names) == len(seen[0]["tools"]) and "open_toolkit" in names  # every tool kept, only shortened
+
+    # The limit is remembered: the next request is trimmed before it's sent, with no refused round trip.
+    seen.clear()
+    assert await engine.brain.generate_text(contents, system=system) == "Fits now"
+    assert len(seen) == 1
+
+
+async def test_still_too_large_says_so_plainly(on_omniroute, monkeypatch):
+    engine = on_omniroute
+    gemini_out(engine, monkeypatch)
+    seen, handle = groq_limit(limit=300)  # smaller than the request ORION needs at its smallest
+    real = httpx.AsyncClient
+    monkeypatch.setattr(backup.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handle), **kw))
+    contents, system, tools = big_history(engine, turns=1)
+    with pytest.raises(BackupError, match="daily quota is used up.*too big for the backup brain's plan") as err:
+        async for _ in engine.brain.stream(contents, system=system, tools=tools):
+            pass
+    assert "org_" not in str(err.value) and len(seen) == 3
+
+
+def test_fit_keeps_tool_calls_with_their_results():
+    call = {"role": "assistant", "content": None, "tool_calls": [{"id": "c1", "type": "function", "function": {
+        "name": "web_search", "arguments": "{}"}}]}
+    old = [{"role": "user", "content": "old " * 2000}, call, {"role": "tool", "tool_call_id": "c1", "content": "r " * 3000},
+           {"role": "assistant", "content": "done"}]
+    now = [{"role": "user", "content": "now"}, {**call, "tool_calls": [{**call["tool_calls"][0], "id": "c2"}]},
+           {"role": "tool", "tool_call_id": "c2", "content": "result " * 3000}]
+    body = {"model": "m", "messages": [{"role": "system", "content": "sys " * 3000}, *old, *now], "max_tokens": 4096}
+    fitted = fit_body(body, 2500)
+    msgs = fitted["messages"]
+    assert estimate_tokens(fitted) <= 2500
+    assert [m["role"] for m in msgs] == ["system", "user", "assistant", "tool"]  # the old turn went whole
+    assert msgs[1]["content"] == "now" and msgs[3]["tool_call_id"] == "c2" and msgs[3]["content"].endswith("backup brain]")
+    assert body["messages"][1]["content"].startswith("old")  # the original is untouched
+
+
+async def test_short_rate_limit_is_waited_out(on_omniroute, monkeypatch):
+    engine = on_omniroute
+    gemini_out(engine, monkeypatch)
+    calls = []
+
+    def handle(req):
+        calls.append(1)
+        if len(calls) == 1:
+            return httpx.Response(429, json={"error": {"message": "Rate limit reached. Please try again in 2.5s."}})
+        return httpx.Response(200, json={"choices": [{"message": {"content": "after the wait"}}]})
+
+    waits = []
+
+    async def no_sleep(s):
+        waits.append(s)
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(backup.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handle), **kw))
+    monkeypatch.setattr(backup.asyncio, "sleep", no_sleep)
+    assert await engine.brain.generate_text("hi") == "after the wait"
+    assert waits == [3.0]
+
+
 # ── Settings API and key storage ───────────────────────────────────────────
 class FakeKeyring(pytypes.ModuleType):
     def __init__(self):
@@ -236,3 +355,4 @@ async def test_setup_tests_then_saves_key_in_vault_not_settings(engine, provider
     r = client.post("/api/backup", headers=h, json={"provider": "off", "forget_key": True})
     assert r.status_code == 200 and engine.config.settings.backup_provider == "off"
     assert ("ORION", "backup_api_key") not in vault.vault
+
