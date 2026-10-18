@@ -191,6 +191,14 @@ class BackgroundService:
     def list(self, limit: int = 50) -> list[dict]:
         return [view(t) for t in self._need().list(limit=limit)]
 
+    def history(self, limit: int = 200) -> list[tuple[dict, list[dict]]]:
+        """Recent tasks with every approval each one asked for (for the "What ORION did" log)."""
+        agent = self._need()
+        asked: dict[str, list[dict]] = {}
+        for a in agent.store.approvals(None):
+            asked.setdefault(a["task_id"], []).append(a)
+        return [(view(t), asked.get(t["id"], [])) for t in agent.list(limit=limit)]
+
     def cancel(self, task_id: str) -> dict | None:
         task = self._need().cancel(task_id)
         return view(task) if task else None

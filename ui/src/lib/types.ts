@@ -271,3 +271,34 @@ export interface PluginInfo {
   error: string | null;
   path: string;
 }
+
+export type ActivityOutcome = "verified" | "done" | "unverified" | "attention" | "failed" | "declined" | "stopped" | "running" | "waiting";
+
+/** One action in the "What ORION did" log (GET /api/activity). */
+export interface ActivityEntry {
+  id: string;
+  kind: "step" | "background";
+  at: number;
+  ended: number | null;
+  tool: string;
+  summary: string;
+  task_id: string;
+  task: string;
+  conv_id: string | null;
+  route: string;
+  route_label: string;
+  desktop: "none" | "visible" | "input";
+  risk: "safe" | "confirm" | "danger";
+  outcome: ActivityOutcome;
+  approved_by: string;
+  evidence: string[];
+  error: string;
+}
+
+export interface ActivityPage {
+  entries: ActivityEntry[];
+  more: boolean;
+  total: number;
+  counts: Record<"ok" | "problem" | "declined" | "live", number>;
+  routes: { id: string; label: string }[];
+}
