@@ -320,6 +320,7 @@ class Engine:
             "version": __version__,
             "settings": s.model_dump(),
             "has_key": bool(self.config.get_api_key()),
+            "backup": {**self.brain.backup.status(), "active": self.brain.on_backup},
             "voice": self.voice.status() if self.voice else {"state": "unavailable", "mode": s.voice.mode},
             "quota": self.governor.snapshot(),
             "tasks": [t.to_dict() for t in self.tracker.active.values()],

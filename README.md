@@ -66,6 +66,9 @@ requests as possible:
 Default limits follow the 2026 free tier (Flash-Lite 15 RPM / 500 RPD, Flash 5 RPM / 20 RPD). Google no longer
 publishes free-tier numbers and changes them, so ORION reads the real limits from Google's rate-limit replies and
 corrects itself. When the main models run out it continues on other free Flash models (each has its own quota).
+When all of Gemini is out for the day, an optional **backup brain** (OmniRoute on this PC, OpenRouter's free
+models, Groq or any OpenAI-compatible service) answers until Gemini is back. See
+[docs/backup-brain.md](docs/backup-brain.md).
 
 ## Install (Windows)
 

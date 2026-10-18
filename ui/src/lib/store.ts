@@ -222,6 +222,12 @@ export const useStore = create<Store>((set, get) => ({
       case "update.available":
         if (s.engine) set({ engine: { ...s.engine, update: ev.update } });
         break;
+      case "brain.backup":
+        if (s.engine?.backup) set({ engine: { ...s.engine, backup: { ...s.engine.backup, active: ev.active } } });
+        get().toast(ev.active
+          ? { title: "Using the backup brain", body: ev.reason ? `${ev.reason} ORION switches back to Gemini when it can.` : "Gemini is out of free quota for now.", tone: "warn" }
+          : { title: "Back on Gemini", body: "Gemini has free quota again.", tone: "info" });
+        break;
       case "setup.required":
         set({ onboarding: true });
         break;

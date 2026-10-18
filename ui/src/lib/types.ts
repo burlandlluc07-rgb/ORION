@@ -115,6 +115,9 @@ export interface Settings {
   thinking_budget: number;
   fast_path: boolean;
   extra_models: boolean;
+  backup_provider: "off" | "omniroute" | "openrouter" | "groq" | "custom";
+  backup_base_url: string;
+  backup_model: string;
   approval_mode: "ask" | "auto_safe" | "trust";
   desktop_actions: "ask" | "allow";
   browser_mode: "background" | "visible";
@@ -152,10 +155,20 @@ export interface VoiceStatus {
   error?: string | null;
 }
 
+export interface BackupStatus {
+  provider: Settings["backup_provider"];
+  base_url: string;
+  model: string;
+  has_key: boolean;
+  ready: boolean;
+  active: boolean;
+}
+
 export interface EngineState {
   version: string;
   settings: Settings;
   has_key: boolean;
+  backup?: BackupStatus;
   voice: VoiceStatus;
   quota: QuotaRow[];
   tasks: Task[];

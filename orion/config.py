@@ -22,6 +22,7 @@ log = logging.getLogger("orion.config")
 
 KEYRING_SERVICE = "ORION"
 KEYRING_USER = "gemini_api_key"
+KEYRING_BACKUP_USER = "backup_api_key"
 
 
 def data_dir() -> Path:
@@ -90,6 +91,11 @@ class Settings(BaseModel):
     )
     extra_models: bool = True  # when quota runs out, also use other free Flash models (each has its own quota)
     thinking_budget: int = 0  # 0 = off (fastest). Raise for harder reasoning.
+    # Backup brain: an OpenAI-compatible provider used only while Gemini's free quota is used up
+    # (see orion/brain/backup.py). "off" | "omniroute" | "openrouter" | "groq" | "custom".
+    backup_provider: str = "off"
+    backup_base_url: str = ""  # "" = the preset's address
+    backup_model: str = ""  # "" = the preset's model
 
     fast_path: bool = True  # answer simple commands locally with zero API calls
     # Since 2.6 ORION doesn't ask before actions by default. "ask" turns the prompts back on.
@@ -207,6 +213,50 @@ class Config:
             return "keyring"
         except Exception:
             fallback = self.root / ".key"
+            fallback.write_text(key, "utf-8")
+            try:
+                os.chmod(fallback, 0o600)
+            except OSError:
+                pass
+            return "file"
+
+
+    # ── Backup brain key (same vault, its own entry) ──────────────────────
+    def get_backup_key(self) -> str:
+        env = os.environ.get("ORION_BACKUP_API_KEY")
+        if env:
+            return env.strip()
+        try:
+            import keyring
+
+            value = keyring.get_password(KEYRING_SERVICE, KEYRING_BACKUP_USER)
+            if value:
+                return value
+        except Exception:
+            pass
+        fallback = self.root / ".backup_key"
+        return fallback.read_text("utf-8").strip() if fallback.exists() else ""
+
+    def set_backup_key(self, key: str) -> str:
+        """Store (or with "" remove) the backup brain's key; vault first, private file as a fallback."""
+        key = key.strip()
+        fallback = self.root / ".backup_key"
+        try:
+            import keyring
+
+            if key:
+                keyring.set_password(KEYRING_SERVICE, KEYRING_BACKUP_USER, key)
+            else:
+                try:
+                    keyring.delete_password(KEYRING_SERVICE, KEYRING_BACKUP_USER)
+                except Exception:
+                    pass
+            fallback.unlink(missing_ok=True)
+            return "keyring"
+        except Exception:
+            if not key:
+                fallback.unlink(missing_ok=True)
+                return "file"
             fallback.write_text(key, "utf-8")
             try:
                 os.chmod(fallback, 0o600)
