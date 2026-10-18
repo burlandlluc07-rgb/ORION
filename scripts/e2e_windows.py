@@ -301,7 +301,11 @@ def background_agent_check(o: "Orion") -> None:
 
 def main() -> int:
     HOME.mkdir(parents=True, exist_ok=True)
-    (HOME / "settings.json").write_text(json.dumps({"user_name": "Lluc", "onboarded": True, "voice": {"mode": "classic"}}))
+    settings = {"user_name": "Lluc", "onboarded": True, "voice": {"mode": "classic"}}
+    if os.environ.get("ORION_BACKUP_API_KEY"):  # the app takes the key from the environment; Gemini stays first
+        settings.update(backup_provider=os.environ.get("ORION_BACKUP_PROVIDER") or "groq",
+                        backup_model=os.environ.get("ORION_BACKUP_MODEL") or "")
+    (HOME / "settings.json").write_text(json.dumps(settings))
     BG_WORK.mkdir(parents=True, exist_ok=True)
     (HOME / "background-agent.toml").write_text(f'[safety]\nallowed_paths = ["{BG_WORK.as_posix()}"]\n', "utf-8")
     proc = subprocess.Popen([str(EXE)], env=os.environ.copy())

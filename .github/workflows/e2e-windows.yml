@@ -34,6 +34,9 @@ jobs:
         shell: pwsh
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ORION_BACKUP_API_KEY: ${{ secrets.ORION_BACKUP_API_KEY }}
+          ORION_BACKUP_PROVIDER: ${{ vars.ORION_BACKUP_PROVIDER }}
+          ORION_BACKUP_MODEL: ${{ vars.ORION_BACKUP_MODEL }}
           PYTHONIOENCODING: utf-8
         run: |
           if ($env:GEMINI_API_KEY) { Write-Host "Gemini key received: yes ($($env:GEMINI_API_KEY.Length) chars)" } else { Write-Host "Gemini key received: NO - add a repository secret named GEMINI_API_KEY under Settings > Secrets and variables > Actions" }
