@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "orion-assistant"
-version = "2.7.1"
+version = "2.7.2"
 description = "O.R.I.O.N. — a fast, voice-first desktop AI assistant for your PC, powered by Gemini."
 readme = "README.md"
 requires-python = ">=3.11"
