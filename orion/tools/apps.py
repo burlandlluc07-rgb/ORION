@@ -239,8 +239,16 @@ def _windows() -> list:
     if IS_WIN:
         from pywinauto import Desktop  # type: ignore
 
-        return [w for w in Desktop(backend="uia").windows() if w.window_text().strip() and w.is_visible()]
+        return [w for w in Desktop(backend="uia").windows() if w.window_text().strip() and _shown(w)]
     raise ToolError("Window control is only available on Windows.")
+
+
+def _shown(w) -> bool:
+    """Visible or minimized: UI Automation calls a minimized window off-screen, but it can still be restored."""
+    if w.is_visible():
+        return True
+    hwnd = int(getattr(w, "handle", 0) or 0)
+    return bool(hwnd and _user32().IsWindowVisible(hwnd) and _user32().IsIconic(hwnd))
 
 
 def _find_window(title: str):
@@ -419,31 +427,36 @@ def _background_click(c) -> bool:
     return False
 
 
-def _background_set_text(c, text: str) -> bool:
-    """Last tries before real typing: the accessible value, then (for a classic Windows edit box) a set-text
-    message. Each is read back, so a field that ignores it falls through to the next."""
-    def took() -> bool:
-        try:
-            return (c.window_text() or "") == text or c.legacy_properties().get("Value", "") == text
-        except Exception:
-            return False
+def _text_is(c, text: str) -> bool:
+    try:
+        return (c.window_text() or "") == text or c.legacy_properties().get("Value", "") == text
+    except Exception:
+        return False
 
+
+def _win32_set_text(c, text: str) -> bool:
+    """A classic Windows edit box takes a set-text message without focus or keys. Read back to confirm."""
+    hwnd = int(getattr(c, "handle", 0) or 0)
+    if not (IS_WIN and hwnd):
+        return False
+    try:
+        if not re.match(r"(edit|richedit)", c.class_name() or "", re.IGNORECASE):
+            return False
+        import ctypes
+
+        _user32().SendMessageTimeoutW(hwnd, WM_SETTEXT, 0, ctypes.c_wchar_p(text), 0x2, 3000, None)
+    except Exception:
+        return False
+    return _text_is(c, text)
+
+
+def _background_set_text(c, text: str) -> bool:
+    """Last try before real typing: the control's accessible value, read back."""
     try:
         c.iface_legacy_iaccessible.SetValue(text)
-        if took():
-            return True
     except Exception:
-        pass
-    hwnd = int(getattr(c, "handle", 0) or 0)
-    if IS_WIN and hwnd:
-        try:
-            import ctypes
-
-            _user32().SendMessageTimeoutW(hwnd, WM_SETTEXT, 0, ctypes.c_wchar_p(text), 0x2, 3000, None)
-            return took()
-        except Exception:
-            return False
-    return False
+        return False
+    return _text_is(c, text)
 
 
 @tool(risk="confirm", category="apps", summary=lambda a: f"Click “{a.get('control')}” in {a.get('title')}")
@@ -481,8 +494,10 @@ def set_control_text(title: str, control: str, text: str, ctx: ToolContext = Non
         text: New text.
     """
     c = _find_control(title, control)
+    if _win32_set_text(c, text):  # a classic edit box: before UI Automation, whose Win32 proxy takes the focus
+        return "Text set."
     try:
-        c.set_edit_text(text)  # UI Automation value pattern: no keys, no focus change
+        c.set_edit_text(text)  # UI Automation value pattern: no keys
         return "Text set."
     except Exception:
         pass

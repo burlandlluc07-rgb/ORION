@@ -217,3 +217,23 @@ def test_every_core_tool_that_can_touch_the_desktop_is_classified(engine):
         if DESKTOP_CALLS.search(src) and t.name not in listed:
             missing.append(t.name)
     assert not missing, f"classify these in orion/tasks/routing.py: {missing}"
+
+
+def test_classic_edit_box_gets_a_set_text_message_before_ui_automation(monkeypatch, windows):
+    """The lab showed UI Automation's value pattern focuses a classic edit box, so the message goes first."""
+    c = StubbornControl()
+    c.handle = 7
+    c.class_name = lambda: "Edit"
+    c.set_edit_text = lambda text: pytest.fail("UI Automation would take the focus")
+    sent = []
+
+    class User32:
+        def SendMessageTimeoutW(self, hwnd, msg, wparam, lparam, flags, timeout, result):  # noqa: N802
+            sent.append((hwnd, msg))
+            c.value = lparam.value
+
+    monkeypatch.setattr(apps, "_user32", User32)
+    monkeypatch.setattr(apps, "_find_control", lambda title, control: c)
+    asked = []
+    assert apps.set_control_text("app", "Text Editor", "hi", ctx=no_desktop_ctx(asked)) == "Text set."
+    assert sent == [(7, apps.WM_SETTEXT)] and c.value == "hi" and c.events == [] and not asked
