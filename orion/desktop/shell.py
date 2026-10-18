@@ -56,6 +56,7 @@ class DesktopShell:
             hidden=True, background_color="#000000", easy_drag=True, resizable=False,
         )
         self.window.events.closing += self._on_closing
+        self.window.events.shown += self.apply_titlebar
         self._start_tray()
         self._start_hotkeys()
         storage = self.config.root / "webview"
@@ -99,10 +100,22 @@ class DesktopShell:
         self.window.hide()
         return False
 
+    def apply_titlebar(self) -> None:
+        """Match the native title bar to the app theme instead of Windows' default white bar."""
+        if not self.window or sys.platform != "win32":
+            return
+        try:
+            from . import titlebar
+
+            titlebar.style(titlebar.find_window("ORION"), titlebar.is_dark(self.config.settings.theme))
+        except Exception:
+            log.exception("Couldn't theme the title bar")
+
     def show_main(self) -> None:
         if self.window:
             self.window.show()
             self.window.restore()
+            self.apply_titlebar()  # also picks up a Windows light/dark switch while ORION was hidden
 
     def toggle_quick(self) -> None:
         if not self.quick:

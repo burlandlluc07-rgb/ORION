@@ -164,6 +164,8 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
             raise HTTPException(400, str(exc)) from exc
         if shell is not None and "launch_on_startup" in patch:
             shell.set_autostart(bool(patch["launch_on_startup"]))
+        if shell is not None and "theme" in patch:
+            shell.apply_titlebar()
         return engine.config.settings.model_dump()
 
     @app.get("/api/quota", dependencies=[A])
