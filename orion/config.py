@@ -124,6 +124,7 @@ class Settings(BaseModel):
     memory_review_day: int = 6  # weekly short-term review: 0 = Monday … 6 = Sunday
     memory_review_hour: int = 20
     auto_memory: bool = True  # learn durable facts from conversations automatically
+    autocorrect: bool = True  # fix common typos as you type in the chat box (UI only; never changes sent messages)
     proactive: bool = True  # watch battery/CPU/disk/downloads/calendar/network and speak up
     proactive_voice: bool = True
     proactive_downloads: bool = True
