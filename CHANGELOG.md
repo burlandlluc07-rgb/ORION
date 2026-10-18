@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.7.2
 - **Backup brain for when Gemini's free quota runs out.** In Settings → Brain → Backup brain, pick OmniRoute on
   this PC, OpenRouter's free models, Groq or any OpenAI-compatible service, then press Test & save. When every
   Gemini model is out of quota or rate-limited, chat, tools, missions and routines carry on there, and ORION goes
