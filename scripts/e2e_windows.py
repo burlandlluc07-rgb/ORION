@@ -65,12 +65,16 @@ class Orion:
         self.conv: str | None = None
         self.approved: list[str] = []
         self._stop = threading.Event()
+        self.paused = threading.Event()  # set while a check answers approvals itself
         threading.Thread(target=self._auto_approve, daemon=True).start()
 
     def _auto_approve(self) -> None:
         """Plays the user: approves every risky step (after a screenshot of the first approval card)."""
         first = True
         while not self._stop.is_set():
+            if self.paused.is_set():
+                time.sleep(0.2)
+                continue
             try:
                 for a in self.c.get("/api/state").json().get("approvals", []):
                     if first:
@@ -273,6 +277,55 @@ def desktop_probe() -> tuple:
     return (pt.x, pt.y), int(ctypes.windll.user32.GetForegroundWindow() or 0)
 
 
+def wait_approval(c: httpx.Client, timeout: float = 30) -> dict | None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        items = c.get("/api/state").json().get("approvals", [])
+        if items:
+            return items[0]
+        time.sleep(0.3)
+    return None
+
+
+def yes_no_checks(o: "Orion", ph: httpx.Client | None) -> None:
+    """Approvals answered by typing a plain yes / no in the chat (PC) and from the paired phone."""
+    o.paused.set()
+    o.c.patch("/api/settings", json={"approval_mode": "ask", "desktop_actions": "ask"})
+    try:
+        for answer, client, where in (("no", ph or o.c, "phone" if ph else "PC"), ("yes", o.c, "PC")):
+            subprocess.Popen(["notepad.exe"])
+            time.sleep(3)
+            conv = o.c.post("/api/chat", json={"text": "close notepad"}).json()["conv_id"]
+            a = wait_approval(o.c)
+            time.sleep(1.5)  # a reply only counts for a prompt that has been on screen a moment
+            client.post("/api/chat", json={"text": answer, "conv_id": conv})
+            time.sleep(4)
+            msgs = o.c.get(f"/api/conversations/{conv}").json()["messages"]
+            said = [m["content"] for m in msgs if m["role"] == "assistant"]
+            left = o.c.get("/api/state").json().get("approvals", [])
+            running = procs("notepad.exe") > 0
+            ok = a is not None and not left and (running if answer == "no" else not running)
+            record(f"typed approval: '{answer}' from the {where}", ok,
+                   f"prompt={a['label'] if a else None}; replies={said}; notepad running={running}")
+            subprocess.run(["taskkill", "/IM", "notepad.exe", "/F"], capture_output=True)
+        # Unclear text never answers: the prompt keeps waiting until a button decides it.
+        subprocess.Popen(["notepad.exe"])
+        time.sleep(3)
+        conv = o.c.post("/api/chat", json={"text": "close notepad"}).json()["conv_id"]
+        a = wait_approval(o.c)
+        time.sleep(1.5)
+        o.c.post("/api/chat", json={"text": "yes but wait a minute first", "conv_id": conv})
+        time.sleep(3)
+        still = [x["id"] for x in o.c.get("/api/state").json().get("approvals", [])]
+        record("typed approval: unclear reply keeps waiting", a is not None and a["id"] in still, f"pending={still}")
+        if a:
+            o.c.post(f"/api/approvals/{a['id']}", json={"decision": "deny"})
+    finally:
+        o.c.patch("/api/settings", json={"approval_mode": "trust", "desktop_actions": "allow"})
+        subprocess.run(["taskkill", "/IM", "notepad.exe", "/F"], capture_output=True)
+        o.paused.clear()
+
+
 def background_agent_check(o: "Orion") -> None:
     """The in-process background agent on live Gemini: files, a windowless shell command and an overwrite
     that waits for ORION's approval prompt (answered by the auto-approver), with the desktop left alone."""
@@ -385,6 +438,7 @@ def main() -> int:
                                           for c in checks), checks=checks, failures=len(bad))
 
     # ── Phone app: pair over the LAN server, then use it as a remote ───────
+    ph = None
     try:
         rs = o.c.post("/api/remote", json={"enabled": True, "access": "lan"}).json()
         pair_url = rs["pair_url"]
@@ -405,6 +459,12 @@ def main() -> int:
         shots.append("phone_screen")
     except Exception as exc:
         record("phone app: pair + remote control", False, repr(exc))
+
+    # ── Answering approvals with a typed yes / no ──────────────────────────
+    try:
+        yes_no_checks(o, ph)
+    except Exception as exc:
+        record("typed approval", False, repr(exc))
 
     # ── Proactive mode: notices a finished download on its own ─────────────
     dl = Path.home() / "Downloads"
