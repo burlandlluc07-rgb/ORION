@@ -89,7 +89,7 @@ class Settings(BaseModel):
             "gemini-flash-latest": ModelLimits(rpm=5, rpd=20),
         }
     )
-    extra_models: bool = True  # when quota runs out, also use other free Flash models (each has its own quota)
+    extra_models: bool = True  # when quota runs out, also use other free Flash models, then Gemma (each has its own quota)
     thinking_budget: int = 0  # 0 = off (fastest). Raise for harder reasoning.
     # Backup brain: an OpenAI-compatible provider used only while Gemini's free quota is used up
     # (see orion/brain/backup.py). "off" | "omniroute" | "openrouter" | "groq" | "custom".
