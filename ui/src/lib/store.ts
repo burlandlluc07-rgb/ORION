@@ -32,6 +32,8 @@ interface Store {
   models: string[];
   toasts: Toast[];
   rightOpen: boolean;
+  /** Activity panel opened as a drawer on narrow windows; not remembered. */
+  rightPeek: boolean;
   sidebarOpen: boolean;
   onboarding: boolean;
   mode: "auto" | "fast" | "smart";
@@ -70,6 +72,7 @@ export const useStore = create<Store>((set, get) => ({
   models: [],
   toasts: [],
   rightOpen: localStorage.getItem("orion.right") !== "0",
+  rightPeek: false,
   sidebarOpen: localStorage.getItem("orion.sidebar") !== "0",
   onboarding: false,
   mode: "auto",

@@ -1,15 +1,16 @@
 import {
-  Copy, FolderTree, PanelRightClose, PanelRightOpen, PenLine, Rocket, Stethoscope, Sunrise, Target, Telescope, Zap,
+  Check, Copy, FolderTree, PanelRightClose, PanelRightOpen, PenLine, Stethoscope, Sunrise, Target, Telescope, Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { Composer, type ComposerHandle } from "../components/Composer";
 import { Markdown } from "../components/Markdown";
-import { Orb } from "../components/Orb";
+import { Logo } from "../components/Logo";
 import { TaskCard } from "../components/TaskCard";
 import { api } from "../lib/api";
 import { useStore } from "../lib/store";
 import type { Message } from "../lib/types";
+import { NARROW, useMedia } from "../lib/useMedia";
 
 const STARTERS = [
   { icon: Sunrise, title: "Morning briefing", text: "/morning-briefing", desc: "Weather, headlines, reminders and PC health." },
@@ -26,13 +27,22 @@ function greeting(name: string) {
   return name ? `${part}, ${name}.` : `${part}.`;
 }
 
+function CopyButton({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button className="icon-btn sm" title="Copy" aria-label="Copy reply"
+      onClick={() => navigator.clipboard.writeText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1400); })}>
+      {done ? <Check size={13} /> : <Copy size={13} />}
+    </button>
+  );
+}
+
 export function MessageView({ m }: { m: Message }) {
   const name = useStore((s) => s.engine?.settings.assistant_name ?? "ORION");
   const task = useStore((s) => (m.meta.task_id ? s.tasks[m.meta.task_id] : undefined));
   if (m.role === "user") {
     return (
       <div className="msg user">
-        <div className="who">You</div>
         <div className="body">
           {!!m.meta.attachments?.length && (
             <div className="attach-chips">{m.meta.attachments.map((a, i) => <span key={i} className="file-chip">{a}</span>)}</div>
@@ -44,18 +54,18 @@ export function MessageView({ m }: { m: Message }) {
   }
   const model = m.meta.model;
   return (
-    <div className="msg assistant">
-      <div className="who">{name}</div>
+    <div className="msg assistant" aria-label={`${name} said`}>
       <div className="body">
         {task && <TaskCard task={task} />}
-        {m.content ? <Markdown text={m.content} /> : m.streaming && !task?.steps.length ? <div className="typing"><i /><i /><i /></div> : null}
+        {m.content && <Markdown text={m.content} />}
+        {m.streaming && <div className="msg-thinking" aria-label="ORION is working"><Logo size={26} state="thinking" label="ORION is working" /></div>}
         {!m.streaming && (
           <div className="msg-meta">
+            <CopyButton text={m.content} />
             {model === "local" ? <span className="badge safe"><Zap size={11} /> instant · no API call</span>
               : model ? <span className="badge">{model}</span> : null}
             {m.meta.latency_ms != null && <span>{(m.meta.latency_ms / 1000).toFixed(m.meta.latency_ms < 1000 ? 2 : 1)}s</span>}
             {m.meta.source === "voice" && <span>· voice</span>}
-            <button className="icon-btn sm" title="Copy" onClick={() => navigator.clipboard.writeText(m.content)}><Copy size={12} /></button>
           </div>
         )}
       </div>
@@ -97,13 +107,18 @@ export function ChatView() {
     return () => window.removeEventListener("keydown", onKey);
   }, [busy, s]);
 
+  const narrow = useMedia(NARROW);
+  const panelOn = narrow ? s.rightPeek : s.rightOpen;
   const toggleRight = () => {
+    if (narrow) return s.set({ rightPeek: !s.rightPeek });
     localStorage.setItem("orion.right", s.rightOpen ? "0" : "1");
     s.set({ rightOpen: !s.rightOpen });
   };
 
   const name = s.engine?.settings.user_name ?? "";
   const empty = s.messages.length === 0;
+  const assistant = s.engine?.settings.assistant_name ?? "ORION";
+  const approvalCards = approvals.map((a, i) => <ApprovalCard key={a.id} a={a} hotkey={i === approvals.length - 1} />);
 
   return (
     <div className="main">
@@ -111,20 +126,12 @@ export function ChatView() {
         {conv ? (
           <input className="title-input" value={title} onChange={(e) => setTitle(e.target.value)}
             onBlur={() => title.trim() && title !== conv.title && api.patch(`/api/conversations/${conv.id}`, { title: title.trim() })}
-            onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} aria-label="Conversation title" />
-        ) : <h1>New conversation</h1>}
+            onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} aria-label="Conversation title" size={Math.min(60, Math.max(12, title.length + 1))} />
+        ) : !empty ? <h1>New conversation</h1> : null}
         <span className="grow" />
-        <div className="segmented" role="radiogroup" aria-label="Thinking mode">
-          {(["auto", "fast", "smart"] as const).map((m) => (
-            <button key={m} className={s.mode === m ? "on" : ""} onClick={() => s.set({ mode: m })}
-              title={m === "auto" ? "ORION picks the model" : m === "fast" ? "Flash-Lite: quickest, biggest free quota" : "Flash: stronger reasoning"}>
-              {m === "auto" ? <Rocket size={13} /> : m === "fast" ? <Zap size={13} /> : <Telescope size={13} />}
-              {m === "auto" ? "Auto" : m === "fast" ? "Fast" : "Deep"}
-            </button>
-          ))}
-        </div>
-        <button className="icon-btn" onClick={toggleRight} title="Toggle side panel">
-          {s.rightOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
+        <button className={`icon-btn ${panelOn ? "on" : ""}`} onClick={toggleRight} title="Voice, progress and system panel"
+          aria-label="Toggle side panel" aria-pressed={panelOn}>
+          {panelOn ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
         </button>
       </div>
 
@@ -132,36 +139,36 @@ export function ChatView() {
         onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; }}>
         {empty ? (
           <div className="home">
-            <Orb size={150} state={s.voice.state} interactive onClick={() => api.post("/api/voice/toggle").catch(() => {})} />
-            <h2>{greeting(name)}</h2>
-            <p className="sub">What can I do for you? Type, drop a file, or press the orb to talk.</p>
-            <div className="cards">
+            <div className="home-hello">
+              <Logo size={72} state={busy ? "thinking" : s.voice.state} interactive label="Talk to ORION"
+                onClick={() => api.post("/api/voice/toggle").catch(() => {})} />
+              <h2>{greeting(name)}</h2>
+            </div>
+            <Composer ref={composer} busy={busy} />
+            <div className="starters">
               {STARTERS.map((c) => (
-                <button key={c.title} className="card" onClick={() => composer.current?.fill(c.text)}>
-                  <span className="ct"><c.icon size={16} /> {c.title}</span>
-                  <span className="cd">{c.desc}</span>
+                <button key={c.title} className="starter" onClick={() => composer.current?.fill(c.text)} title={c.desc}>
+                  <c.icon size={15} /> {c.title}
                 </button>
               ))}
             </div>
+            <p className="sub">Type <kbd>/</kbd> for skills, drop in a file, or press the orb to talk.</p>
             {s.transcript && <div className="transcript">“{s.transcript.text}”</div>}
+            {approvals.length > 0 && <div style={{ width: "100%", maxWidth: "var(--chat-w)", display: "flex", flexDirection: "column", gap: 12 }}>{approvalCards}</div>}
           </div>
         ) : (
           <div className="chat-inner">
             {s.messages.map((m) => <MessageView key={m.id} m={m} />)}
             {s.transcript && (
-              <div className={`msg ${s.transcript.role === "user" ? "user" : "assistant"}`} style={{ opacity: 0.6 }}>
-                <div className="who">{s.transcript.role === "user" ? "You" : (s.engine?.settings.assistant_name ?? "ORION")}</div>
+              <div className={`msg ghost ${s.transcript.role === "user" ? "user" : "assistant"}`} aria-label={s.transcript.role === "user" ? "You (speaking)" : assistant}>
                 <div className="body">{s.transcript.text}{s.transcript.tentative ? " …" : ""}</div>
               </div>
             )}
-            {approvals.map((a, i) => <ApprovalCard key={a.id} a={a} hotkey={i === approvals.length - 1} />)}
+            {approvalCards}
           </div>
         )}
-        {empty && approvals.length > 0 && (
-          <div className="chat-inner" style={{ paddingTop: 0 }}>{approvals.map((a, i) => <ApprovalCard key={a.id} a={a} hotkey={i === approvals.length - 1} />)}</div>
-        )}
       </div>
-      <Composer ref={composer} busy={busy} />
+      {!empty && <Composer ref={composer} busy={busy} />}
     </div>
   );
 }

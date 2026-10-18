@@ -2,7 +2,7 @@ import { CornerDownLeft, Maximize2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { Markdown } from "../components/Markdown";
-import { Orb } from "../components/Orb";
+import { Logo } from "../components/Logo";
 import { TaskCard } from "../components/TaskCard";
 import { api } from "../lib/api";
 import { useStore } from "../lib/store";
@@ -43,7 +43,7 @@ export function QuickBar() {
   return (
     <div className="quick">
       <div className="quick-input">
-        <Orb size={34} state={show?.streaming ? "thinking" : s.voice.state} />
+        <Logo size={34} state={show?.streaming ? "thinking" : s.voice.state} />
         <input ref={input} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()}
           placeholder="Ask ORION or tell it what to do…" aria-label="Quick command" />
         <CornerDownLeft size={16} className="muted" />

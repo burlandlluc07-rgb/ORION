@@ -415,7 +415,7 @@ function AccountsTab() {
             <button className="btn" onClick={() => setCals([...cals, { name: cals.length || info.calendars.length ? "" : "Personal", url: "" }])}><Plus size={13} /> Add calendar link</button>
             <span className="grow" />
             <span className="muted" style={{ fontSize: 12.5 }}>New events open in</span>
-            <select className="select" style={{ width: 190 }} value={via} onChange={(e) => setVia(e.target.value as typeof via)}>
+            <select className="select" style={{ width: 236 }} value={via} onChange={(e) => setVia(e.target.value as typeof via)}>
               <option value="google">Google Calendar (web)</option><option value="outlook">Outlook (web)</option><option value="ics">Default calendar app (.ics)</option>
             </select>
             <button className="btn primary" disabled={busy === "cal"} onClick={saveCals}>

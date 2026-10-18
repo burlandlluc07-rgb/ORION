@@ -1,0 +1,120 @@
+/* ORION design tokens, shared by the desktop app (styles.css) and the phone app (phone.css). */
+/* Change colours, radii, type, spacing and motion here only. */
+/* Monochrome: black, white and greys. Colour is reserved for real danger. */
+:root {
+  /* Surfaces, from the back of the window forwards */
+  --bg: #141414;          /* main canvas (chat, pages) */
+  --bg-2: #0e0e0e;        /* sidebar and side panel */
+  --panel: #1b1b1b;       /* cards, composer, inputs */
+  --panel-2: #222222;     /* raised: user bubble, hovered rows */
+  --panel-3: #2c2c2c;     /* pressed, toggles, bars */
+  --line: rgba(255, 255, 255, 0.07);
+  --line-2: rgba(255, 255, 255, 0.13);
+  --hover: rgba(255, 255, 255, 0.05);
+  --active: rgba(255, 255, 255, 0.09);
+
+  /* Text */
+  --text: #ededed;
+  --text-2: #a3a3a3;
+  --text-3: #6f6f6f;
+
+  /* Accent is white on dark, black on light */
+  --accent: #f5f5f5;
+  --accent-2: #d4d4d4;
+  --accent-ink: #0a0a0a;
+  --accent-soft: rgba(255, 255, 255, 0.06);
+  --accent-glow: rgba(255, 255, 255, 0.16);
+
+  /* Status: still monochrome, except danger */
+  --ok: #e6e6e6;
+  --warn: #b3b3b3;
+  --bad: #e5484d;
+  --bad-soft: rgba(229, 72, 77, 0.12);
+  --violet: #8c8c8c;
+
+  /* Shape */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+
+  /* Depth */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 16px 48px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.35);
+  --shadow-composer: 0 6px 24px rgba(0, 0, 0, 0.35), 0 0 0 1px var(--line-2);
+  --scrim: rgba(0, 0, 0, 0.62);
+
+  /* Spacing scale (4px grid) */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+
+  /* Layout */
+  --sidebar-w: 268px;
+  --sidebar-rail: 60px;
+  --right-w: 320px;
+  --chat-w: 760px;
+  --page-w: 920px;
+
+  /* Type */
+  --font: "Segoe UI Variable Text", "Segoe UI", Inter, system-ui, -apple-system, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", Inter, system-ui, sans-serif;
+  --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, Cambria, "Times New Roman", serif;
+  --mono: "Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace;
+  --fs-xs: 11.5px;
+  --fs-sm: 12.5px;
+  --fs: 14px;
+  --fs-md: 15px;
+  --fs-lg: 17px;
+  --fs-xl: 22px;
+  --fs-2xl: 30px;
+
+  /* Motion */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-1: 120ms;
+  --dur-2: 200ms;
+  --dur-3: 320ms;
+
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --bg: #fbfbfa;
+  --bg-2: #f3f3f2;
+  --panel: #ffffff;
+  --panel-2: #f0f0ef;
+  --panel-3: #e4e4e3;
+  --line: rgba(0, 0, 0, 0.08);
+  --line-2: rgba(0, 0, 0, 0.14);
+  --hover: rgba(0, 0, 0, 0.04);
+  --active: rgba(0, 0, 0, 0.07);
+
+  --text: #141414;
+  --text-2: #555555;
+  --text-3: #8c8c8c;
+
+  --accent: #141414;
+  --accent-2: #333333;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(0, 0, 0, 0.05);
+  --accent-glow: rgba(0, 0, 0, 0.14);
+
+  --ok: #262626;
+  --warn: #6b6b6b;
+  --bad: #d93036;
+  --bad-soft: rgba(217, 48, 54, 0.08);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow: 0 16px 40px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.06);
+  --shadow-composer: 0 4px 20px rgba(0, 0, 0, 0.06), 0 0 0 1px var(--line-2);
+  --scrim: rgba(20, 20, 20, 0.32);
+
+  color-scheme: light;
+}
