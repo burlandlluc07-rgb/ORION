@@ -14,7 +14,9 @@ tools and approvals work unchanged. The key lives in the OS credential vault
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import copy
 import json
 import logging
 import re
@@ -141,6 +143,129 @@ def to_tools(decls: list[dict] | None) -> list[dict]:
     return out
 
 
+# ── Fitting a request into a small provider limit ─────────────────────────
+# Free plans cap a request's size: Groq counts the prompt plus max_tokens against a tokens-per-minute
+# limit (8000 for openai/gpt-oss-120b), and ORION's system prompt, tools and history can be bigger than
+# that. When a provider says a request is too large, the request is trimmed to fit and sent again.
+CHARS_PER_TOKEN = 3.2  # rough and on the safe side; corrected with the provider's own count when it gives one
+MIN_REPLY = 1024
+_TPM_RE = re.compile(r"limit\D{0,3}(\d+)\D+requested\D{0,3}(\d+)", re.I)
+_CONTEXT_RE = re.compile(r"maximum context length is (\d+)", re.I)
+_CUT = "… [cut to fit the backup brain]"
+
+
+def estimate_tokens(body: dict) -> int:
+    size = len(json.dumps(body.get("messages") or [], ensure_ascii=False))
+    size += len(json.dumps(body.get("tools") or [], ensure_ascii=False))
+    return int(size / CHARS_PER_TOKEN) + int(body.get("max_tokens") or 0)
+
+
+def too_large(status: int, msg: str) -> tuple[int, int] | None:
+    """(limit, requested) in the provider's tokens when it refused the request as too large, else None.
+    Either number is 0 when the provider didn't say."""
+    low = msg.lower()
+    if status == 413 or "too large" in low or "context length" in low or "reduce your message" in low:
+        if m := _TPM_RE.search(msg):
+            return int(m.group(1)), int(m.group(2))
+        if m := _CONTEXT_RE.search(msg):
+            return int(m.group(1)), 0
+        return 0, 0
+    return None
+
+
+def _cut(text: str, keep: int) -> str:
+    return text if len(text) <= keep else text[:keep] + _CUT
+
+
+def _first_sentence(text: str, keep: int = 160) -> str:
+    head = re.split(r"(?<=[.!?])\s", text.strip(), maxsplit=1)[0]
+    return _cut(head, keep)
+
+
+def _slim_schema(schema: Any) -> Any:
+    if isinstance(schema, dict):
+        return {k: _slim_schema(v) for k, v in schema.items() if k not in ("description", "examples", "title")}
+    if isinstance(schema, list):
+        return [_slim_schema(v) for v in schema]
+    return schema
+
+
+def fit_body(body: dict, limit: int) -> dict:
+    """A copy of a Chat Completions body trimmed to about ``limit`` estimated tokens (see estimate_tokens).
+
+    In order, until it fits: a smaller reply budget, long tool results and old messages cut short,
+    shorter tool descriptions, the oldest turns dropped (the current request is always kept whole),
+    a shorter system prompt, and finally fewer tools."""
+    body = copy.deepcopy(body)
+    target = int(limit * 0.9)
+    body["max_tokens"] = max(MIN_REPLY, min(int(body.get("max_tokens") or 4096), target // 4))
+
+    msgs: list[dict] = body["messages"]
+    system = msgs[0] if msgs and msgs[0]["role"] == "system" else None
+    rest = msgs[1:] if system else msgs[:]
+
+    def over() -> bool:
+        body["messages"] = ([system] if system else []) + rest
+        return estimate_tokens(body) > target
+
+    # The current request: from the last real user message on (it may be followed by tool calls and results).
+    start = max((i for i, m in enumerate(rest) if m["role"] == "user"), default=0)
+
+    if over():
+        for i, m in enumerate(rest):
+            if isinstance(m.get("content"), str):
+                m["content"] = _cut(m["content"], 1500 if m["role"] == "tool" or i < start else 6000)
+    if over() and body.get("tools"):
+        for t in body["tools"]:
+            fn = t["function"]
+            fn["description"] = _first_sentence(fn.get("description") or "")
+            fn["parameters"] = _slim_schema(fn.get("parameters") or {})
+    while over() and start > 0:
+        # Drop the oldest turn: everything up to the next real user message, so no tool result loses its call.
+        nxt = next((i for i in range(1, start + 1) if rest[i]["role"] == "user"), start)
+        del rest[:nxt]
+        start -= nxt
+    def cut_system(floor: int) -> None:
+        if over() and system and isinstance(system.get("content"), str):
+            others = estimate_tokens({**body, "messages": rest})
+            room = int((target - others) * CHARS_PER_TOKEN)
+            system["content"] = _cut(system["content"], max(floor, room))
+
+    cut_system(4000)
+    if over() and body.get("tools"):
+        # Drop tools from the end of the list, keeping the ones this request already uses and open_toolkit.
+        used = {c["function"]["name"] for m in rest for c in m.get("tool_calls") or []}
+        tools = body["tools"]
+        for t in reversed(list(tools)):
+            if not over():
+                break
+            name = t["function"]["name"]
+            if name not in used and "toolkit" not in name:
+                tools.remove(t)
+        if not tools:
+            body.pop("tools")
+    cut_system(1500)
+    if over():
+        for m in rest:
+            if isinstance(m.get("content"), str):
+                m["content"] = _cut(m["content"], 1500)
+    body["messages"] = ([system] if system else []) + rest
+    return body
+
+
+def _retry_after(resp: httpx.Response, msg: str) -> float | None:
+    """Seconds a rate-limited provider asks us to wait, when it says."""
+    try:
+        return float(resp.headers["retry-after"])
+    except (KeyError, ValueError):
+        pass
+    m = re.search(r"try again in (?:(\d+)m)?([\d.]+)(ms|s)", msg)
+    if not m:
+        return None
+    secs = float(m.group(2)) / (1000 if m.group(3) == "ms" else 1)
+    return secs + 60 * int(m.group(1) or 0)
+
+
 def _call_part(call: dict) -> types.Part:
     raw = call.get("arguments") or "{}"
     try:
@@ -159,6 +284,7 @@ class BackupBrain:
     def __init__(self, config: Config, endpoint: tuple[str, str, str] | None = None) -> None:
         self.config = config
         self._fixed = endpoint  # (base_url, model, key) to test a provider before it's saved
+        self._limits: dict[tuple[str, str], int] = {}  # (base_url, model) → request size it takes, in our estimate
 
     # ── Settings ───────────────────────────────────────────────────────────
     def endpoint(self) -> tuple[str, str, str]:
@@ -194,12 +320,20 @@ class BackupBrain:
         return h
 
     @staticmethod
-    def _error(resp: httpx.Response) -> BackupError:
+    def _message(resp: httpx.Response) -> str:
         try:
             body = resp.json()
             msg = (body.get("error") or {}).get("message") if isinstance(body.get("error"), dict) else body.get("error")
         except Exception:
-            msg = resp.text[:200]
+            msg = resp.text[:300]
+        return str(msg or "")
+
+    @classmethod
+    def _error(cls, resp: httpx.Response) -> BackupError:
+        msg = cls._message(resp)
+        if too_large(resp.status_code, msg) is not None:
+            return BackupError("This request is too big for the backup brain's plan, even trimmed down. Start a new "
+                               "chat, or pick a model with a bigger limit in Settings → Brain → Backup brain.")
         if resp.status_code in (401, 403):
             return BackupError("The backup brain rejected the key. Check it in Settings → Brain → Backup brain.")
         if resp.status_code == 429:
@@ -232,6 +366,38 @@ class BackupBrain:
             body["stream_options"] = {"include_usage": True}
         return body
 
+    def _fitted(self, body: dict, base: str, model: str) -> dict:
+        limit = self._limits.get((base, model))
+        return fit_body(body, limit) if limit and estimate_tokens(body) > limit * 0.9 else body
+
+    async def _should_retry(self, resp: httpx.Response, body: dict, base: str, model: str, attempt: int) -> bool:
+        """After a refused request: learn the provider's size limit (the next send is trimmed to it), or wait
+        out a short rate limit. True when sending again may work."""
+        if attempt >= 2:
+            return False
+        msg = self._message(resp)
+        big = too_large(resp.status_code, msg)
+        if big is not None:
+            limit, requested = big
+            est = estimate_tokens(body)
+            if limit and requested:
+                fit = int(limit * est / requested)  # the provider's limit in our estimate's units
+            elif limit:
+                fit = limit
+            else:
+                fit = int(est * 0.6)
+            old = self._limits.get((base, model))
+            self._limits[(base, model)] = min(fit, old) if old else fit
+            log.info("Backup brain request too large (%s est. tokens); trimming to %s", est, self._limits[(base, model)])
+            return True
+        if resp.status_code == 429:
+            wait = _retry_after(resp, msg)
+            if wait is not None and wait <= 30:
+                log.info("Backup brain rate-limited; waiting %.1fs", wait)
+                await asyncio.sleep(wait + 0.5)
+                return True
+        return False
+
     def _unreachable(self, base: str, exc: Exception) -> BackupError:
         hint = " Is OmniRoute running?" if self.config.settings.backup_provider == "omniroute" else ""
         return BackupError(f"Couldn't reach the backup brain at {base} ({type(exc).__name__}).{hint}")
@@ -249,44 +415,59 @@ class BackupBrain:
     async def _stream(self, contents: list[types.Content], *, system: str | None,
                       tools: list[dict] | None) -> AsyncIterator[tuple[str, Any]]:
         base, model, key = self.endpoint()
-        body = self._body(contents, system, tools, model, stream=True)
+        full = self._body(contents, system, tools, model, stream=True)
         calls: dict[int, dict] = {}
         tokens = 0
         async with httpx.AsyncClient(timeout=httpx.Timeout(90, connect=10)) as c:
-            async with c.stream("POST", base + "/chat/completions", headers=self._headers(key), json=body) as r:
-                if r.status_code >= 400:
-                    await r.aread()
-                    raise self._error(r)
-                served = r.headers.get("x-omniroute-decision", "")
-                yield "model", f"backup · {model}" + (f" ({served[:60]})" if served else "")
-                async for line in r.aiter_lines():
-                    line = line.strip()
-                    if not line.startswith("data:"):
-                        continue
-                    data = line[5:].strip()
-                    if data == "[DONE]":
+            for attempt in range(3):
+                body = self._fitted(full, base, model)
+                async with c.stream("POST", base + "/chat/completions", headers=self._headers(key), json=body) as r:
+                    if r.status_code < 400:
+                        async for item in self._read_stream(r, model, calls):
+                            if item[0] == "usage":
+                                tokens = item[1]
+                            else:
+                                yield item
                         break
-                    try:
-                        chunk = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
-                    if chunk.get("error"):
-                        raise BackupError(f"Backup brain error: {str(chunk['error'])[:200]}")
-                    usage = chunk.get("usage") or {}
-                    tokens = usage.get("total_tokens") or tokens
-                    for choice in chunk.get("choices") or []:
-                        delta = choice.get("delta") or {}
-                        if delta.get("content"):
-                            yield "part", types.Part(text=delta["content"])
-                        for tc in delta.get("tool_calls") or []:
-                            slot = calls.setdefault(tc.get("index", len(calls)), {"id": "", "name": "", "arguments": ""})
-                            slot["id"] = tc.get("id") or slot["id"]
-                            fn = tc.get("function") or {}
-                            slot["name"] += fn.get("name") or ""
-                            slot["arguments"] += fn.get("arguments") or ""
+                    await r.aread()
+                    if not await self._should_retry(r, body, base, model, attempt):
+                        raise self._error(r)
         for i in sorted(calls):
             if calls[i]["name"]:
                 yield "part", _call_part(calls[i])
+        yield "usage", tokens
+
+    async def _read_stream(self, r: httpx.Response, model: str,
+                           calls: dict[int, dict]) -> AsyncIterator[tuple[str, Any]]:
+        """("model", name), text parts and finally ("usage", tokens) from an SSE reply; tool calls collect in ``calls``."""
+        served = r.headers.get("x-omniroute-decision", "")
+        yield "model", f"backup · {model}" + (f" ({served[:60]})" if served else "")
+        tokens = 0
+        async for line in r.aiter_lines():
+            line = line.strip()
+            if not line.startswith("data:"):
+                continue
+            data = line[5:].strip()
+            if data == "[DONE]":
+                break
+            try:
+                chunk = json.loads(data)
+            except json.JSONDecodeError:
+                continue
+            if chunk.get("error"):
+                raise BackupError(f"Backup brain error: {str(chunk['error'])[:200]}")
+            usage = chunk.get("usage") or {}
+            tokens = usage.get("total_tokens") or tokens
+            for choice in chunk.get("choices") or []:
+                delta = choice.get("delta") or {}
+                if delta.get("content"):
+                    yield "part", types.Part(text=delta["content"])
+                for tc in delta.get("tool_calls") or []:
+                    slot = calls.setdefault(tc.get("index", len(calls)), {"id": "", "name": "", "arguments": ""})
+                    slot["id"] = tc.get("id") or slot["id"]
+                    fn = tc.get("function") or {}
+                    slot["name"] += fn.get("name") or ""
+                    slot["arguments"] += fn.get("arguments") or ""
         yield "usage", tokens
 
     async def generate_text(self, contents: str | list[types.Content], *, system: str | None = None,
@@ -294,13 +475,20 @@ class BackupBrain:
         if isinstance(contents, str):
             contents = [types.Content(role="user", parts=[types.Part(text=contents)])]
         base, model, key = self.endpoint()
-        body = self._body(contents, system, None, model, stream=False, json_mode=json_mode)
+        full = self._body(contents, system, None, model, stream=False, json_mode=json_mode)
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(90, connect=10)) as c:
-                r = await c.post(base + "/chat/completions", headers=self._headers(key), json=body)
-                if r.status_code == 400 and json_mode:  # not every model takes response_format; the prompt asks for JSON
-                    body.pop("response_format", None)
+                for attempt in range(3):
+                    body = self._fitted(full, base, model)
                     r = await c.post(base + "/chat/completions", headers=self._headers(key), json=body)
+                    if (r.status_code == 400 and json_mode and "response_format" in full
+                            and too_large(400, self._message(r)) is None):
+                        # Not every model takes response_format; the prompt asks for JSON anyway.
+                        full.pop("response_format")
+                        body = self._fitted(full, base, model)
+                        r = await c.post(base + "/chat/completions", headers=self._headers(key), json=body)
+                    if r.status_code < 400 or not await self._should_retry(r, body, base, model, attempt):
+                        break
         except httpx.HTTPError as exc:
             raise self._unreachable(base, exc) from exc
         if r.status_code >= 400:
