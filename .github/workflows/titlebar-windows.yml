@@ -4,6 +4,9 @@ on:
   push:
     branches: ["claude/dark-title-bar"]
 
+permissions:
+  contents: write  # the screenshots are also pushed to the ci/titlebar-shots branch
+
 jobs:
   titlebar:
     runs-on: windows-latest
@@ -28,3 +31,17 @@ jobs:
       - uses: actions/upload-artifact@v5
         if: always()
         with: { name: titlebar, path: titlebar/ }
+      - name: Publish screenshots to the ci/titlebar-shots branch
+        if: always()
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898299+github-actions[bot]@users.noreply.github.com"
+          Copy-Item -Recurse titlebar $env:RUNNER_TEMP\shots
+          git checkout --orphan ci/titlebar-shots
+          git rm -rfq --cached .
+          Remove-Item -Recurse -Force titlebar
+          Copy-Item -Recurse $env:RUNNER_TEMP\shots titlebar
+          git add titlebar
+          git commit -qm "Title bar screenshots for ${{ github.sha }}"
+          git push -f origin ci/titlebar-shots
