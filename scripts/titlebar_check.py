@@ -2,11 +2,13 @@
 
 Launches `python -m orion` with a real window, screenshots the window in dark and light theme, samples the
 caption colour and checks minimize/maximize/close and resizing are still there. Writes titlebar/*.png and
-titlebar/report.json. `--before` only takes the screenshot (for the unfixed build) and never fails.
+titlebar/report.json, and prints the PNGs as base64 log lines ("TBIMG|name|chunk") so they
+can be recovered from the job log. `--before` only takes the screenshot (for the unfixed build) and never fails.
 """
 
 from __future__ import annotations
 
+import base64
 import ctypes
 import json
 import os
@@ -118,6 +120,12 @@ def main() -> int:
 
 def finish(before: bool) -> int:
     (OUT / ("report-before.json" if before else "report.json")).write_text(json.dumps(results, indent=2))
+    for png in sorted(OUT.glob("*.png")):
+        if png.stem.startswith("before") != before:
+            continue
+        data = base64.b64encode(png.read_bytes()).decode()
+        for i in range(0, len(data), 3500):
+            print(f"TBIMG|{png.stem}|{data[i:i + 3500]}")
     failed = [r for r in results if not r["ok"]]
     print(f"{len(results) - len(failed)}/{len(results)} passed", flush=True)
     return 0 if before or not failed else 1
