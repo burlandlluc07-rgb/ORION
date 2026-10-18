@@ -74,8 +74,8 @@ a { color: var(--text); text-underline-offset: 2px; }
 .conv.active { background: var(--active); color: var(--text); }
 .conv .conv-actions { display: none; gap: 0; }
 .conv:hover .conv-actions, .conv:focus-within .conv-actions { display: flex; }
-.conv-group { padding: 12px 10px 4px; font-size: 11px; color: var(--text-3); }
-.conv-group:first-child { padding-top: 2px; }
+.conv-group { padding: 16px 10px 4px; font-size: 11px; color: var(--text-3); }
+.conv-list > div:first-child > .conv-group { padding-top: 2px; }
 
 .side-foot { padding: 8px; display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line); }
 .side-update { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--panel); border: 1px solid var(--line-2);
@@ -104,6 +104,7 @@ a { color: var(--text); text-underline-offset: 2px; }
 .btn:disabled { opacity: 0.45; cursor: default; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .btn.primary:hover { background: var(--accent); filter: brightness(0.9); }
+.btn.primary:disabled { opacity: 1; background: var(--panel-2); border-color: var(--line); color: var(--text-3); filter: none; }
 :root[data-theme="light"] .btn.primary:hover { filter: brightness(1.35); }
 .btn.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, transparent); background: var(--bad-soft); }
 .btn.ghost { background: none; border-color: transparent; color: var(--text-2); }
@@ -169,7 +170,7 @@ kbd { font: 10.5px var(--mono); color: var(--text-3); border: 1px solid var(--li
 .conn-pill { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-3); padding: 3px 10px; border-radius: var(--radius-pill); border: 1px solid var(--line); }
 
 /* ── Chat ───────────────────────────────────────────────────────────── */
-.chat-scroll { flex: 1; overflow-y: auto; scroll-behavior: smooth; }
+.chat-scroll { flex: 1; overflow-y: auto; scroll-behavior: smooth; -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22px); mask-image: linear-gradient(to bottom, transparent 0, #000 22px); }
 .chat-inner { max-width: var(--chat-w); margin: 0 auto; padding: 12px 28px 220px; display: flex; flex-direction: column; gap: 28px; }
 .msg { display: flex; gap: 16px; animation: rise var(--dur-3) var(--ease-out); }
 .msg .body { flex: 1; min-width: 0; }
@@ -222,7 +223,7 @@ kbd { font: 10.5px var(--mono); color: var(--text-3); border: 1px solid var(--li
 .task-body { border-top: 1px solid var(--line); padding: 6px 6px 8px; animation: fade var(--dur-2); }
 .plan { padding: 6px 8px 8px; display: flex; flex-direction: column; gap: 6px; }
 .plan-item { display: flex; gap: 9px; align-items: flex-start; font-size: 13px; color: var(--text-2); }
-.plan-item.done { color: var(--text-3); text-decoration: line-through; text-decoration-color: var(--text-3); }
+.plan-item.done { color: var(--text-3); }
 .plan-item.active { color: var(--text); font-weight: 550; }
 .plan-item svg { flex: none; margin-top: 2px; }
 .step { display: flex; align-items: flex-start; gap: 10px; padding: 6px 8px; border-radius: var(--radius-sm); font-size: 13px; }
@@ -261,6 +262,9 @@ kbd { font: 10.5px var(--mono); color: var(--text-3); border: 1px solid var(--li
 .composer textarea { width: 100%; border: 0; background: none; resize: none; outline: none; padding: 16px 18px 6px; max-height: 260px; min-height: 54px; line-height: 1.55; font-size: var(--fs-md); display: block; }
 .composer textarea::placeholder { color: var(--text-3); }
 .composer-bar { display: flex; align-items: center; gap: 4px; padding: 6px 10px 10px 10px; }
+.page-composer { max-width: none; margin: 0 0 18px; }
+.page-composer textarea { min-height: 76px; }
+.composer-note { font-size: 12px; color: var(--text-3); padding-left: 8px; }
 .send-btn { width: 34px; height: 34px; border-radius: var(--radius-sm); border: 0; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center;
   transition: background var(--dur-1), transform var(--dur-1), opacity var(--dur-1); }
 .send-btn:hover:not(:disabled) { transform: translateY(-1px); }
@@ -422,7 +426,10 @@ kbd { font: 10.5px var(--mono); color: var(--text-3); border: 1px solid var(--li
 .chip .icon-btn { width: 20px; height: 20px; font-size: 14px; line-height: 1; }
 
 /* ── Responsive and motion ─────────────────────────────────────────── */
-@media (max-width: 1180px) { .right { display: none; } }
+/* Below this width the Activity panel opens as a drawer over the chat instead of a column. */
+.right-scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 40; animation: fade var(--dur-2) var(--ease); }
+.right.drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 41; box-shadow: var(--shadow); animation: drawer-in var(--dur-2) var(--ease-out); }
+@keyframes drawer-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (max-width: 900px) {
   .settings-layout { grid-template-columns: 1fr; gap: 16px; }
   .settings-nav { position: static; flex-direction: row; overflow-x: auto; }

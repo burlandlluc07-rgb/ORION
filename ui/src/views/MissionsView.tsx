@@ -73,10 +73,14 @@ export function MissionsView() {
         <h2>Missions</h2>
         <p>Hand ORION a bigger job and get on with your day — it plans, works through it on its own and notifies you (and your phone) when it's done.</p>
       </div></div>
-      <div className="item" style={{ marginBottom: 18, alignItems: "flex-end" }}>
-        <textarea className="textarea" style={{ fontFamily: "var(--font)", fontSize: 14, minHeight: 70 }} value={goal}
-          onChange={(e) => setGoal(e.target.value)} placeholder="Describe the mission and what you want delivered…" />
-        <button className="btn primary" disabled={goal.trim().length < 8} onClick={() => start()}><Rocket size={14} /> Start</button>
+      <div className="composer page-composer">
+        <textarea value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Describe the mission and what you want delivered…"
+          onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && goal.trim().length >= 8) start(); }} aria-label="Mission" />
+        <div className="composer-bar">
+          <span className="composer-note">Ctrl+Enter to start</span>
+          <span className="grow" />
+          <button className="btn primary" disabled={goal.trim().length < 8} onClick={() => start()}><Rocket size={14} /> Start</button>
+        </div>
       </div>
       {items.length === 0 && (
         <div className="grid2" style={{ marginBottom: 20 }}>

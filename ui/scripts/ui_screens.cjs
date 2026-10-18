@@ -115,6 +115,9 @@ async function shot(page, name) {
     await page.setViewportSize({ width: 960, height: 760 });
     await seed(page, { view: "chat", activeId: CONV, messages: demo.messages, tasks: demo.tasks, approvals: demo.approvals, rightOpen: true });
     await shot(page, `${theme}-15-narrow-chat`);
+    await page.evaluate(() => window.__orion.setState({ rightPeek: true }));
+    await shot(page, `${theme}-18-narrow-activity`);
+    await page.evaluate(() => window.__orion.setState({ rightPeek: false }));
     await seed(page, { view: "settings", approvals: [] });
     await shot(page, `${theme}-16-narrow-settings`);
     await page.setViewportSize({ width: +w, height: +h });

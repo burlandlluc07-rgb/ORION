@@ -10,6 +10,7 @@ import { TaskCard } from "../components/TaskCard";
 import { api } from "../lib/api";
 import { useStore } from "../lib/store";
 import type { Message } from "../lib/types";
+import { NARROW, useMedia } from "../lib/useMedia";
 
 const STARTERS = [
   { icon: Sunrise, title: "Morning briefing", text: "/morning-briefing", desc: "Weather, headlines, reminders and PC health." },
@@ -106,7 +107,10 @@ export function ChatView() {
     return () => window.removeEventListener("keydown", onKey);
   }, [busy, s]);
 
+  const narrow = useMedia(NARROW);
+  const panelOn = narrow ? s.rightPeek : s.rightOpen;
   const toggleRight = () => {
+    if (narrow) return s.set({ rightPeek: !s.rightPeek });
     localStorage.setItem("orion.right", s.rightOpen ? "0" : "1");
     s.set({ rightOpen: !s.rightOpen });
   };
@@ -125,9 +129,9 @@ export function ChatView() {
             onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} aria-label="Conversation title" size={Math.min(60, Math.max(12, title.length + 1))} />
         ) : !empty ? <h1>New conversation</h1> : null}
         <span className="grow" />
-        <button className={`icon-btn ${s.rightOpen ? "on" : ""}`} onClick={toggleRight} title="Voice, progress and system panel"
-          aria-label="Toggle side panel" aria-pressed={s.rightOpen}>
-          {s.rightOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
+        <button className={`icon-btn ${panelOn ? "on" : ""}`} onClick={toggleRight} title="Voice, progress and system panel"
+          aria-label="Toggle side panel" aria-pressed={panelOn}>
+          {panelOn ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
         </button>
       </div>
 

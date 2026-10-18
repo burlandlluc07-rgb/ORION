@@ -1,6 +1,8 @@
+import { useEffect } from "react";
 import { Activity, Gauge, ListChecks, Mic, MicOff, PanelRightClose, Square } from "lucide-react";
 import { api } from "../lib/api";
 import { useStore } from "../lib/store";
+import { NARROW, useMedia } from "../lib/useMedia";
 import { Orb } from "./Orb";
 import { PlanList, StepList, TaskStatus } from "./TaskCard";
 import { Meter } from "./ui";
@@ -12,7 +14,19 @@ const VOICE_LABEL: Record<string, string> = {
 
 export function RightPanel() {
   const s = useStore();
-  if (!s.rightOpen || s.view !== "chat") return null;
+  const narrow = useMedia(NARROW);
+  useEffect(() => {
+    if (!narrow || !s.rightPeek) return;
+    // Capture phase, so Esc closes the drawer without also stopping a running reply.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      useStore.getState().set({ rightPeek: false });
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [narrow, s.rightPeek]);
+  if (s.view !== "chat" || !(narrow ? s.rightPeek : s.rightOpen)) return null;
   const tasks = Object.values(s.tasks)
     .filter((t) => t.conv_id === s.activeId || t.status === "running" || t.status === "waiting")
     .sort((a, b) => b.updated - a.updated);
@@ -20,12 +34,15 @@ export function RightPanel() {
   const v = s.vitals;
   const live = ["listening", "speaking", "thinking", "working", "connecting"].includes(s.voice.state);
   const close = () => {
+    if (narrow) return s.set({ rightPeek: false });
     localStorage.setItem("orion.right", "0");
     s.set({ rightOpen: false });
   };
 
   return (
-    <aside className="right" aria-label="Side panel">
+    <>
+    {narrow && <div className="right-scrim" onClick={close} />}
+    <aside className={`right ${narrow ? "drawer" : ""}`} aria-label="Side panel">
       <div className="right-head">
         <span className="t">Activity</span>
         <button className="icon-btn sm" onClick={close} title="Close panel" aria-label="Close panel"><PanelRightClose size={15} /></button>
@@ -98,5 +115,6 @@ export function RightPanel() {
         </div>
       </div>
     </aside>
+    </>
   );
 }
