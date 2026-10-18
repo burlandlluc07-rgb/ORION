@@ -120,6 +120,9 @@ async function shot(page, name) {
     await page.evaluate(() => window.__orion.setState({ rightPeek: false }));
     await seed(page, { view: "settings", approvals: [] });
     await shot(page, `${theme}-16-narrow-settings`);
+    await seed(page, { view: "ecosystem" });
+    const accN = page.getByRole("tab", { name: "Accounts" });
+    if (await accN.count()) { await accN.click(); await shot(page, `${theme}-19-narrow-accounts`); }
     await page.setViewportSize({ width: +w, height: +h });
 
     // First-run onboarding

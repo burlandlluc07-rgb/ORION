@@ -333,7 +333,7 @@ kbd { font: 10.5px var(--mono); color: var(--text-3); border: 1px solid var(--li
 .panel-note { font-size: 12px; color: var(--text-3); line-height: 1.5; }
 
 /* ── Pages ──────────────────────────────────────────────────────────── */
-.page { flex: 1; overflow-y: auto; }
+.page { flex: 1; overflow-y: auto; container-type: inline-size; }
 .page-inner { max-width: var(--page-w); margin: 0 auto; padding: 44px 36px 80px; animation: fade var(--dur-2) var(--ease); }
 .page-head { display: flex; align-items: flex-end; gap: 14px; margin-bottom: 28px; }
 .page-head h2 { font-family: var(--font-serif); font-size: var(--fs-2xl); margin: 0; font-weight: 400; letter-spacing: -0.015em; line-height: 1.2; }
@@ -363,6 +363,7 @@ kbd { font: 10.5px var(--mono); color: var(--text-3); border: 1px solid var(--li
 
 /* Settings: section list on the left, content on the right */
 .settings-layout { display: grid; grid-template-columns: 188px 1fr; gap: 36px; align-items: start; }
+.settings-layout > * { min-width: 0; }
 .settings-nav { position: sticky; top: 0; display: flex; flex-direction: column; gap: 1px; padding-top: 2px; }
 .settings-nav button { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border: 0; background: none; border-radius: var(--radius-sm); color: var(--text-2);
   font-size: 13px; text-align: left; transition: background var(--dur-1), color var(--dur-1); white-space: nowrap; }
@@ -431,12 +432,19 @@ kbd { font: 10.5px var(--mono); color: var(--text-3); border: 1px solid var(--li
 .right.drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 41; box-shadow: var(--shadow); animation: drawer-in var(--dur-2) var(--ease-out); }
 @keyframes drawer-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (max-width: 900px) {
-  .settings-layout { grid-template-columns: 1fr; gap: 16px; }
-  .settings-nav { position: static; flex-direction: row; overflow-x: auto; }
-  .field { grid-template-columns: 1fr; gap: 10px; }
-  .field .fc { justify-content: flex-start; }
   .page-inner { padding: 28px 20px 60px; }
   .chat-inner { padding-left: 18px; padding-right: 18px; }
   .composer-wrap { padding-left: 14px; padding-right: 14px; }
+}
+/* Settings follow the page's own width (the sidebar and window size both squeeze it), not the window's. */
+@container (max-width: 860px) {
+  .settings-layout { grid-template-columns: 1fr; gap: 16px; }
+  .settings-nav { position: sticky; top: 0; z-index: 3; flex-direction: row; overflow-x: auto; background: var(--bg); padding: 6px 0; margin: 0 -4px; scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to right, #000 88%, transparent); mask-image: linear-gradient(to right, #000 88%, transparent); }
+  .settings-nav button { flex: none; }
+}
+@container (max-width: 640px) {
+  .field { grid-template-columns: 1fr; gap: 10px; }
+  .field .fc { justify-content: flex-start; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
