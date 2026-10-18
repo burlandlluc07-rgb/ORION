@@ -5,7 +5,7 @@ from __future__ import annotations
 import io
 import time
 
-from .platform import home
+from .platform import IS_WIN, home
 from .registry import ToolContext, ToolError, tool
 
 
@@ -104,6 +104,14 @@ def press_keys(keys: str, times: int = 1) -> str:
         keys: Keys joined with "+".
         times: Repeat count.
     """
+    from ..tasks.routing import media_key
+
+    if (command := media_key(keys)) is not None and IS_WIN:
+        from .system import _app_command
+
+        for _ in range(max(1, min(times, 50))):  # a shell message, not a key press: the focused window gets nothing
+            _app_command(command)
+        return f"Pressed {keys} (sent to Windows directly, no key press)."
     g = _gui()
     parts = [k.strip().lower().replace("windows", "win").replace("control", "ctrl") for k in keys.split("+")]
     for _ in range(max(1, min(times, 50))):

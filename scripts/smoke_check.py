@@ -55,6 +55,37 @@ def desktop_state() -> dict:
             "foreground_title": buf.value, "last_input": int(lii.dwTime)}
 
 
+def find_window(part: str) -> int:
+    """The first visible top-level window whose title contains ``part`` (Windows only), else 0."""
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    found: list[int] = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def each(hwnd, _):
+        n = user32.GetWindowTextLengthW(hwnd)
+        buf = ctypes.create_unicode_buffer(n + 1)
+        user32.GetWindowTextW(hwnd, buf, n + 1)
+        if part.lower() in buf.value.lower() and user32.IsWindowVisible(hwnd):
+            found.append(int(hwnd))
+            return False
+        return True
+
+    user32.EnumWindows(each, 0)
+    return found[0] if found else 0
+
+
+def wait_window(part: str, timeout: float = 15) -> int:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if hwnd := find_window(part):
+            return hwnd
+        time.sleep(0.3)
+    return 0
+
+
 def changes(before: dict, after: dict) -> dict:
     if not before.get("available"):
         return {"mouse_moved": None, "focus_changed": None, "input_sent": None}
@@ -246,6 +277,57 @@ def main() -> int:
             r = run_tool(c, "browser_open", {"url": page}, settle=1.0)
             check("background: browser_open has no window", r["ok"] and "ORION check" in r["result"] and quiet(r), r)
             run_tool(c, "browser_close", {})
+            # 3b. Background routes for actions that used to take the desktop. A target window sits behind another
+            # window that has the focus; ORION moves, fills, clicks and closes the target and the focus must stay.
+            import ctypes
+
+            user32 = ctypes.windll.user32
+            (sample / "probe-target.txt").write_text("", encoding="utf-8")
+            (sample / "probe-fill.txt").write_text("", encoding="utf-8")
+            (sample / "focus-keeper.txt").write_text("the user is working here\n", encoding="utf-8")
+            box = subprocess.Popen([sys.executable, "-c", "import ctypes; ctypes.windll.user32.MessageBoxW("
+                                    "0, 'Press OK', 'ORION probe dialog', 0)"])
+            target_proc = subprocess.Popen(["notepad.exe", str(sample / "probe-target.txt")])
+            fill_proc = subprocess.Popen(["notepad.exe", str(sample / "probe-fill.txt")])
+            box_hwnd, target = wait_window("ORION probe dialog"), wait_window("probe-target")
+            fill = wait_window("probe-fill")
+            keeper_proc = subprocess.Popen(["notepad.exe", str(sample / "focus-keeper.txt")])
+            keeper = wait_window("focus-keeper")
+            time.sleep(1.5)
+            fg = desktop_state()["foreground_hwnd"]
+            report["window_probe"] = {"target": target, "fill": fill, "keeper": keeper, "dialog": box_hwnd,
+                                      "foreground": fg}
+            check("setup: probe windows open, keeper in front", bool(target and fill and keeper and box_hwnd)
+                  and fg == keeper,
+                  report["window_probe"])
+            for keys in ("volumeup", "volumedown"):
+                r = run_tool(c, "press_keys", {"keys": keys})
+                check(f"background: press_keys {keys} sends no key press", r["ok"] and not r["asked"] and quiet(r), r)
+            r = run_tool(c, "window_action", {"title": "probe-target", "action": "minimize"}, settle=0.5)
+            r["iconic"] = bool(user32.IsIconic(target))
+            check("background: window_action minimize keeps focus", r["ok"] and r["iconic"] and quiet(r), r)
+            r = run_tool(c, "window_action", {"title": "probe-target", "action": "restore"}, settle=0.5)
+            r["iconic"] = bool(user32.IsIconic(target))
+            check("background: window_action restore keeps focus", r["ok"] and not r["iconic"] and quiet(r), r)
+            r = run_tool(c, "set_control_text", {"title": "probe-fill", "control": "Text Editor",
+                                                 "text": "filled in the background"}, settle=0.5)
+            check("background: set_control_text keeps focus", r["ok"] and quiet(r), r)
+            r = run_tool(c, "click_control", {"title": "ORION probe dialog", "control": "OK"}, settle=0.5)
+            try:
+                box.wait(10)
+            except subprocess.TimeoutExpired:
+                box.kill()
+            r["dialog_closed"] = box.returncode is not None and not user32.IsWindow(box_hwnd)
+            check("background: click_control presses OK without the mouse", r["ok"] and r["dialog_closed"]
+                  and quiet(r), r)
+            r = run_tool(c, "window_action", {"title": "probe-target", "action": "close"}, settle=1.0)
+            r["gone"] = not user32.IsWindow(target)
+            check("background: window_action close keeps focus", r["ok"] and quiet(r) and (
+                r["gone"] or "still open" in r["result"]), r)
+            for p in (target_proc, fill_proc, keeper_proc):
+                p.kill()
+            subprocess.run(["taskkill", "/IM", "notepad.exe", "/F"], capture_output=True)
+            time.sleep(1.0)
             # 4. The 2.6 default: a foreground step runs without a prompt, and is still recorded and checked.
             r = run_tool(c, "open_app", {"name": "notepad"}, settle=2.0)
             rec = last_step(c, "open_app")
