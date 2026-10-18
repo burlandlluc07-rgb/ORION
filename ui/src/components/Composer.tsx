@@ -1,6 +1,7 @@
 import { ArrowUp, Check, ChevronDown, Mic, MicOff, Paperclip, Rocket, Square, Telescope, X, Zap } from "lucide-react";
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, type ChangeEvent, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { api, fileToB64 } from "../lib/api";
+import { autocorrect, keepWord, undoFix, type Correction } from "../lib/autocorrect";
 import { useStore } from "../lib/store";
 import type { Skill } from "../lib/types";
 
@@ -66,6 +67,9 @@ export const Composer = forwardRef<ComposerHandle, { busy: boolean; remote?: boo
   const [drag, setDrag] = useState(false);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [sel, setSel] = useState(0);
+  const autoOn = useStore((s) => s.engine?.settings?.autocorrect !== false);
+  const [fix, setFix] = useState<Correction | null>(null); // the last auto-correction, undoable until you move on
+  const fixAt = useRef(0); // caret position right after the fix's boundary character
   const ta = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -73,6 +77,7 @@ export const Composer = forwardRef<ComposerHandle, { busy: boolean; remote?: boo
     focus: () => ta.current?.focus(),
     fill: (t: string) => {
       setText(t);
+      setFix(null);
       setTimeout(() => {
         ta.current?.focus();
         ta.current?.setSelectionRange(t.length, t.length);
@@ -92,6 +97,53 @@ export const Composer = forwardRef<ComposerHandle, { busy: boolean; remote?: boo
       el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
     }
   }, [text]);
+
+  // The undo hint fades after a few seconds; Backspace/Ctrl+Z still work until you type on.
+  const [fixShown, setFixShown] = useState(false);
+  useEffect(() => {
+    if (!fix) return;
+    setFixShown(true);
+    const t = setTimeout(() => setFixShown(false), 4000);
+    return () => clearTimeout(t);
+  }, [fix]);
+
+  const setCaret = (pos: number) => setTimeout(() => ta.current?.setSelectionRange(pos, pos));
+
+  /** Put back the word ORION corrected. `dropBoundary` also removes the space/punctuation typed after it. */
+  const revert = (dropBoundary: boolean) => {
+    if (!fix) return false;
+    let t = undoFix(text, fix);
+    if (t === null) { setFix(null); return false; }
+    const end = fix.start + fix.original.length;
+    if (dropBoundary) t = t.slice(0, end) + t.slice(end + 1);
+    keepWord(fix.original);
+    setText(t);
+    setFix(null);
+    setCaret(dropBoundary ? end : end + 1);
+    return true;
+  };
+
+  const onType = (e: ChangeEvent<HTMLTextAreaElement>) => {
+    const next = e.target.value;
+    const caret = e.target.selectionEnd ?? next.length;
+    setSel(0);
+    // Phone keyboards don't send a usable Backspace key event, so spot "the boundary after a fix was deleted" here.
+    if (fix && next.length === text.length - 1 && caret === fixAt.current - 1 && text.slice(0, caret) + text.slice(caret + 1) === next) {
+      revert(true);
+      return;
+    }
+    const composing = (e.nativeEvent as InputEvent).isComposing;
+    const done = autoOn && !composing ? autocorrect(text, next, caret) : null;
+    if (done) {
+      setText(done.text);
+      setFix(done.fix);
+      fixAt.current = caret + done.fix.fixed.length - done.fix.original.length;
+      setCaret(fixAt.current);
+    } else {
+      setText(next);
+      if (fix) setFix(null);
+    }
+  };
 
   const slash = useMemo(() => {
     const m = /^\/([a-z0-9-]*)$/.exec(text);
@@ -114,6 +166,7 @@ export const Composer = forwardRef<ComposerHandle, { busy: boolean; remote?: boo
     const payload = await Promise.all(files.map(async (f) => ({ name: f.name, mime: f.type || "application/octet-stream", b64: await fileToB64(f) })));
     setText("");
     setFiles([]);
+    setFix(null);
     try {
       await send(t, payload);
     } catch (e) {
@@ -158,9 +211,18 @@ export const Composer = forwardRef<ComposerHandle, { busy: boolean; remote?: boo
           value={text}
           rows={1}
           placeholder={voiceLive ? "Listening… or type here" : "How can I help you today?"}
-          onChange={(e) => { setText(e.target.value); setSel(0); }}
+          onChange={onType}
+          onBlur={() => setFix(null)}
           onPaste={(e) => { if (e.clipboardData.files.length) { e.preventDefault(); addFiles(e.clipboardData.files); } }}
           onKeyDown={(e) => {
+            if (fix) {
+              const el = e.currentTarget;
+              const atFix = el.selectionStart === el.selectionEnd && el.selectionEnd === fixAt.current;
+              if ((e.key === "z" && (e.ctrlKey || e.metaKey) && !e.shiftKey) || (e.key === "Backspace" && atFix)) {
+                if (revert(e.key === "Backspace")) { e.preventDefault(); return; }
+              }
+              if (e.key.startsWith("Arrow") || e.key === "Home" || e.key === "End") setFix(null);
+            }
             if (slash.length) {
               if (e.key === "ArrowDown") { e.preventDefault(); setSel((sel + 1) % slash.length); return; }
               if (e.key === "ArrowUp") { e.preventDefault(); setSel((sel - 1 + slash.length) % slash.length); return; }
@@ -172,6 +234,12 @@ export const Composer = forwardRef<ComposerHandle, { busy: boolean; remote?: boo
         <div className="composer-bar">
           <input ref={fileInput} type="file" multiple hidden onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
           <button className="icon-btn" aria-label="Attach files" title="Attach files or images" onClick={() => fileInput.current?.click()}><Paperclip size={17} /></button>
+          {fix && fixShown && (
+            <button className="ac-note" onMouseDown={(e) => e.preventDefault()} onClick={() => revert(false)}
+              title="Undo this correction (Backspace or Ctrl+Z)" aria-label={`Corrected ${fix.original} to ${fix.fixed}. Undo`}>
+              <span className="ac-old">{fix.original}</span> → {fix.fixed} <span className="ac-undo">Undo</span>
+            </button>
+          )}
           <span className="grow" />
           {!remote && <ModePicker />}
           {!remote && <button

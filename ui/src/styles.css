@@ -482,3 +482,10 @@ kbd { font: 10.5px var(--mono); color: var(--text-3); border: 1px solid var(--li
 .act.compact .act-text .badge { align-self: flex-start; margin-top: 4px; }
 .act.compact .act-detail { padding-left: 14px; }
 .act.compact .act-detail dl { grid-template-columns: 78px 1fr; }
+
+/* Auto-correct undo hint in the composer bar */
+.ac-note { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; margin-left: 4px; border: 0; border-radius: 999px;
+  background: var(--hover); color: var(--text-2); font-size: 12px; white-space: nowrap; overflow: hidden; max-width: 60%; animation: fade var(--dur-2) var(--ease); }
+.ac-note .ac-old { text-decoration: line-through; color: var(--text-3); }
+.ac-note .ac-undo { color: var(--text); font-weight: 500; }
+.ac-note:hover { color: var(--text); }
