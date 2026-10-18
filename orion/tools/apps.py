@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import threading
+import time
 from pathlib import Path
 from typing import Literal
 
@@ -238,8 +239,16 @@ def _windows() -> list:
     if IS_WIN:
         from pywinauto import Desktop  # type: ignore
 
-        return [w for w in Desktop(backend="uia").windows() if w.window_text().strip() and w.is_visible()]
+        return [w for w in Desktop(backend="uia").windows() if w.window_text().strip() and _shown(w)]
     raise ToolError("Window control is only available on Windows.")
+
+
+def _shown(w) -> bool:
+    """Visible or minimized: UI Automation calls a minimized window off-screen, but it can still be restored."""
+    if w.is_visible():
+        return True
+    hwnd = int(getattr(w, "handle", 0) or 0)
+    return bool(hwnd and _user32().IsWindowVisible(hwnd) and _user32().IsIconic(hwnd))
 
 
 def _find_window(title: str):
@@ -258,22 +267,99 @@ def list_windows() -> list[str]:
     return [w.window_text() for w in _windows()][:60]
 
 
+SW_SHOWNOACTIVATE, SW_SHOWMINNOACTIVE, WM_CLOSE = 4, 7, 0x0010
+
+
+def _user32():
+    import ctypes
+
+    return ctypes.windll.user32  # type: ignore[attr-defined]
+
+
+def _quiet_window_action(hwnd: int, action: str) -> None:
+    """Minimize, restore or close a window with messages that don't activate it, so focus stays where it is."""
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = _user32()
+    if action == "close":
+        if not user32.PostMessageW(hwnd, WM_CLOSE, 0, 0):
+            raise ToolError("Windows refused to pass the close request to that window.")
+        return
+    if action == "minimize":
+        user32.ShowWindow(hwnd, SW_SHOWMINNOACTIVE)
+        return
+    if user32.IsIconic(hwnd):
+        user32.ShowWindow(hwnd, SW_SHOWNOACTIVATE)
+        return
+    if user32.IsZoomed(hwnd):  # restore a maximized window to its normal size via its placement, not activating it
+
+        class WINDOWPLACEMENT(ctypes.Structure):
+            _fields_ = [("length", wintypes.UINT), ("flags", wintypes.UINT), ("showCmd", wintypes.UINT),
+                        ("ptMinPosition", wintypes.POINT), ("ptMaxPosition", wintypes.POINT),
+                        ("rcNormalPosition", wintypes.RECT)]
+
+        wp = WINDOWPLACEMENT()
+        wp.length = ctypes.sizeof(WINDOWPLACEMENT)
+        if user32.GetWindowPlacement(hwnd, ctypes.byref(wp)):
+            wp.showCmd = SW_SHOWNOACTIVATE
+            user32.SetWindowPlacement(hwnd, ctypes.byref(wp))
+
+
+def _window_state(hwnd: int) -> str:
+    user32 = _user32()
+    if not user32.IsWindow(hwnd) or not user32.IsWindowVisible(hwnd):
+        return "closed"
+    return "minimized" if user32.IsIconic(hwnd) else "maximized" if user32.IsZoomed(hwnd) else "normal"
+
+
+def _wait_state(hwnd: int, want: set[str], timeout: float = 3.0) -> str:
+    deadline = time.monotonic() + timeout
+    state = _window_state(hwnd)
+    while state not in want and time.monotonic() < deadline:
+        time.sleep(0.1)
+        state = _window_state(hwnd)
+    return state
+
+
 @tool(category="apps", summary=lambda a: f"{a.get('action', 'focus').title()} window “{a.get('title')}”")
 def window_action(title: str, action: Literal["focus", "minimize", "maximize", "restore", "close"] = "focus") -> str:
     """Focus, minimize, maximize, restore or close a window by (part of) its title.
+
+    Minimize, restore and close happen in the background: the user's focus stays where it is. Focus and maximize
+    bring the window to the front.
 
     Args:
         title: Part of the window title.
         action: What to do with it.
     """
     w = _find_window(title)
+    name = w.window_text()
+    hwnd = int(getattr(w, "handle", 0) or 0)
+    if action in ("minimize", "restore", "close") and hwnd:
+        _quiet_window_action(hwnd, action)
+        state = _wait_state(hwnd, {"closed"} if action == "close" else {"minimized"} if action == "minimize"
+                            else {"normal"})
+        if action == "close":
+            if state != "closed":
+                return f"Asked “{name}” to close, but it is still open: it may be asking to save changes."
+            return f"Closed “{name}”."
+        if action == "minimize" and state != "minimized":
+            raise ToolError(f"“{name}” didn't minimize (it is {state}).")
+        if action == "restore" and state != "normal":
+            raise ToolError(f"“{name}” didn't restore (it is {state}).")
+        return f"{action.title()}d “{name}” without moving your focus."
     if action == "focus":
         if w.is_minimized():
             w.restore()
         w.set_focus()
+        if hwnd and _user32().GetForegroundWindow() != hwnd:
+            raise ToolError(f"Windows didn't let “{name}” come to the front.")
     else:
         getattr(w, action)()
-    return f"{action.title()}d “{w.window_text()}”." if action != "close" else f"Closed “{w.window_text()}”."
+        if hwnd and action == "maximize" and _wait_state(hwnd, {"maximized"}) != "maximized":
+            raise ToolError(f"“{name}” didn't maximize.")
+    return f"{action.title()}d “{name}”." if action != "close" else f"Closed “{name}”."
 
 
 @tool(category="apps")
@@ -320,6 +406,59 @@ def _find_control(title: str, control: str):
     return best
 
 
+BM_CLICK, WM_SETTEXT = 0x00F5, 0x000C
+
+
+def _background_click(c) -> bool:
+    """Last tries before a real mouse click, none of which move the mouse or the focus: the control's accessible
+    default action, then (for a classic Windows button) the click message Windows sends a button itself."""
+    try:
+        c.iface_legacy_iaccessible.DoDefaultAction()
+        return True
+    except Exception:
+        pass
+    hwnd = int(getattr(c, "handle", 0) or 0)
+    if IS_WIN and hwnd and (c.class_name() or "").lower() == "button":
+        try:
+            _user32().SendMessageTimeoutW(hwnd, BM_CLICK, 0, 0, 0x2, 3000, None)
+            return True
+        except Exception:
+            return False
+    return False
+
+
+def _text_is(c, text: str) -> bool:
+    try:
+        return (c.window_text() or "") == text or c.legacy_properties().get("Value", "") == text
+    except Exception:
+        return False
+
+
+def _win32_set_text(c, text: str) -> bool:
+    """A classic Windows edit box takes a set-text message without focus or keys. Read back to confirm."""
+    hwnd = int(getattr(c, "handle", 0) or 0)
+    if not (IS_WIN and hwnd):
+        return False
+    try:
+        if not re.match(r"(edit|richedit)", c.class_name() or "", re.IGNORECASE):
+            return False
+        import ctypes
+
+        _user32().SendMessageTimeoutW(hwnd, WM_SETTEXT, 0, ctypes.c_wchar_p(text), 0x2, 3000, None)
+    except Exception:
+        return False
+    return _text_is(c, text)
+
+
+def _background_set_text(c, text: str) -> bool:
+    """Last try before real typing: the control's accessible value, read back."""
+    try:
+        c.iface_legacy_iaccessible.SetValue(text)
+    except Exception:
+        return False
+    return _text_is(c, text)
+
+
 @tool(risk="confirm", category="apps", summary=lambda a: f"Click “{a.get('control')}” in {a.get('title')}")
 def click_control(title: str, control: str, ctx: ToolContext = None) -> str:  # type: ignore[assignment]
     """Click/activate a button, tab, menu item or list item inside a window (UI Automation, no mouse needed).
@@ -329,7 +468,7 @@ def click_control(title: str, control: str, ctx: ToolContext = None) -> str:  # 
         control: The control's name or automation id (from inspect_window).
     """
     c = _find_control(title, control)
-    for method in ("invoke", "select", "toggle"):  # UI Automation patterns: no mouse, no focus change
+    for method in ("invoke", "select", "toggle", "expand"):  # UI Automation patterns: no mouse, no focus change
         fn = getattr(c, method, None)
         if fn:
             try:
@@ -337,6 +476,8 @@ def click_control(title: str, control: str, ctx: ToolContext = None) -> str:  # 
                 return f"Activated “{c.window_text()}”."
             except Exception:
                 continue
+    if _background_click(c):
+        return f"Activated “{c.window_text()}”."
     if ctx is not None and ctx.request_desktop("this control only responds to a real mouse click"):
         c.click_input()  # the user allowed this one foreground click
         return f"Clicked “{c.window_text()}” with the mouse (you allowed it)."
@@ -353,11 +494,15 @@ def set_control_text(title: str, control: str, text: str, ctx: ToolContext = Non
         text: New text.
     """
     c = _find_control(title, control)
+    if _win32_set_text(c, text):  # a classic edit box: before UI Automation, whose Win32 proxy takes the focus
+        return "Text set."
     try:
-        c.set_edit_text(text)  # UI Automation value pattern: no keys, no focus change
+        c.set_edit_text(text)  # UI Automation value pattern: no keys
         return "Text set."
     except Exception:
         pass
+    if _background_set_text(c, text):
+        return "Text set."
     if ctx is not None and ctx.request_desktop("this field only accepts real typing"):
         c.set_focus()
         c.type_keys("^a{BACKSPACE}" + text, with_spaces=True)

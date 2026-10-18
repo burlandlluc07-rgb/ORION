@@ -2,7 +2,7 @@ name: Windows smoke check (mouse and focus)
 on:
   workflow_dispatch:
   push:
-    branches: ["ci/windows-smoke-check", "feature/background-execution"]
+    branches: ["ci/windows-smoke-check", "feature/background-execution", "feature/background-routes"]
 
 jobs:
   smoke:

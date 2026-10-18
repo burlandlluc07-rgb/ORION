@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ..tools.platform import IS_WIN
 from .lifecycle import Capabilities, ToolExecutor
 
 if TYPE_CHECKING:
@@ -55,18 +56,40 @@ LOCAL_CHANGES = {"write_file", "create_folder", "move_or_copy", "delete_path", "
 SELF_CHECKED = {"write_file": "the file was read back and compared", "create_folder": "the folder was checked",
                 "move_or_copy": "the destination was checked", "set_theme": "the registry value was read back",
                 "set_wallpaper": "Windows reported the new wallpaper", "startup_apps": "the entry was read back",
-                "set_volume": "the volume level was read back"}
+                "set_volume": "the volume level was read back", "window_action": "the window's state was read back"}
 COOPERATIVE = {"run_command", "run_python", "search_files", "download_file", "clean_temp_files", "internet_speed_test",
                "install_app", "app_updates", "start_mission"}
 # Hands work to the background agent (orion/background), which has its own allowlist and approval gate.
 BACKGROUND_AGENT = {"queue_background_task", "cancel_background_task"}
+# Single keys that are shell commands rather than input: press_keys sends them as WM_APPCOMMAND window
+# messages (orion/tools/system.py), so nothing reaches the focused window. pyautogui names plus a few aliases.
+MEDIA_KEYS = {"playpause": "play_pause", "play_pause": "play_pause", "nexttrack": "next", "prevtrack": "previous",
+              "stop": "stop", "volumeup": "volume_up", "volume_up": "volume_up", "volumedown": "volume_down",
+              "volume_down": "volume_down", "volumemute": "volume_mute", "volume_mute": "volume_mute",
+              "mute": "volume_mute"}
+# window_action moves done with window messages that never activate the window, so focus stays put. "focus"
+# needs focus by definition, and Windows has no way to maximize a window without activating it.
+QUIET_WINDOW_ACTIONS = {"minimize", "restore", "close"}
 ROLLBACK = {"write_file", "move_or_copy", "delete_path", "create_document", "edit_document", "create_pdf",
             "create_spreadsheet", "update_spreadsheet", "create_presentation"}
 
 
-def capabilities_for(tool: "Tool", settings: "Settings | None" = None, browser_visible: bool = False) -> Capabilities:
+def media_key(keys: str) -> str | None:
+    """The shell command for a press_keys request that is one media or volume key, else None."""
+    return MEDIA_KEYS.get(str(keys or "").strip().lower().replace(" ", ""))
+
+
+def capabilities_for(tool: "Tool", settings: "Settings | None" = None, browser_visible: bool = False,
+                     args: dict | None = None) -> Capabilities:
+    """What one call can do. ``args`` lets a tool with a background route for some requests take it."""
     name = tool.name
     source = tool.source
+    args = args or {}
+    if name == "press_keys" and media_key(args.get("keys", "")) and IS_WIN:
+        return Capabilities(route="local", changes_local=True, evidence="")
+    if name == "window_action" and args.get("action") in QUIET_WINDOW_ACTIONS:
+        return Capabilities(route="app_automation", desktop="visible", changes_local=True,
+                            evidence="the window's state was read back")
     if source.startswith("mcp:"):
         external = tool.risk != "safe"
         return Capabilities(route="api_mcp", changes_external=external, evidence="the connector's response")
@@ -99,10 +122,10 @@ def capabilities_for(tool: "Tool", settings: "Settings | None" = None, browser_v
                         evidence=SELF_CHECKED.get(name, ""))
 
 
-def executor_for(tool: "Tool", settings: "Settings | None" = None) -> ToolExecutor:
-    """The router: pick the executor for a tool and declare what it can do (see ROUTE_ORDER)."""
+def executor_for(tool: "Tool", settings: "Settings | None" = None, args: dict | None = None) -> ToolExecutor:
+    """The router: pick the executor for a call and declare what it can do (see ROUTE_ORDER)."""
     from ..tools.browser import BROWSER as SESSION
     from .verify import verifier_for
 
-    caps = capabilities_for(tool, settings, browser_visible=tool.name in BROWSER and SESSION.visible)
+    caps = capabilities_for(tool, settings, browser_visible=tool.name in BROWSER and SESSION.visible, args=args)
     return ToolExecutor(tool, caps, verifier_for(tool.name, caps))

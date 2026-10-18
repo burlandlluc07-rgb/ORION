@@ -123,7 +123,7 @@ class Agent:
             return False, f"Unknown or disabled tool: {name}"
         label = tool.describe_call(args)
         step = e.tracker.add_step(task, name, label, tool.risk)
-        executor = executor_for(tool, e.config.settings)
+        executor = executor_for(tool, e.config.settings, args)
         caps = executor.capabilities()
         record = TaskRecord(id=step["id"], type=name, executor=executor.name, target=_target_of(args),
                             task_id=task.id, origin=origin, capabilities=caps.to_dict())
