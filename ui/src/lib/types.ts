@@ -137,6 +137,7 @@ export interface Settings {
   quiet_start: string;
   quiet_end: string;
   auto_memory: boolean;
+  autocorrect?: boolean;
   vault_path: string;
   memory_review_day: number;
   memory_review_hour: number;

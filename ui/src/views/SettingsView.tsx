@@ -122,6 +122,9 @@ export function SettingsView() {
             ))}
           </div>
         </Field>
+        <Field label="Auto-correct while typing" hint="Fixes common typos in the chat box when you finish a word, on the PC and the phone app. Backspace or Ctrl+Z right after a fix puts your word back. Code, links, paths and names are left alone.">
+          <Toggle on={st.autocorrect !== false} onChange={(v) => save({ autocorrect: v })} />
+        </Field>
       </section>
 
       <section className="settings-sec" id="set-brain">
