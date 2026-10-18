@@ -182,7 +182,7 @@ async def test_audio_keeps_gemini_error_and_backup_errors_explain_both(on_omniro
         await engine.brain.transcribe(b"RIFF....")
     assert provider.seen == []
     provider.replies["status"] = 429
-    with pytest.raises(BackupError, match="daily quota is used up.*rate-limited too"):
+    with pytest.raises(BackupError, match="daily quota is used up.*free plan is used up for now. Try again in a minute"):
         await engine.brain.generate_text("hi")
     assert not engine.brain.on_backup
 
@@ -252,7 +252,7 @@ async def test_too_large_request_is_trimmed_to_fit_and_sent_again(on_omniroute, 
     fitted = seen[1]["messages"]
     assert fitted[0]["role"] == "system" and fitted[-1] == {"role": "user", "content": "what's on my calendar tomorrow?"}
     names = {t["function"]["name"] for t in seen[1]["tools"]}
-    assert len(names) == len(seen[0]["tools"]) and "open_toolkit" in names  # every tool kept, only shortened
+    assert {"calendar_add_event", "open_toolkit", "web_search"} <= names and len(names) < 12  # the tools it needs
 
     # The limit is remembered: the next request is trimmed before it's sent, with no refused round trip.
     seen.clear()
@@ -271,6 +271,57 @@ async def test_still_too_large_says_so_plainly(on_omniroute, monkeypatch):
         async for _ in engine.brain.stream(contents, system=system, tools=tools):
             pass
     assert "org_" not in str(err.value) and len(seen) == 3
+
+
+async def test_groq_requests_are_lean_from_the_first_send(engine, monkeypatch):
+    """Groq's free plan is 8000 tokens a minute: a plain "hi" must cost a fraction of it, not the whole minute."""
+    engine.config.settings.backup_provider = "groq"
+    monkeypatch.setenv("ORION_BACKUP_API_KEY", "gsk_test")
+    engine.config.settings.backup_model = "openai/gpt-oss-120b"
+    gemini_out(engine, monkeypatch)
+    seen, handle = groq_limit()
+    real = httpx.AsyncClient
+    monkeypatch.setattr(backup.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handle), **kw))
+    contents, system, tools = big_history(engine)
+    full = estimate_tokens(engine.brain.backup._body(contents, system, tools, "m", stream=True))
+
+    hi = types.Content(role="user", parts=[types.Part(text="hi")])
+    out = [kv async for kv in engine.brain.stream([hi], system=system, tools=tools)]
+    assert "".join(v.text for k, v in out if k == "part") == "Fits now"
+    assert len(seen) == 1  # no refused round trip first
+    assert estimate_tokens(seen[0]) < 3500  # was about 14,500 with every tool
+    assert {t["function"]["name"] for t in seen[0]["tools"]} == {"open_toolkit", "web_search", "remember"}
+
+    # A long chat keeps only the last few turns, shortened.
+    seen.clear()
+    _ = [kv async for kv in engine.brain.stream(contents, system=system, tools=tools)]
+    assert len(seen) == 1 and estimate_tokens(seen[0]) < full / 3
+    assert sum(m["role"] == "user" and isinstance(m["content"], str) and m["content"].startswith("question")
+               for m in seen[0]["messages"]) == backup.LEAN_TURNS
+    assert seen[0]["messages"][-1] == {"role": "user", "content": "what's on my calendar tomorrow?"}
+
+
+def test_lean_picks_the_tools_a_request_needs():
+    tools = to_tools([{"name": n, "description": d} for n, d in (
+        ("set_volume", "Set the master volume to a percentage."), ("get_weather", "Weather forecast for a place."),
+        ("open_toolkit", "Load a toolkit."), ("web_search", "Search the web."), ("remember", "Save a fact."),
+        ("kill_process", "End a running program."))])
+    call = {"role": "assistant", "content": None, "tool_calls": [{"id": "c", "type": "function", "function": {
+        "name": "kill_process", "arguments": "{}"}}]}
+    body = {"messages": [{"role": "user", "content": "turn the volume down"}, call,
+                         {"role": "tool", "tool_call_id": "c", "content": "ok"}], "tools": tools, "max_tokens": 4096}
+    lean = backup.lean_body(body)
+    assert [t["function"]["name"] for t in lean["tools"]] == [
+        "set_volume", "open_toolkit", "web_search", "remember", "kill_process"]  # matched, core, already used
+    assert lean["max_tokens"] == backup.LEAN_REPLY and len(body["tools"]) == 6
+
+
+def test_rate_limit_error_says_how_long_to_wait():
+    r = httpx.Response(429, json={"error": {"message": "Rate limit reached for model on tokens per minute (TPM): "
+                                                        "Limit 8000, Used 7900, Requested 2600. Please try again in 18.2s."}})
+    assert "Try again in about 18 seconds" in str(backup.BackupBrain._error(r))
+    r = httpx.Response(429, json={"error": {"message": "tokens per day (TPD). Please try again in 12m30s."}})
+    assert "Try again in about 12 minutes" in str(backup.BackupBrain._error(r))
 
 
 def test_fit_keeps_tool_calls_with_their_results():

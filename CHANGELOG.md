@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased (3.0.1)
+### Fixed
+- **Backup brain on Groq's free plan answers instead of saying it's rate-limited.** Groq's free plan allows 8,000
+  tokens a minute, and ORION's full request (instructions plus about 75 tools) cost most of that, so a plain "hi" used
+  the whole minute and the next message was refused. On Groq ORION now sends a lean request: only the tools your
+  message looks like it needs (plus web search, remember and toolkits), the last three chat turns, and a smaller
+  reply budget. A "hi" now costs roughly a quarter of what it did. When the plan is still used up, the message says
+  how long to wait instead of "try again in a minute".
+
 ## 3.0.0
 ORION 3.0 rolls up everything since 2.7. Versions 2.8.0 and 2.9.0 were built but never published, so all of their
 changes are in this release, plus one fix that came after them. If you're on 2.7.x or older, everything below is new.
