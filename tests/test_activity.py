@@ -151,3 +151,10 @@ async def test_background_tasks_are_listed(engine, bg):  # noqa: F811
     e = entries[0]
     assert e["kind"] == "background" and e["summary"] == "count to three" and e["route_label"] == "Background agent"
     assert e["outcome"] in ("unverified", "failed")
+
+
+def test_steps_with_the_same_start_time_keep_their_order():
+    """Windows' clock can give consecutive steps the same start time: the later step still lists first."""
+    steps = [{"id": str(i), "tool": t, "label": t, "started": 5.0, "status": "done"}
+             for i, t in enumerate(["look", "change", "broken"])]
+    assert [e["tool"] for e in activity.collect([{"id": "t", "title": "x", "steps": steps}])] == ["broken", "change", "look"]

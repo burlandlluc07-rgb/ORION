@@ -153,15 +153,16 @@ def from_background(task: dict, approvals: list[dict]) -> dict:
 def collect(tasks: Iterable[dict], background: Iterable[tuple[dict, list[dict]]] = ()) -> list[dict]:
     """Every entry, newest first. ``tasks`` may repeat an id (live and saved copy): the first one wins."""
     seen: set[str] = set()
-    out: list[dict] = []
+    out: list[tuple[float, int, dict]] = []
     for t in tasks:
         if t.get("id") in seen:
             continue
         seen.add(t.get("id"))
-        out.extend(from_step(t, s) for s in t.get("steps") or [])
-    out.extend(from_background(t, a) for t, a in background)
-    out.sort(key=lambda e: e.get("at") or 0, reverse=True)
-    return out
+        out.extend((e.get("at") or 0, i, e) for i, e in enumerate(from_step(t, s) for s in t.get("steps") or []))
+    out.extend((e.get("at") or 0, 0, e) for e in (from_background(t, a) for t, a in background))
+    # Steps of one task can share a start time (Windows' clock ticks every ~15 ms): later steps still go first.
+    out.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    return [e for _, _, e in out]
 
 
 def filter_entries(entries: list[dict], *, outcome: str = "", route: str = "", q: str = "",
