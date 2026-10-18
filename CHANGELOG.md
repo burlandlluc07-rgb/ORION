@@ -1,5 +1,45 @@
 # Changelog
 
+## 2.8.0
+A new look for ORION on your PC and your phone. This release also includes everything from 2.7.0, 2.7.1 and 2.7.2,
+which were never published, so if you're coming from 2.6.0 all of it is new.
+
+### New look
+- **Closer to Claude's desktop app, still black, white and grey.** A quiet sidebar with recent chats grouped by day,
+  a centred reading column with your messages as bubbles, and a rounded composer with the Auto / Fast / Deep picker
+  inside it. The home screen puts the composer in the middle with one-click starters below.
+- **An animated logo.** The Orion constellation draws itself in and its stars twinkle. A pulse runs along it while
+  ORION thinks or works, and it breathes with your voice and ORION's while it listens or speaks. Press it to talk.
+- **Activity panel and approvals.** The side panel is a set of cards you can close in place, and on a small window it
+  opens as a drawer over the chat (Esc closes it). Approval cards are clearer and float over any page, so a step
+  waiting for you is never hidden.
+- **Settings.** A section list follows the scroll, the theme is a Light / Dark / Match Windows switch, and on a small
+  window the sections become a row of tabs. Missions use the same composer as chat (Ctrl+Enter starts one).
+- Every screen and feature is kept: chat, voice, missions, tasks, routines, Ecosystem (skills, accounts, connectors,
+  plugins, tools), memory, Safety & permissions, the phone app pairing and the Quick Bar.
+
+### Phone app
+- **Made for touch.** Bigger buttons, a bottom tab bar in thumb reach, room for the notch and home bar, quick-start
+  suggestions, a conversations sheet and in-app confirmations instead of browser pop-ups. Approval buttons no
+  longer run off the edge of the screen.
+- **Full-screen Screen tab.** View your PC full screen with pinch and double-tap zoom and drag to pan, in portrait
+  or landscape. In Click mode a tap clicks, holding right-clicks and a double tap double-clicks; the keyboard tray
+  stays one tap away. On iPhone, where Safari has no true full screen, the view fills the page instead.
+
+### Also new since 2.6.0
+- **Backup brain for when Gemini's free quota runs out.** In Settings → Brain → Backup brain, pick OmniRoute on this
+  PC, OpenRouter's free models, Groq or any OpenAI-compatible service, then press Test & save. When every Gemini
+  model is out of quota, chat, tools, missions and routines carry on there, and ORION goes back to Gemini as soon as
+  it answers again. Voice stays on Gemini. Setup and caveats: docs/backup-brain.md.
+- **Sort email by importance.** Ask "sort my unread emails by importance" and ORION ranks them high / medium / low
+  with a short reason for each. It only reads: nothing in the mailbox is flagged, moved or marked. Tell it your own
+  rules ("emails from my boss are important"), and it learns from "that one wasn't important".
+- **WhatsApp messages from your own number.** Ask ORION to WhatsApp someone. It shows the recipient and the exact
+  text and asks yes or no (a spoken yes works); after a yes it opens WhatsApp Desktop on that chat and presses Send.
+  A WhatsApp Business number through Meta's Cloud API is optional (docs/whatsapp.md).
+- **Your contacts.** Import your phone's contacts export (.vcf from Android, iPhone or Google, or a Google Contacts
+  CSV) in Accounts → WhatsApp, or keep iCloud or other CardDAV contacts in sync, then just say "WhatsApp Marc".
+
 ## Unreleased
 - **A better phone app.** The phone app is redesigned for touch: bigger buttons, a bottom tab bar in thumb reach,
   room for the notch and home bar, chat bubbles, quick-start suggestions, a conversation list, and in-app
