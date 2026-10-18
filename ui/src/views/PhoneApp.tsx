@@ -106,7 +106,7 @@ export function PhoneApp() {
         <Logo size={34} state={s.connected ? (s.voice.state === "unavailable" ? "standby" : s.voice.state) : "connecting"} />
         <div className="grow phone-head-text">
           <div className="phone-head-title ellipsis">{titles[tab]}</div>
-          <div className="phone-head-sub"><span className={`dot ${s.connected ? "ok" : "warn pulse"}`} /> {s.connected ? "ORION · connected to your PC" : "Reconnecting…"}</div>
+          <div className="phone-head-sub"><span className={`dot ${s.connected ? "ok" : "warn pulse"}`} /><span className="ellipsis">{s.connected ? "ORION · connected to your PC" : "Reconnecting…"}</span></div>
         </div>
         {tab === "chat" && <>
           <button className="head-btn" onClick={() => setHistory(true)} aria-label="Conversations"><History size={20} /></button>
