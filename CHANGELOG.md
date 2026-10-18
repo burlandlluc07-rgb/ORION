@@ -1,5 +1,38 @@
 # Changelog
 
+## 3.0.0
+ORION 3.0 rolls up everything since 2.7. Versions 2.8.0 and 2.9.0 were built but never published, so all of their
+changes are in this release, plus one fix that came after them. If you're on 2.7.x or older, everything below is new.
+
+### Fixed since 2.9.0
+- **Backup brain no longer fails on big requests.** On small free plans (like Groq's 8000 tokens a minute) ORION's
+  full instructions, tools and chat history could be too big, and the provider refused the request. ORION now reads
+  the limit from the error, shrinks the request and tries again: less room for the reply, long tool results cut
+  short, shorter tool descriptions, older chat turns dropped (your current message stays whole), a shorter prompt,
+  and fewer tools only as a last resort. It remembers the limit so later requests fit first time, waits briefly when
+  told to try again in a few seconds, and if something still can't fit you get a plain sentence instead of a raw error.
+
+### New since 2.7
+- **A new look** closer to Claude's desktop app, still black, white and grey, with an animated Orion logo, an
+  activity panel, clearer approval cards and reorganised Settings.
+- **Title bar in ORION's colours**, dark grey in dark mode and light grey in light mode. The Windows buttons, Snap
+  and resizing work as normal.
+- **A phone app made for touch**, with a full-screen Screen tab (pinch to zoom, tap to click).
+- **Backup brain** for when Gemini's free quota runs out (OmniRoute, OpenRouter, Groq or any OpenAI-compatible
+  service). Setup: docs/backup-brain.md.
+- **Auto-correct while typing** on the PC and the phone, with Undo, and it never touches links, paths, code, names or
+  commands. Turn it off in Settings → Personal.
+- **Answer approvals with yes or no**, typed or spoken, on the PC or the phone, instead of tapping Allow or Deny.
+  A yes approves that one step only. Toggle in Settings → Safety & permissions.
+- **What ORION did**, a screen listing every action ORION took, how it ran, who approved it and the proof it worked
+  or the error. Also in the phone app's Activity tab.
+- **More work without taking your screen.** Minimizing, restoring and closing windows, volume and media keys, and
+  filling classic text boxes now happen in the background. The real mouse is still the last resort and still asks.
+
+### Already in 2.7.x (for reference)
+- Sort email by importance (read-only, learns from your corrections), WhatsApp messages from your own number after
+  your yes, and contacts imported from your phone's export or synced over CardDAV.
+
 ## 2.9.0
 Five new things since 2.8.0. 2.8.0 was never published, so everything in it is in this release too (summary at the end).
 
