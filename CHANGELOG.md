@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased (3.0.1)
+## 3.0.1
+Two fixes for running out of free AI quota, on top of 3.0.0.
+
 ### New
 - **More free answers a day with Gemma.** When every free Flash model has used up its daily quota, ORION now
   keeps going on Google's free Gemma 4 models with the same key, before it switches to the backup brain. Gemma has
