@@ -253,6 +253,80 @@ def fit_body(body: dict, limit: int) -> dict:
     return body
 
 
+# ── Lean requests for small per-minute plans ──────────────────────────────
+# A full ORION request (system prompt, ~75 tools, history) is about 6,000 of Groq's tokens before the reply
+# budget, so on Groq's free plan (8,000 tokens a minute, prompt + max_tokens counted) a plain "hi" used the
+# whole minute and the next message was rate-limited. On such plans every request is sent lean: the tools
+# this request looks like it needs, in short form, the last few turns and a smaller reply budget.
+SMALL_PLANS = {"api.groq.com": 8000}  # host → tokens a minute on the free plan
+LEAN_TOOLS = 8  # tools picked by relevance, on top of the core ones
+LEAN_CORE = ("open_toolkit", "web_search", "remember")
+LEAN_TURNS = 3  # earlier turns kept before the current request
+LEAN_REPLY = 1500
+_STOP = {"this", "that", "with", "what", "from", "your", "have", "about", "when", "there", "their", "please",
+         "could", "would", "should", "them", "they", "then", "than", "into", "some", "will", "just", "like",
+         "user", "tool", "tools", "only", "also", "more"}
+
+
+def small_plan(base_url: str) -> int:
+    """Tokens a minute of a provider known to have a small free plan, else 0."""
+    return SMALL_PLANS.get((urlparse(base_url).hostname or "").lower(), 0)
+
+
+def _keys(text: str) -> set[str]:
+    return {w[:6] for w in re.findall(r"[a-z]{4,}", text.lower()) if w not in _STOP}
+
+
+def pick_tools(tools: list[dict], msgs: list[dict], keep: int = LEAN_TOOLS) -> list[dict]:
+    """The tools a request looks like it needs: the core ones, any it already called, and the ``keep`` best
+    matches between the current request's words and each tool's name and description."""
+    start = max((i for i, m in enumerate(msgs) if m["role"] == "user"), default=0)
+    current = msgs[start:]
+    words = _keys(" ".join(m["content"] for m in current if m["role"] == "user" and isinstance(m.get("content"), str)))
+    used = {c["function"]["name"] for m in current for c in m.get("tool_calls") or []}
+
+    def score(t: dict) -> int:
+        fn = t["function"]
+        name = _keys(fn["name"].replace("_", " "))
+        desc = _keys(_first_sentence(fn.get("description") or ""))
+        return 3 * len(words & name) + len(words & desc)
+
+    ranked = sorted((t for t in tools if score(t) > 0), key=score, reverse=True)
+    wanted = {t["function"]["name"] for t in ranked[:keep]} | used | set(LEAN_CORE)
+    return [t for t in tools if t["function"]["name"] in wanted]
+
+
+def lean_body(body: dict) -> dict:
+    """A copy of a Chat Completions body cut down for a provider with a small per-minute plan."""
+    body = copy.deepcopy(body)
+    body["max_tokens"] = min(int(body.get("max_tokens") or LEAN_REPLY), LEAN_REPLY)
+    msgs: list[dict] = body["messages"]
+    system = msgs[:1] if msgs and msgs[0]["role"] == "system" else []
+    rest = msgs[len(system):]
+    users = [i for i, m in enumerate(rest) if m["role"] == "user"]
+    if len(users) > LEAN_TURNS + 1:
+        rest = rest[users[-(LEAN_TURNS + 1)]:]  # whole turns only, so no tool result loses its call
+    start = max((i for i, m in enumerate(rest) if m["role"] == "user"), default=0)
+    for m in rest[:start]:
+        if isinstance(m.get("content"), str):
+            m["content"] = _cut(m["content"], 1000)
+    body["messages"] = system + rest
+    if body.get("tools"):
+        tools = pick_tools(body["tools"], rest)
+        for t in tools:
+            fn = t["function"]
+            fn["description"] = _first_sentence(fn.get("description") or "", 300 if fn["name"] == "open_toolkit" else 160)
+            fn["parameters"] = _slim_schema(fn.get("parameters") or {})
+        body["tools"] = tools
+    return body
+
+
+def _wait_words(secs: float) -> str:
+    if secs < 90:
+        return f"about {max(1, round(secs))} seconds"
+    return f"about {round(secs / 60)} minutes"
+
+
 def _retry_after(resp: httpx.Response, msg: str) -> float | None:
     """Seconds a rate-limited provider asks us to wait, when it says."""
     try:
@@ -337,7 +411,9 @@ class BackupBrain:
         if resp.status_code in (401, 403):
             return BackupError("The backup brain rejected the key. Check it in Settings → Brain → Backup brain.")
         if resp.status_code == 429:
-            return BackupError("The backup brain is rate-limited too. Try again in a minute.")
+            wait = _retry_after(resp, msg)
+            when = _wait_words(wait) if wait else "a minute"
+            return BackupError(f"The backup brain's free plan is used up for now. Try again in {when}.")
         return BackupError(f"Backup brain error {resp.status_code}: {str(msg or '')[:200]}")
 
     @classmethod
@@ -367,8 +443,13 @@ class BackupBrain:
         return body
 
     def _fitted(self, body: dict, base: str, model: str) -> dict:
-        limit = self._limits.get((base, model))
-        return fit_body(body, limit) if limit and estimate_tokens(body) > limit * 0.9 else body
+        """The body to send: lean on a small plan (or once the provider said a request was too big), and
+        trimmed to the provider's limit when it's still over."""
+        limit = self._limits.get((base, model)) or small_plan(base)
+        if not limit:
+            return body
+        body = lean_body(body)
+        return fit_body(body, limit) if estimate_tokens(body) > limit * 0.9 else body
 
     async def _should_retry(self, resp: httpx.Response, body: dict, base: str, model: str, attempt: int) -> bool:
         """After a refused request: learn the provider's size limit (the next send is trimmed to it), or wait
