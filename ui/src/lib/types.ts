@@ -120,6 +120,7 @@ export interface Settings {
   backup_model: string;
   approval_mode: "ask" | "auto_safe" | "trust";
   desktop_actions: "ask" | "allow";
+  voice_approvals: boolean;
   browser_mode: "background" | "visible";
   allowed_roots: string[];
   voice: VoiceSettings;

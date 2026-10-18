@@ -319,6 +319,11 @@ class Agent:
                                                           "attachments": [a.get("name") for a in attachments]})
         e.bus.emit("message", message=user_msg)
 
+        if e.config.settings.voice_approvals and not attachments and e.approvals.pending:
+            answered = e.approvals.answer_from_text(text, cid, e.tracker.active)
+            if answered is not None:
+                return self._approval_answer(cid, answered, source)
+
         skill_body, skill_tier = None, None
         m = re.match(r"^/([a-z0-9-]+)\s*(.*)$", text, re.S)
         if m and e.skills.get(m.group(1)):
@@ -340,6 +345,20 @@ class Agent:
         finally:
             if task.id in e.tracker.active:
                 e.tracker.finish(task, "stopped" if task.cancel.is_set() else "done")
+
+    def _approval_answer(self, cid: str, answered: dict, source: str) -> dict:
+        """A plain yes/no answered a waiting approval: say so in one line instead of asking the model."""
+        if "ambiguous" in answered:
+            reply = (f"{answered['ambiguous']} actions are waiting for your OK, so I didn't pick one. "
+                     "Tap Allow or Deny on the one you mean.")
+        elif answered["approved"]:
+            reply = "Okay, going ahead."
+        else:
+            reply = "Okay, I won't do that."
+        meta = {"model": "local", "approval_id": answered.get("id"), "source": source}
+        msg = self.e.store.add_message(cid, "assistant", reply, meta)
+        self.e.bus.emit("message", message=msg)
+        return {"ok": True, "conv_id": cid, "reply": reply, "model": "local", "approval": answered}
 
     async def _fast_path(self, text: str, cid: str, task: Task, source: str) -> dict | None:
         route = router.match(text)

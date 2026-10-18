@@ -105,6 +105,9 @@ class Settings(BaseModel):
     # "ask" = ask every time | "allow" = don't ask (default since 2.6). Your own instant commands and phone buttons
     # never ask.
     desktop_actions: str = "allow"
+    # Answer a waiting approval by typing or saying a plain "yes" or "no" (desktop, phone and voice), as well
+    # as with the buttons. Unclear answers never count: the approval keeps waiting.
+    voice_approvals: bool = True
     # The background agent: a task queue that works on files in its own folders, shell commands with no
     # window and web search, never the desktop. Its tasks wait for your OK on risky steps and survive restarts.
     background_agent: bool = True
