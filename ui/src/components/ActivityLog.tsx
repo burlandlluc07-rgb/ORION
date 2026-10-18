@@ -100,12 +100,12 @@ export function ActivityLog({ compact }: { compact?: boolean }) {
   const seq = useRef(0);
   const olderMore = useRef(false);
 
-  const query = (before?: number) => {
+  const query = (after?: string) => {
     const p = new URLSearchParams({ limit: compact ? "40" : "80" });
     if (outcome) p.set("outcome", outcome);
     if (route) p.set("route", route);
     if (q.trim()) p.set("q", q.trim());
-    if (before) p.set("before", String(before));
+    if (after) p.set("after", after);
     return api.get<ActivityPage>(`/api/activity?${p}`);
   };
 
@@ -124,7 +124,7 @@ export function ActivityLog({ compact }: { compact?: boolean }) {
   const loadOlder = () => {
     const last = entries[entries.length - 1];
     if (!last) return;
-    query(last.at).then((r) => { olderMore.current = r.more; setOlder((o) => [...o, ...r.entries]); }).catch(() => {});
+    query(last.id).then((r) => { olderMore.current = r.more; setOlder((o) => [...o, ...r.entries]); }).catch(() => {});
   };
 
   return (

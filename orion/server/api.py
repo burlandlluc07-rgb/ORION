@@ -315,13 +315,13 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
         return {"active": active, "history": engine.store.list_tasks(60)}
 
     @app.get("/api/activity", dependencies=[A])
-    async def activity(outcome: str = "", route: str = "", q: str = "", before: float | None = None,
+    async def activity(outcome: str = "", route: str = "", q: str = "", after: str = "",
                        limit: int = 100):
         """What ORION did: every action, newest first, from the task and background-agent records."""
         tasks = [t.to_dict() for t in engine.tracker.active.values()] + engine.store.list_tasks(ACTIVITY_TASKS)
         bg = engine.background.history(ACTIVITY_TASKS) if engine.background.running else []
         return activity_log.filter_entries(activity_log.collect(tasks, bg), outcome=outcome, route=route, q=q[:100],
-                                           before=before, limit=max(1, min(limit, 300)))
+                                           after=after[:40], limit=max(1, min(limit, 300)))
 
     # ── Routines ───────────────────────────────────────────────────────────
     def _routine_view(r: dict) -> dict:

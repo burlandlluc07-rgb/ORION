@@ -166,15 +166,19 @@ def collect(tasks: Iterable[dict], background: Iterable[tuple[dict, list[dict]]]
 
 
 def filter_entries(entries: list[dict], *, outcome: str = "", route: str = "", q: str = "",
-                   before: float | None = None, limit: int = 100) -> dict[str, Any]:
-    """``outcome`` is a group from GROUPS or a single outcome; ``q`` matches summary, tool and task title."""
+                   after: str = "", limit: int = 100) -> dict[str, Any]:
+    """``outcome`` is a group from GROUPS or a single outcome; ``q`` matches summary, tool and task title.
+    ``after`` is the id of the last entry already shown: the page starts with the one after it (ids, not
+    times, so entries that share a start time are never skipped)."""
     want = GROUPS.get(outcome, {outcome}) if outcome else None
     needle = q.strip().lower()
     rows = [e for e in entries
             if (want is None or e["outcome"] in want)
             and (not route or e["route"] == route)
-            and (before is None or (e.get("at") or 0) < before)
             and (not needle or needle in f"{e['summary']} {e['tool']} {e['task']}".lower())]
+    if after:
+        idx = next((i for i, e in enumerate(rows) if e["id"] == after), None)
+        rows = rows[idx + 1:] if idx is not None else []
     page = rows[:limit]
     counts = {g: sum(1 for e in entries if e["outcome"] in outs) for g, outs in GROUPS.items()}
     routes = sorted({e["route"] for e in entries if e["route"]})

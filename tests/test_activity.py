@@ -93,7 +93,7 @@ async def test_every_step_is_listed_newest_first_with_route_approval_and_evidenc
     assert [e["tool"] for e in client.get("/api/activity?q=change", headers=headers()).json()["entries"]] == ["change"]
     page = client.get("/api/activity?limit=1", headers=headers()).json()
     assert len(page["entries"]) == 1 and page["more"] is True
-    older = client.get(f"/api/activity?limit=5&before={page['entries'][0]['at']}", headers=headers()).json()
+    older = client.get(f"/api/activity?limit=5&after={page['entries'][0]['id']}", headers=headers()).json()
     assert [e["tool"] for e in older["entries"]] == ["change", "look"]
 
 
@@ -158,3 +158,7 @@ def test_steps_with_the_same_start_time_keep_their_order():
     steps = [{"id": str(i), "tool": t, "label": t, "started": 5.0, "status": "done"}
              for i, t in enumerate(["look", "change", "broken"])]
     assert [e["tool"] for e in activity.collect([{"id": "t", "title": "x", "steps": steps}])] == ["broken", "change", "look"]
+    entries = activity.collect([{"id": "t", "title": "x", "steps": steps}])
+    first = activity.filter_entries(entries, limit=1)
+    rest = activity.filter_entries(entries, after=first["entries"][0]["id"])
+    assert [e["tool"] for e in rest["entries"]] == ["change", "look"]  # paging never skips a tie
