@@ -4,7 +4,7 @@ import type {
   Approval, Conversation, EngineState, Message, QuotaRow, Settings, Task, Vitals, VoiceStatus,
 } from "./types";
 
-export type View = "chat" | "missions" | "tasks" | "routines" | "ecosystem" | "memory" | "settings";
+export type View = "chat" | "missions" | "tasks" | "activity" | "routines" | "ecosystem" | "memory" | "settings";
 
 export interface Toast {
   id: number;

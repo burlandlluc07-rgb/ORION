@@ -4,6 +4,7 @@ import {
   Smartphone, Volume2, VolumeX, X, Zap, ZoomIn,
 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityLog } from "../components/ActivityLog";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { Composer } from "../components/Composer";
 import { Logo } from "../components/Logo";
@@ -735,6 +736,10 @@ function ActivityTab() {
             ))}
           </div>
         )}
+      </section>
+      <section>
+        <div className="ctl-title">What ORION did</div>
+        <ActivityLog compact />
       </section>
       <section className="ctl-card">
         <div className="ctl-title"><Smartphone size={13} /> This phone</div>

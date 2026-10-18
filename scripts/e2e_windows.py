@@ -299,6 +299,21 @@ def background_agent_check(o: "Orion") -> None:
            f"{(task.get('result') or task.get('error') or '')[:200]}")
 
 
+def activity_check(o: "Orion") -> None:
+    """The "What ORION did" log lists the actions just taken, newest first, with route, approval and evidence."""
+    a = o.c.get("/api/activity?limit=300").json()
+    entries = a.get("entries", [])
+    ats = [e["at"] for e in entries]
+    note = next((e for e in entries if e["tool"] == "open_app"), None)
+    problems = o.c.get("/api/activity?outcome=problem").json().get("entries", [])
+    ok = (len(entries) >= 3 and ats == sorted(ats, reverse=True) and note is not None and bool(note["route"])
+          and bool(note["approved_by"]) and all(e["outcome"] in ("failed", "attention") for e in problems))
+    record("activity log: every action listed with route, approval and evidence", ok,
+           f"{a.get('total')} actions, counts={a.get('counts')}; open_app: "
+           + (f"{note['outcome']} via {note['route_label']}, {note['approved_by']}, evidence={note['evidence'][:2]}"
+              if note else "missing"))
+
+
 def main() -> int:
     HOME.mkdir(parents=True, exist_ok=True)
     settings = {"user_name": "Lluc", "onboarded": True, "voice": {"mode": "classic"}}
@@ -422,6 +437,12 @@ def main() -> int:
     except Exception as exc:
         record("toolkit checks", False, repr(exc))
         o.window("maximize")
+
+    # ── What ORION did (activity log) ──────────────────────────────────────
+    try:
+        activity_check(o)
+    except Exception as exc:
+        record("activity log", False, repr(exc))
 
     # ── Gemini scenarios ───────────────────────────────────────────────────
     if HAS_KEY:

@@ -24,6 +24,7 @@ from ..brain.backup import PRESETS, BackupBrain, BackupError, pick_default_model
 from ..brain.gemini import GeminiBrain
 from ..ecosystem.connectors import CATALOG
 from ..engine import Engine
+from ..tasks import activity as activity_log
 from ..tasks.schedule import ScheduleError, describe, next_run
 from ..tools.platform import open_target
 from ..tools.registry import ToolError
@@ -39,6 +40,7 @@ REMOTE_CONTROLS = {
     "mouse_click", "scroll", "press_keys", "type_text", "system_status", "open_website", "play_youtube", "play_spotify",
     "home_control", "home_scene",
 }
+ACTIVITY_TASKS = 500  # how far back the activity log reads (tasks, each with its steps)
 MAX_ATTACH = 15 * 1024 * 1024
 TEXT_EXT = {".txt", ".md", ".py", ".js", ".ts", ".json", ".csv", ".html", ".css", ".xml", ".yaml", ".yml", ".log",
             ".ini", ".toml", ".java", ".c", ".cpp", ".cs", ".go", ".rs", ".sql", ".sh", ".ps1", ".bat"}
@@ -311,6 +313,15 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
     async def tasks():
         active = [t.to_dict() for t in engine.tracker.active.values()]
         return {"active": active, "history": engine.store.list_tasks(60)}
+
+    @app.get("/api/activity", dependencies=[A])
+    async def activity(outcome: str = "", route: str = "", q: str = "", before: float | None = None,
+                       limit: int = 100):
+        """What ORION did: every action, newest first, from the task and background-agent records."""
+        tasks = [t.to_dict() for t in engine.tracker.active.values()] + engine.store.list_tasks(ACTIVITY_TASKS)
+        bg = engine.background.history(ACTIVITY_TASKS) if engine.background.running else []
+        return activity_log.filter_entries(activity_log.collect(tasks, bg), outcome=outcome, route=route, q=q[:100],
+                                           before=before, limit=max(1, min(limit, 300)))
 
     # ── Routines ───────────────────────────────────────────────────────────
     def _routine_view(r: dict) -> dict:
