@@ -34,6 +34,8 @@ results: list[tuple[str, bool, str]] = []
 def report(name: str, ok: bool, detail: str) -> None:
     results.append((name, ok, detail))
     print(f"{'PASS' if ok else 'FAIL'}  {name}: {detail}", flush=True)
+    if not ok and os.environ.get("GITHUB_ACTIONS"):  # an annotation shows the failure on the check run itself
+        print(f"::error title=live check: {name}::{detail.replace(chr(10), ' ')}", flush=True)
 
 
 def skip(name: str, detail: str) -> None:
