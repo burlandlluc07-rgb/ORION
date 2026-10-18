@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+- **Backup brain for when Gemini's free quota runs out.** In Settings → Brain → Backup brain, pick OmniRoute on
+  this PC, OpenRouter's free models, Groq or any OpenAI-compatible service, then press Test & save. When every
+  Gemini model is out of quota or rate-limited, chat, tools, missions and routines carry on there, and ORION goes
+  back to Gemini as soon as it answers again. A toast says when it switches. Voice and audio stay on Gemini. The
+  key is kept in Windows Credential Manager. Setup and caveats: docs/backup-brain.md.
+
 ## 2.7.1
 - **Import your WhatsApp contacts.** In Accounts → WhatsApp, import your phone's contacts export (.vcf from
   Android, iPhone/iCloud or Google, or a Google Contacts CSV) instead of typing numbers. Ask by first name:

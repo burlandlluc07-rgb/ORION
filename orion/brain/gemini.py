@@ -12,6 +12,7 @@ from google.genai import errors, types
 
 from ..config import Config
 from ..events import EventBus
+from .backup import BackupBrain, BackupError, NeedsGemini
 from .governor import Governor, QuotaExhausted
 
 log = logging.getLogger("orion.gemini")
@@ -28,7 +29,7 @@ class NotConfigured(BrainError):
 
 
 def friendly_error(exc: BaseException) -> str:
-    if isinstance(exc, QuotaExhausted):
+    if isinstance(exc, (QuotaExhausted, BackupError)):
         return str(exc)
     if isinstance(exc, errors.APIError):
         code = getattr(exc, "code", None)
@@ -55,6 +56,8 @@ class GeminiBrain:
         self._client: genai.Client | None = None
         self._client_key = ""
         self.live_model: str | None = None
+        self.backup = BackupBrain(config)
+        self.on_backup = False  # the last request was answered by the backup brain
 
     # ── Client ─────────────────────────────────────────────────────────────
     @property
@@ -122,15 +125,66 @@ class GeminiBrain:
             cfg["thinking_config"] = types.ThinkingConfig(thinking_budget=budget)
         return types.GenerateContentConfig(**cfg)
 
+    # ── Backup brain ───────────────────────────────────────────────────────
+    def _use_backup(self, exc: BaseException) -> bool:
+        """Gemini can't answer right now (quota used up, rate-limited, overloaded or no key) and a backup is set."""
+        if not self.backup.ready():
+            return False
+        if isinstance(exc, (QuotaExhausted, NotConfigured)):
+            return True
+        return isinstance(exc, errors.APIError) and exc.code in RETRYABLE
+
+    def _switched(self, exc: BaseException) -> None:
+        if not self.on_backup:
+            log.warning("Gemini unavailable (%s); answering with the backup brain", type(exc).__name__)
+            self.bus.emit("brain.backup", active=True, reason=friendly_error(exc))
+        self.on_backup = True
+
+    def _back_on_gemini(self) -> None:
+        if self.on_backup:
+            log.info("Gemini has quota again; backup brain off")
+            self.bus.emit("brain.backup", active=False)
+        self.on_backup = False
+
     async def stream(
         self, contents: list[types.Content], *, system: str | None = None, tools: list[dict] | None = None,
         tier: str = "fast", patient: bool = False,
     ) -> AsyncIterator[tuple[str, Any]]:
         """Yield ("model", name) first, then ("part", Part) for every part, then ("usage", n).
 
-        Falls back to the next model in the tier chain if a request fails before
-        anything was yielded.
+        Falls back to the next Gemini model, and then to the backup brain, if a request
+        fails before any part was yielded.
         """
+        parts = 0
+        try:
+            async for kind, val in self._gemini_stream(contents, system=system, tools=tools, tier=tier,
+                                                       patient=patient):
+                parts += kind == "part"
+                yield kind, val
+            self._back_on_gemini()
+            return
+        except Exception as exc:
+            if parts or not self._use_backup(exc):
+                raise
+            gemini_exc = exc
+        try:
+            first = True
+            async for kind, val in self.backup.stream(contents, system=system, tools=tools):
+                if first:
+                    self._switched(gemini_exc)
+                    first = False
+                yield kind, val
+        except NeedsGemini:
+            raise gemini_exc from None  # e.g. audio: the backup can't help, so report Gemini's own problem
+        except BackupError as exc:
+            raise BackupError(f"{friendly_error(gemini_exc)} The backup brain didn't answer either: {exc}") from exc
+
+    async def _gemini_stream(
+        self, contents: list[types.Content], *, system: str | None = None, tools: list[dict] | None = None,
+        tier: str = "fast", patient: bool = False,
+    ) -> AsyncIterator[tuple[str, Any]]:
+        """Gemini only: falls back to the next model in the tier chain if a request fails before
+        anything was yielded."""
         tried: set[str] = set()
         last_exc: BaseException | None = None
         for _ in range(6):
@@ -176,8 +230,27 @@ class GeminiBrain:
     async def generate_text(self, prompt: str | list, *, system: str | None = None, tier: str = "fast",
                             json_mode: bool = False, patient: bool = False) -> str:
         """One-shot request with the same resilience as streaming: on overload (503), rate limits or
-        server errors it retries once and then falls back to the other model in the tier chain."""
+        server errors it retries once and then falls back to the other model in the tier chain, and
+        finally to the backup brain when one is set up."""
         contents = prompt if isinstance(prompt, list) else [types.Content(role="user", parts=[types.Part(text=prompt)])]
+        try:
+            out = await self._gemini_text(contents, system=system, tier=tier, json_mode=json_mode, patient=patient)
+        except Exception as exc:
+            if not self._use_backup(exc):
+                raise
+            try:
+                out = await self.backup.generate_text(contents, system=system, json_mode=json_mode)
+            except NeedsGemini:
+                raise exc from None
+            except BackupError as bexc:
+                raise BackupError(f"{friendly_error(exc)} The backup brain didn't answer either: {bexc}") from bexc
+            self._switched(exc)
+            return out
+        self._back_on_gemini()
+        return out
+
+    async def _gemini_text(self, contents: list[types.Content], *, system: str | None, tier: str,
+                           json_mode: bool, patient: bool) -> str:
         extra = {"response_mime_type": "application/json"} if json_mode else {}
         tried: set[str] = set()
         last_exc: BaseException | None = None

@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .. import __version__
+from ..brain.backup import PRESETS, BackupBrain, BackupError, pick_default_model
 from ..brain.gemini import GeminiBrain
 from ..ecosystem.connectors import CATALOG
 from ..engine import Engine
@@ -103,6 +104,54 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
         if engine.voice and engine.voice.state in ("error", "off"):
             spawn(engine.voice.restart())
         return {"ok": True, "stored_in": where, "models": len(models)}
+
+    # ── Backup brain (used only while Gemini's free quota is out) ──────────
+    @app.get("/api/backup", dependencies=[X])
+    async def backup_info():
+        presets = {k: {"label": p.label, "base_url": p.base_url, "model": p.model, "key_url": p.key_url,
+                       "needs_key": p.needs_key} for k, p in PRESETS.items()}
+        return {**engine.brain.backup.status(), "active": engine.brain.on_backup, "presets": presets}
+
+    @app.post("/api/backup", dependencies=[X])
+    async def backup_setup(body: dict = Body(...)):
+        """Turn the backup brain off, or test a provider with one tiny request and save it if it answers."""
+        provider = str(body.get("provider", "off"))
+        if provider == "off":
+            engine.apply_settings({"backup_provider": "off"})
+            if body.get("forget_key"):
+                engine.config.set_backup_key("")
+            return {"ok": True, **engine.brain.backup.status()}
+        preset = PRESETS.get(provider)
+        if preset is None:
+            raise HTTPException(400, "Unknown backup provider.")
+        base = str(body.get("base_url") or preset.base_url).strip().rstrip("/")
+        if not base.startswith(("http://", "https://")):
+            raise HTTPException(400, "The address must start with http:// or https://")
+        new_key = str(body.get("key") or "").strip()
+        key = new_key or engine.config.get_backup_key()
+        if preset.needs_key and not key:
+            raise HTTPException(400, f"{preset.label} needs an API key.")
+        model = str(body.get("model") or "").strip() or preset.model
+        try:
+            models = await BackupBrain.list_models(base, key)
+        except BackupError as exc:
+            if not model:  # the list is only needed to pick a model; the test request below is what counts
+                return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+            models = []  # e.g. OmniRoute asks for a key on /models even when chat needs none
+        if not model:
+            model = pick_default_model(provider, models)
+        if not model:
+            return JSONResponse({"ok": False, "error": "Couldn't find a model to use. Type one in."}, status_code=400)
+        probe = BackupBrain(engine.config, endpoint=(base, model, key))  # test before anything is saved
+        try:
+            reply = await probe.generate_text("Reply with exactly: OK")
+        except BackupError as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        where = engine.config.set_backup_key(new_key) if new_key else None
+        engine.apply_settings({"backup_provider": provider, "backup_base_url": "" if base == preset.base_url else base,
+                               "backup_model": "" if model == preset.model else model})
+        return {"ok": True, "model": model, "reply": reply.strip()[:40], "stored_in": where,
+                "models": models[:300], **engine.brain.backup.status()}
 
     @app.patch("/api/settings", dependencies=[X])
     async def patch_settings(patch: dict = Body(...)):

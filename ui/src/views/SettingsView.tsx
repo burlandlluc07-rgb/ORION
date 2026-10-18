@@ -1,5 +1,6 @@
 import { Zap, Brain, FolderOpen, Info, KeyRound, Keyboard, Mic, Monitor, RefreshCw, ShieldCheck, Smartphone, Stethoscope, CheckCircle2, XCircle, MinusCircle, Loader2, Trash2, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
+import { BackupBrain } from "../components/BackupBrain";
 import { Field, Modal, Toggle } from "../components/ui";
 import { api } from "../lib/api";
 import { useStore } from "../lib/store";
@@ -115,6 +116,7 @@ export function SettingsView() {
             })}
           </div>
         </Field>
+        <BackupBrain />
       </section>
 
       <section className="settings-sec">

@@ -27,4 +27,8 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # Optional: when Gemini's free quota is used up, the checks fall back to the backup brain.
+          ORION_BACKUP_API_KEY: ${{ secrets.ORION_BACKUP_API_KEY }}
+          ORION_BACKUP_PROVIDER: ${{ vars.ORION_BACKUP_PROVIDER }}
+          ORION_BACKUP_MODEL: ${{ vars.ORION_BACKUP_MODEL }}
         run: python scripts/live_check.py
