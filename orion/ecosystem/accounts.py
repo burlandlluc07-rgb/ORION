@@ -62,6 +62,33 @@ PRESETS: dict[str, dict] = {
                "help": "Use your provider's IMAP and SMTP settings."},
 }
 KEYRING_SERVICE = "ORION"
+
+# A Windows path such as C:\new\reports or \\server\team — its backslashes are real, never escapes.
+_WIN_PATH = re.compile(r"(?:\b[A-Za-z]:|\\\\)[^\s\"'<>|]*")
+_ESCAPES = re.compile(r"\\(?:r\\n|n|r|t)")
+_ESCAPE_TEXT = {"\\r\\n": "\n", "\\n": "\n", "\\r": "\n", "\\t": "\t"}
+
+
+def _unescape_text(text: str, single_line: bool = False) -> str:
+    """Turn literal \\n / \\r\\n / \\t typed by the model into real line breaks and tabs.
+
+    Some models (often the free fallbacks) double-escape tool arguments, so a body arrives as
+    "Sir,\\n\\nThanks" and mail apps show the backslashes. Only text without any real line break is
+    touched, since that's how the mistake looks; Windows paths keep their backslashes either way.
+    With single_line (subjects) the escapes become spaces.
+    """
+    if not text or "\n" in text or not _ESCAPES.search(text):
+        return text
+    out, last = [], 0
+    for m in _WIN_PATH.finditer(text):
+        out.append(_ESCAPES.sub(lambda e: _ESCAPE_TEXT[e.group()], text[last:m.start()]))
+        out.append(m.group())
+        last = m.end()
+    out.append(_ESCAPES.sub(lambda e: _ESCAPE_TEXT[e.group()], text[last:]))
+    fixed = "".join(out)
+    return re.sub(r"\s+", " ", fixed).strip() if single_line else fixed
+
+
 SPECIAL = {"\\archive", "\\trash", "\\junk", "\\sent", "\\all", "\\drafts", "\\flagged"}
 
 
@@ -406,7 +433,7 @@ class Accounts:
         msg["To"] = to
         if cc:
             msg["Cc"] = cc
-        msg["Subject"] = subject
+        msg["Subject"] = _unescape_text(subject, single_line=True)
         msg["Date"] = email.utils.formatdate(localtime=True)
         msg["Message-ID"] = email.utils.make_msgid()
         return msg
@@ -443,7 +470,7 @@ class Accounts:
         if reply_to_id and orig.get("Message-ID"):
             msg["In-Reply-To"] = orig["Message-ID"]
             msg["References"] = " ".join(x for x in (orig.get("References", ""), orig["Message-ID"]) if x).strip()
-        msg.set_content(body)
+        msg.set_content(_unescape_text(body))
         self._attach(msg, attachments or [])
         self._smtp_send(msg)
         extra_note = f" with {len(attachments)} attachment(s)" if attachments else ""
@@ -466,7 +493,7 @@ class Accounts:
             f"From: {_decode(orig.get('From'))}", f"Date: {orig.get('Date', '')}",
             f"Subject: {subject}", f"To: {_decode(orig.get('To'))}",
         ])
-        msg.set_content(f"{note.strip()}\n\n{header}\n\n{_body_text(orig, 100_000)}".lstrip())
+        msg.set_content(f"{_unescape_text(note).strip()}\n\n{header}\n\n{_body_text(orig, 100_000)}".lstrip())
         for part in orig.walk():
             if part.get_filename():
                 data = part.get_payload(decode=True) or b""

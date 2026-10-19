@@ -191,3 +191,26 @@ def test_folders_and_contacts(mail):
     people = acc.email_find_contact("sarah")
     assert people[0]["email"] == "sarah@acme.com" and people[0]["name"] == "Sarah Lane" and people[0]["emails"] >= 2
     assert "No one" in acc.email_find_contact("zzz")
+
+
+def test_literal_newline_escapes_become_line_breaks(mail):
+    acc, _, state = mail
+    acc.email_send("bob@x.com", "Update\\nfrom ORION", "Sir,\\n\\nIt works in C:\\new\\tools now.\\r\\nBest regards,\\nLluc")
+    msg = state["sent"][-1]
+    assert msg["Subject"] == "Update from ORION"
+    assert msg.get_content().rstrip("\n") == "Sir,\n\nIt works in C:\\new\\tools now.\nBest regards,\nLluc"
+
+
+def test_real_newlines_and_paths_are_left_alone(mail):
+    acc, _, state = mail
+    body = "Hi,\nThe file is at C:\\new\\temp and the regex is a\\nb.\nThanks"
+    acc.email_send("bob@x.com", "x", body)
+    assert state["sent"][-1].get_content().rstrip("\n") == body
+    acc.email_send("bob@x.com", "x", "Saved to \\\\server\\team\\new.txt")
+    assert state["sent"][-1].get_content().rstrip("\n") == "Saved to \\\\server\\team\\new.txt"
+
+
+def test_forward_note_escapes_become_line_breaks(mail):
+    acc, _, state = mail
+    acc.email_forward("1", "boss@acme.com", note="FYI\\n\\nSee below")
+    assert state["sent"][-1].get_body(("plain",)).get_content().startswith("FYI\n\nSee below\n\n")
