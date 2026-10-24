@@ -55,6 +55,8 @@ dependencies = [
 [project.optional-dependencies]
 wakeword = ["openwakeword>=0.6"]
 docs = []  # kept for older install commands; documents support is now built in
+# Rebuilds the Memory → View brain map (scripts/build_brain_map.py); the app itself never needs it.
+brainmap = ["graphifyy>=0.9.92", "scipy"]
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "pyinstaller>=6.5", "ruff>=0.5"]
 
 [project.scripts]

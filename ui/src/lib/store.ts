@@ -4,7 +4,7 @@ import type {
   Approval, Conversation, EngineState, Message, QuotaRow, Settings, Task, Vitals, VoiceStatus,
 } from "./types";
 
-export type View = "chat" | "missions" | "tasks" | "activity" | "routines" | "ecosystem" | "memory" | "settings";
+export type View = "chat" | "missions" | "tasks" | "activity" | "routines" | "ecosystem" | "memory" | "brain" | "settings";
 
 export interface Toast {
   id: number;
@@ -15,6 +15,9 @@ export interface Toast {
 
 // High-frequency audio levels live outside React state (read by canvas animations).
 export const levels = { mic: 0, out: 0 };
+
+// Extra listeners on the raw event stream (the brain map lights up from it) without re-rendering through React.
+export const eventTaps = new Set<(ev: { type: string; [k: string]: any }) => void>();
 
 interface Store {
   connected: boolean;
@@ -133,6 +136,7 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   handleEvent: (ev) => {
+    for (const tap of eventTaps) tap(ev);
     const s = get();
     const bump = (k: string) => set({ bump: { ...get().bump, [k]: (get().bump[k] ?? 0) + 1 } });
     switch (ev.type) {

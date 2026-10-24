@@ -19,7 +19,7 @@ from fastapi import Body, Depends, FastAPI, HTTPException, Request, WebSocket, W
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .. import __version__
+from .. import __version__, brainmap
 from ..brain.backup import PRESETS, BackupBrain, BackupError, pick_default_model
 from ..brain.gemini import GeminiBrain
 from ..ecosystem.connectors import CATALOG
@@ -389,6 +389,11 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
     @app.get("/api/memory/vault", dependencies=[A])
     async def vault_status():
         return engine.vault.status()
+
+    @app.get("/api/brain", dependencies=[A])
+    async def brain_map():
+        """ORION's own code as a map (Memory → View brain), plus which spot each tool and event lights up."""
+        return await asyncio.to_thread(brainmap.payload, engine)
 
     @app.post("/api/memory/review", dependencies=[X])
     async def vault_review():

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### New
+- **See ORION's brain.** Memory → View brain shows ORION's own code as a living map: about 1,650 parts (files,
+  classes and functions) in 12 regions laid out like lobes of a brain, from Reasoning and Hearing & voice to Hands
+  (its tools) and Memory. Parts light up live as ORION works: thinking, listening, speaking, saving a memory or
+  running a tool sends a signal through the connections around it, and a Live list says what just happened. Click
+  any part to see where it is in the code and what it connects to, search for one by name, or pick a region to zoom
+  in. The map is built from ORION's source by graphify, offline and with no AI model, and ships with the app.
+
 ## 3.0.1
 Two fixes for running out of free AI quota, on top of 3.0.0.
 

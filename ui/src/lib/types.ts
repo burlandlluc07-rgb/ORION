@@ -302,3 +302,30 @@ export interface ActivityPage {
   counts: Record<"ok" | "problem" | "declined" | "live", number>;
   routes: { id: string; label: string }[];
 }
+
+/** ORION's own code as a map, for Memory → View brain (GET /api/brain). */
+export interface BrainRegion {
+  key: string;
+  name: string;
+  about: string;
+  nodes: number;
+}
+
+/** [label, file index, line, region index, kind: F file · c class · m method · f function · s other, x, y] */
+export type BrainNode = [string, number, number, number, string, number, number];
+
+export interface BrainMap {
+  available: true;
+  format: number;
+  orion_version: string;
+  regions: BrainRegion[];
+  files: string[];
+  nodes: BrainNode[];
+  edges: [number, number][];
+  /** What lights up for each kind of event (think, listen, speak, memory…), as node indexes. */
+  anchors: Record<string, number>;
+  /** Tool name → node index. */
+  tools: Record<string, number>;
+  /** Tools from connectors and plugins: "mcp" | "plugin". */
+  tool_sources: Record<string, string>;
+}

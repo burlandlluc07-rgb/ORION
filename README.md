@@ -35,6 +35,7 @@ a tray icon, global hotkeys, a Quick Bar over any app, an installer, and a modul
 | **Proactive** | ORION speaks up by itself: low battery, CPU or RAM running hot for a while, a disk nearly full, a finished download, an upcoming calendar event, the internet dropping. It respects quiet hours. |
 | **Smart home** | Home Assistant (URL + token) and Philips Hue (press the bridge button to pair). "Turn off the bedroom lights" and "dim the lamp to 30%" run instantly; scenes and locks/alarms (asks first when approvals are on) go through the assistant. |
 | **Second brain (Obsidian)** | ORION's memory is an **Obsidian vault of plain Markdown notes on your PC** (`Documents\ORION Brain`): `About me`, a note per person and project, `Plans & dates` and `Facts`, all linked from `Home`, so Obsidian's graph view shows how it connects. Lasting facts go into those permanent notes. Passing details go into a **short-term** file (`Short-term/This week`), which ORION reviews every week: worth keeping → moved into the right note; still coming up → carried over; the rest is deleted, with every decision logged. ORION also learns facts from conversations by itself. Edit anything in Obsidian and ORION picks it up; you can also point it at your own vault. |
+| **See its brain** | Memory → **View brain** shows ORION's own code as a map: about 1,650 parts in 12 regions laid out like a brain (Reasoning, Hearing & voice, Memory, Hands…). They **light up live** as ORION thinks, listens, speaks, remembers and uses each tool. Click a part to see its file and connections, or search for one. The map is built from the source with [graphify](https://github.com/Graphify-Labs/graphify), offline, and ships with the app. |
 | **Undo** | ORION journals every file change it makes and backs up anything it overwrites, so "undo that" restores it. |
 | **System check** | Settings → About → System check tests your key, models, microphone, speakers, voice, search and app control, and says how to fix anything broken. |
 | **Spoken approvals** | When a task you started by voice needs permission, ORION asks out loud ("Shall I go ahead?") and accepts yes or no. |
@@ -197,6 +198,13 @@ python -m pytest                                   # 98 tests, including the age
 that Google accepts every tool schema, tool calling, vision and the Live handshake. CI runs it automatically when the
 repository has a `GEMINI_API_KEY` secret. The release workflow also launches the frozen `ORION.exe` on Windows and
 smoke-tests its API and UI before it builds the installer.
+
+After changing ORION's code, rebuild the map behind Memory → View brain (BUILD.cmd does this for you):
+
+```bash
+pip install -e ".[brainmap]"                       # graphify (code parsing, offline) + scipy (layout)
+python scripts/build_brain_map.py                  # writes orion/assets/brain_map.json
+```
 
 `python -m orion --browser` uses your normal browser instead of the native window. `--debug` turns on verbose
 logging (logs are in `%APPDATA%\ORION\logs`).

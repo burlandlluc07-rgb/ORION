@@ -8,6 +8,7 @@ import { api, connectEvents, TOKEN } from "./lib/api";
 import { useStore } from "./lib/store";
 import type { QuotaRow } from "./lib/types";
 import { ActivityView } from "./views/ActivityView";
+import { BrainView } from "./views/BrainView";
 import { ChatView } from "./views/ChatView";
 import { EcosystemView } from "./views/EcosystemView";
 import { MemoryView } from "./views/MemoryView";
@@ -95,6 +96,7 @@ export default function App() {
             {s.view === "routines" && <RoutinesView />}
             {s.view === "ecosystem" && <EcosystemView />}
             {s.view === "memory" && <MemoryView />}
+            {s.view === "brain" && <BrainView />}
             {s.view === "settings" && <SettingsView />}
           </div>
         )}
