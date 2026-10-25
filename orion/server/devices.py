@@ -47,8 +47,8 @@ class DeviceRegistry:
         self.store.kv_set("devices", devices)
 
     def list(self) -> list[dict]:
-        return [{k: v for k, v in d.items() if k not in ("token_hash", "push")} | {"push": bool(d.get("push"))}
-                for d in self._all()]
+        return [{k: v for k, v in d.items() if k not in ("token_hash", "push", "webauthn")}
+                | {"push": bool(d.get("push")), "biometric": bool(d.get("webauthn"))} for d in self._all()]
 
     def new_pairing_code(self) -> str:
         code = secrets.token_urlsafe(9)

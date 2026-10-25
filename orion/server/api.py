@@ -28,6 +28,7 @@ from ..tasks import activity as activity_log
 from ..tasks.schedule import ScheduleError, describe, next_run
 from ..tools.platform import open_target
 from ..tools.registry import ToolError
+from .webauthn import WebAuthnError, b64e, rp_from_origin
 
 log = logging.getLogger("orion.api")
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -232,12 +233,77 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
     async def stop():
         return {"stopped": engine.stop_everything()}
 
+    # ── Approvals: the queue, and the phone's fingerprint check for Approve ──────────────────────────────
+    def _rp_id(request: Request) -> str:
+        """The domain the phone app is open on (WebAuthn keys belong to one domain)."""
+        origin = request.headers.get("origin") or ""
+        return rp_from_origin(origin) if origin else (request.url.hostname or "").lower()
+
+    def check_biometric(request: Request, purpose: str, body: dict) -> None:
+        """Approve from a phone that has a fingerprint key for this address needs a fresh fingerprint check.
+        Deny never does, and the PC app never does (it is unlocked by you at the PC)."""
+        if not remote or not engine.config.settings.phone_biometric:
+            return
+        bio, dev, rp = engine.remote.biometrics, request.state.device["id"], _rp_id(request)
+        if not bio.enrolled(dev, rp):
+            return
+        try:
+            bio.verify(dev, rp, purpose, body.get("assertion"))
+        except WebAuthnError as exc:
+            raise HTTPException(403, {"code": "biometric_required", "message": str(exc)})
+
+    @app.post("/api/approvals/focus", dependencies=[A])
+    async def focus_approval():  # declared before /api/approvals/{aid} so "focus" isn't taken for an id
+        front = engine.approvals.focus()
+        return {"id": front["id"] if front else None}
+
     @app.post("/api/approvals/{aid}", dependencies=[A])
-    async def approve(aid: str, body: dict = Body(...)):
+    async def approve(aid: str, request: Request, body: dict = Body(...)):
         decision = body.get("decision")
         if decision not in ("approve", "deny", "always"):
             raise HTTPException(400, "decision must be approve, deny or always")
+        if decision != "deny":
+            check_biometric(request, f"approve:{aid}", body)
         return {"ok": engine.approvals.respond(aid, decision)}
+
+    @app.post("/api/approvals/{aid}/park", dependencies=[A])
+    async def park_approval(aid: str, body: dict = Body(default={})):
+        """"Later": the request stays waiting, behind the others. ``{"parked": false}`` reopens it."""
+        return {"ok": engine.approvals.park(aid, bool(body.get("parked", True)))}
+
+    @app.get("/api/biometric", dependencies=[A])
+    async def biometric_status(request: Request):
+        rp = _rp_id(request)
+        on = remote and engine.config.settings.phone_biometric
+        return {"enabled": on, "rp_id": rp,
+                "enrolled": bool(on and engine.remote.biometrics.enrolled(request.state.device["id"], rp))}
+
+    @app.post("/api/biometric/options", dependencies=[A])
+    async def biometric_options(request: Request, body: dict = Body(...)):
+        """A one-time challenge for registering this phone's key or for one Approve."""
+        purpose = str(body.get("purpose", ""))
+        if not remote or not (purpose == "register" or purpose.startswith(("approve:", "bg:"))):
+            raise HTTPException(400, "Unknown check.")
+        dev, rp = request.state.device, _rp_id(request)
+        cred = engine.remote.biometrics.keys(dev["id"]).get(rp)
+        return {"challenge": engine.remote.biometrics.challenge(dev["id"], purpose), "rp_id": rp,
+                "user_id": b64e(dev["id"].encode()), "user_name": dev.get("name", "Phone"),
+                "credential_id": cred["id"] if cred else None}
+
+    @app.post("/api/biometric/register", dependencies=[A])
+    async def biometric_register(request: Request, body: dict = Body(...)):
+        if not remote:
+            raise HTTPException(400, "Only the phone app registers a fingerprint key.")
+        try:
+            engine.remote.biometrics.register(request.state.device["id"], _rp_id(request), body)
+        except (WebAuthnError, ValueError, KeyError, TypeError) as exc:
+            raise HTTPException(400, str(exc) or "That didn't work. Try again.")
+        return {"ok": True}
+
+    @app.delete("/api/devices/{device_id}/biometric", dependencies=[X])
+    async def biometric_reset(device_id: str):
+        """From the PC: forget a phone's fingerprint key (lost phone, new fingerprint). It is asked again next time."""
+        return {"ok": engine.remote.biometrics.reset(device_id)}
 
     @app.get("/api/missions", dependencies=[A])
     async def missions():
@@ -294,10 +360,12 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
         return task
 
     @app.post("/api/background/approvals/{aid}", dependencies=[A])
-    async def background_decide(aid: str, body: dict = Body(...)):
+    async def background_decide(aid: str, request: Request, body: dict = Body(...)):
         decision = body.get("decision")
         if decision not in ("approve", "deny"):
             raise HTTPException(400, "decision must be approve or deny")
+        if decision == "approve":
+            check_biometric(request, f"bg:{aid}", body)
         return {"ok": _bg().decide(aid, decision == "approve")}
 
     @app.post("/api/background/{action}", dependencies=[A])

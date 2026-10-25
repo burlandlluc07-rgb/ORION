@@ -39,7 +39,10 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     } catch {
       /* not JSON */
     }
-    throw new ApiError(res.status, typeof msg === "string" ? msg : JSON.stringify(msg));
+    const m = msg as unknown;
+    throw new ApiError(res.status, typeof m === "string" ? m
+      : m && typeof m === "object" && typeof (m as { message?: unknown }).message === "string" ? (m as { message: string }).message
+      : JSON.stringify(m));
   }
   return res.json() as Promise<T>;
 }

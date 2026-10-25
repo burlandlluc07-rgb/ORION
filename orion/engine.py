@@ -56,6 +56,7 @@ class Engine:
         self.whatsapp = WhatsApp(self.config.root, self.registry, lambda: self.bus.emit("ecosystem.changed"))
         self.remote = RemoteServer(self)
         self.approvals.on_request = self._push_approval
+        self.approvals.timeout = lambda: self.config.settings.approval_timeout
         from .proactive import Proactive
 
         self.proactive = Proactive(self)
