@@ -13,11 +13,10 @@ import { QuickPanel } from "./QuickBar";
  *         when an approval is waiting, so a risky step is never missed.
  *
  * The page picks the mode and animates the pill; the desktop shell resizes the native window to fit
- * (orion/desktop/notch.py). Growing: resize first, then animate. Shrinking: animate, then resize.
+ * (orion/desktop/notch.py), and on Windows clips the window to the pill's shape. Sizes here match notch.PILLS.
  */
 export type NotchMode = "idle" | "peek" | "open";
 const ORDER: Record<NotchMode, number> = { idle: 0, peek: 1, open: 2 };
-const SHRINK_MS = 380;
 const DONE_MS = 6000;
 
 const VOICE_LABEL: Record<string, string> = {
@@ -66,18 +65,15 @@ export function NotchView() {
     return () => clearTimeout(t);
   }, [finished]);
 
-  // Size the native window and animate the pill in the right order.
+  // Tell the shell first (on Windows it morphs the window's shape natively, growing or shrinking in the right
+  // order), then let the CSS spring follow. Growing waits for the bigger window so the pill isn't clipped.
   useEffect(() => {
     if (mode === applied.current) { setShown(mode); return; }
     const grow = ORDER[mode] > ORDER[applied.current];
     applied.current = mode;
-    if (grow) {
-      api.post(`/api/window/notch-${mode}`).catch(() => {}).finally(() => requestAnimationFrame(() => setShown(mode)));
-      return;
-    }
-    setShown(mode);
-    const t = setTimeout(() => { if (applied.current === mode) api.post(`/api/window/notch-${mode}`).catch(() => {}); }, SHRINK_MS);
-    return () => clearTimeout(t);
+    const sent = api.post(`/api/window/notch-${mode}`).catch(() => {});
+    if (grow) sent.finally(() => requestAnimationFrame(() => setShown(mode)));
+    else setShown(mode);
   }, [mode]);
 
   // Keyboard focus only while *you* opened it, so an approval popping up never steals your typing.
@@ -105,6 +101,8 @@ export function NotchView() {
         aria-label={shown === "open" ? "ORION" : status ? `ORION: ${status.title}` : "Open ORION"}
         tabIndex={shown === "open" ? -1 : 0}
         onClick={() => shown !== "open" && setUserOpen(true)}
+        onMouseEnter={() => shown === "idle" && api.post("/api/window/notch-hover").catch(() => {})}
+        onMouseLeave={() => shown === "idle" && api.post("/api/window/notch-idle").catch(() => {})}
         onKeyDown={(e) => shown !== "open" && (e.key === "Enter" || e.key === " ") && setUserOpen(true)}>
         {shown === "open" ? (
           <div className="notch-panel">

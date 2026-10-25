@@ -26,6 +26,7 @@ user32 = ctypes.windll.user32
 user32.SetProcessDPIAware()
 results: list[dict] = []
 SIZES = {"idle": (220, 44), "peek": (460, 72), "open": (700, 500)}  # orion/desktop/notch.py
+PILLS = {"idle": (148, 30), "peek": (440, 58), "open": (680, 480)}
 
 
 def record(name: str, ok: bool, detail: str) -> None:
@@ -63,6 +64,17 @@ def check_geometry(hwnd: int, mode: str) -> None:
     centred = abs((left + right) / 2 - sw / 2) <= 2
     record(f"{mode}: size, flush top, centred", top == 0 and centred and abs(w - ew) <= 2 and abs(h - eh) <= 2,
            f"rect=({left},{top},{right},{bottom}) expected {ew}x{eh} on a {sw}px screen")
+    gdi32 = ctypes.windll.gdi32
+    rgn = gdi32.CreateRectRgn(0, 0, 0, 0)
+    kind = user32.GetWindowRgn(hwnd, rgn)
+    box = wintypes.RECT()
+    gdi32.GetRgnBox(rgn, ctypes.byref(box))
+    gdi32.DeleteObject(rgn)
+    pw, ph = (round(v * scale) for v in PILLS[mode])
+    bw, bh = box.right - box.left, box.bottom - max(box.top, 0)
+    pill_centred = abs((box.left + box.right) / 2 - w / 2) <= 2
+    record(f"{mode}: window clipped to the pill", kind > 1 and abs(bw - pw) <= 2 and abs(bh - ph) <= 2 and pill_centred,
+           f"region kind={kind} box=({box.left},{box.top},{box.right},{box.bottom}) expected pill {pw}x{ph}")
 
 
 def main() -> int:

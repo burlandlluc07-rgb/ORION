@@ -493,7 +493,8 @@ kbd { font: 10.5px var(--mono); color: var(--text-3); border: 1px solid var(--li
 /* ── Notch ──────────────────────────────────────────────────────────────
    A black pill flush with the top of the screen. Always black (like the hardware notch), white ink, grey detail.
    It springs between sizes; contents fade in once the shape has grown. */
-html.notch-doc, html.notch-doc body, html.notch-doc #root { background: transparent !important; overflow: hidden; }
+/* Black behind the pill: on Windows the window is clipped to the pill's shape (orion/desktop/notch.py). */
+html.notch-doc, html.notch-doc body, html.notch-doc #root { background: #000 !important; overflow: hidden; }
 .notch-root { position: fixed; inset: 0; display: flex; justify-content: center; align-items: flex-start; pointer-events: none; }
 .notch-pill {
   --spring: cubic-bezier(0.34, 1.32, 0.64, 1);

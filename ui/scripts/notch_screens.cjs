@@ -28,6 +28,7 @@ const approval = { id: "a9", tool: "whatsapp_send", label: "Send a WhatsApp mess
   expires: now + 600, args: { to: "Marta Puig", message: "I'll bring dessert!" } };
 
 const DESKTOP = `
+  html.notch-doc, html.notch-doc body, html.notch-doc #root { background: transparent !important; }
   html.notch-doc body { background: linear-gradient(160deg, #3a3a3a 0%, #1d1d1d 55%, #111 100%) !important; }
   html.notch-doc body::after { content: ""; position: fixed; left: 8%; right: 8%; top: 70px; bottom: 0; border-radius: 10px 10px 0 0;
     background: #f3f3f2; box-shadow: 0 20px 60px rgba(0,0,0,.5); z-index: -1; }`;

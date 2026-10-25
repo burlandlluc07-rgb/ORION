@@ -26,6 +26,7 @@ class DesktopShell:
         self.quick: Any = None
         self.notch: Any = None
         self._notch_mode = "idle"
+        self._notch_gen = 0
         self._notch_hidden = False
         self.tray: Any = None
         self.hotkeys: Any = None
@@ -61,7 +62,7 @@ class DesktopShell:
             x, y, w, h = self._notch_geometry("idle")
             self.notch = webview.create_window(
                 notch.TITLE, self.url + "#/notch", width=w, height=h, x=x, y=y, frameless=True, on_top=True,
-                transparent=True, focus=False, shadow=False, resizable=False, easy_drag=False,
+                focus=False, shadow=False, resizable=False, easy_drag=False, min_size=(100, 30),
                 background_color="#000000",
             )
             self.notch.events.shown += lambda: threading.Thread(target=self._watch_fullscreen, name="notch", daemon=True).start()
@@ -207,14 +208,21 @@ class DesktopShell:
         if what in ("focus", "blur"):
             notch.set_activatable(titlebar.find_window(notch.TITLE), what == "focus")
             return
-        if what not in notch.SIZES:
+        if what not in notch.PILLS:
             return
-        self._notch_mode = what
+        start, self._notch_mode = self._notch_mode, what
+        hwnd = titlebar.find_window(notch.TITLE)
+        if sys.platform == "win32" and hwnd:
+            # Animate natively on a worker so the API call returns at once; a newer mode cancels an older morph.
+            self._notch_gen += 1
+            gen = self._notch_gen
+            threading.Thread(target=notch.morph, args=(hwnd, start, what, lambda: gen == self._notch_gen),
+                             name="notch-morph", daemon=True).start()
+            return
         try:
-            if not notch.apply(titlebar.find_window(notch.TITLE), what):
-                x, y, w, h = self._notch_geometry(what)
-                self.notch.resize(w, h)
-                self.notch.move(x, y)
+            x, y, w, h = self._notch_geometry(what)
+            self.notch.resize(w, h)
+            self.notch.move(x, y)
         except Exception:
             log.exception("Couldn't resize the notch")
 
@@ -226,8 +234,9 @@ class DesktopShell:
 
         hwnd = titlebar.find_window(notch.TITLE)
         notch.apply(hwnd, self._notch_mode)  # also pins it flush to the top on high-DPI screens
+        notch.set_shape(hwnd, self._notch_mode)
         while not self._quitting and self.notch and hwnd:
-            hide = notch.fullscreen_app_in_front() and self._notch_mode == "idle"
+            hide = notch.fullscreen_app_in_front() and self._notch_mode in ("idle", "hover")
             if hide != self._notch_hidden and notch.set_visible(hwnd, not hide):
                 self._notch_hidden = hide
             time.sleep(1.5)

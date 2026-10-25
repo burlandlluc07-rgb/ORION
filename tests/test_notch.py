@@ -89,3 +89,32 @@ def test_actions_are_safe_without_a_notch():
     shell.notch = None
     shell.window_action("notch-open")
     shell.window_action("notch-focus")
+
+
+def test_pills_fit_their_windows():
+    for mode in ("idle", "hover", "peek", "open"):
+        pw, ph, r = notch.pill_for(mode)
+        ww, wh = notch.size_for(mode)
+        assert pw <= ww and ph <= wh and 0 < r <= ph
+    assert notch.size_for("hover") == notch.size_for("idle")
+
+
+def test_morph_frames_end_exactly_and_overshoot_a_little():
+    frames = notch.morph_frames(notch.pill_for("idle"), notch.pill_for("open"), 20)
+    assert frames[-1] == notch.pill_for("open")
+    assert max(f[0] for f in frames) > notch.pill_for("open")[0]  # spring overshoot
+    assert max(f[0] for f in frames) < notch.pill_for("open")[0] * 1.15
+    shrink = notch.morph_frames(notch.pill_for("open"), notch.pill_for("idle"), 20)
+    assert shrink[-1] == notch.pill_for("idle") and min(f[1] for f in shrink) >= 1
+
+
+def test_hover_is_a_shape_only_mode():
+    shell = make_shell()
+    shell.window_action("notch-hover")
+    assert shell._notch_mode == "hover"
+    assert ("resize", *notch.size_for("idle")) in shell.notch.calls
+
+
+def test_shape_helpers_are_noops_off_windows():
+    assert notch.set_shape(0, "idle") is False
+    notch.morph(0, "idle", "open")  # must not raise or sleep
