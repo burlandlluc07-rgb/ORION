@@ -1,5 +1,5 @@
 import {
-  Check, Copy, FolderTree, PanelRightClose, PanelRightOpen, PenLine, Stethoscope, Sunrise, Target, Telescope, Zap,
+  Check, Copy, FolderTree, PanelRightClose, PanelRightOpen, Stethoscope, Sunrise, Telescope, Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApprovalCard } from "../components/ApprovalCard";
@@ -17,8 +17,6 @@ const STARTERS = [
   { icon: Telescope, title: "Deep research", text: "/deep-research ", desc: "Multi-source research with citations." },
   { icon: FolderTree, title: "Tidy my Downloads", text: "/file-organizer Organise my Downloads folder", desc: "Sort files into folders, safely." },
   { icon: Stethoscope, title: "Why is my PC slow?", text: "/pc-doctor", desc: "Diagnose and fix performance issues." },
-  { icon: Target, title: "Focus mode", text: "/focus-mode 45 minutes", desc: "Close distractions and start a timer." },
-  { icon: PenLine, title: "Write something", text: "/writer ", desc: "Emails, posts and docs in your voice." },
 ];
 
 function greeting(name: string) {
@@ -154,7 +152,6 @@ export function ChatView() {
                 </button>
               ))}
             </div>
-            <p className="sub">Type <kbd>/</kbd> for skills, drop in a file, or press the orb to talk.</p>
             {s.transcript && <div className="transcript">“{s.transcript.text}”</div>}
             {approvals.length > 0 && <div style={{ width: "100%", maxWidth: "var(--chat-w)", display: "flex", flexDirection: "column", gap: 12 }}>{approvalCards}</div>}
           </div>

@@ -1,7 +1,7 @@
 import { Laptop, Moon, Sun, Zap, Brain, FolderOpen, Info, KeyRound, Keyboard, Mic, Monitor, RefreshCw, ShieldCheck, Smartphone, Stethoscope, CheckCircle2, XCircle, MinusCircle, Loader2, Trash2, UserRound } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { BackupBrain } from "../components/BackupBrain";
-import { Field, Modal, Toggle } from "../components/ui";
+import { Field, Meter, Modal, Toggle } from "../components/ui";
 import { api } from "../lib/api";
 import { useStore } from "../lib/store";
 import type { Settings } from "../lib/types";
@@ -154,6 +154,15 @@ export function SettingsView() {
         </Field>
         <Field label="Spare models" hint="When the daily free quota runs out, keep going on other free Flash models. Each has its own quota.">
           <Toggle on={st.extra_models} onChange={(v) => save({ extra_models: v })} />
+        </Field>
+        <Field label="Used today" hint="Simple commands run locally and don't count. Resets at midnight Pacific.">
+          <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
+            {s.engine?.quota.map((q) => (
+              <div key={q.model} title={`${q.rpm_used}/${q.rpm} requests this minute`}>
+                <Meter label={q.model.replace("gemini-", "")} value={q.rpd_used} max={q.rpd} text={`${q.rpd_used} / ${q.rpd}${q.cooldown > 0 ? ` · cooling down ${q.cooldown}s` : ""}`} />
+              </div>
+            ))}
+          </div>
         </Field>
         <Field label="Free-tier limits" hint="ORION paces itself to stay under these, and corrects them automatically when Google reports a different limit.">
           <div style={{ display: "flex", flexDirection: "column", gap: 6, width: "100%" }}>
@@ -332,9 +341,12 @@ export function SettingsView() {
 
       <section className="settings-sec" id="set-shortcuts">
         <h3><Keyboard size={16} /> Shortcuts</h3>
-        <Field label="Quick Bar" hint="Summon ORION over any app. Takes effect after restart."><input className="input" defaultValue={st.hotkey_quickbar} onBlur={(e) => save({ hotkey_quickbar: e.target.value })} /></Field>
+        <Field label="Notch" hint="A small black pill at the top of your screen. It shows what ORION is doing and any approval waiting, opens with the shortcut below, and keeps out of full-screen games and videos. Off = a floating Quick Bar instead. Takes effect after restart.">
+          <Toggle on={st.notch !== false} onChange={(v) => save({ notch: v })} />
+        </Field>
+        <Field label={st.notch !== false ? "Open the notch" : "Quick Bar"} hint="Summon ORION over any app. Takes effect after restart."><input className="input" defaultValue={st.hotkey_quickbar} onBlur={(e) => save({ hotkey_quickbar: e.target.value })} /></Field>
         <Field label="Push to talk / end voice" hint="Takes effect after restart."><input className="input" defaultValue={st.hotkey_voice} onBlur={(e) => save({ hotkey_voice: e.target.value })} /></Field>
-        <Field label="Jump to the waiting approval" hint="Opens the Quick Bar on the approval that's waiting. It only shows it: you still choose Allow or Deny. Takes effect after restart."><input className="input" defaultValue={st.hotkey_approvals} onBlur={(e) => save({ hotkey_approvals: e.target.value })} /></Field>
+        <Field label="Jump to the waiting approval" hint="Opens the notch (or Quick Bar) on the approval that's waiting. It only shows it: you still choose Allow or Deny. Takes effect after restart."><input className="input" defaultValue={st.hotkey_approvals} onBlur={(e) => save({ hotkey_approvals: e.target.value })} /></Field>
         <Field label="In the app" hint="Ctrl+K focus input · Ctrl+N new chat · Ctrl+B sidebar · Esc stop · Ctrl+Enter approve"><span /></Field>
       </section>
 

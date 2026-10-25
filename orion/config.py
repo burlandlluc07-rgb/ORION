@@ -121,6 +121,9 @@ class Settings(BaseModel):
 
     voice: VoiceSettings = Field(default_factory=VoiceSettings)
     hotkey_quickbar: str = "<alt>+<space>"
+    # A small black pill at the top centre of the screen that opens with the Quick Bar hotkey, shows what ORION
+    # is doing and any approval waiting, and otherwise stays tucked away. Off = the old floating Quick Bar.
+    notch: bool = True
     hotkey_voice: str = "<ctrl>+<alt>+j"
     hotkey_approvals: str = "<ctrl>+<alt>+a"  # jump to the approval that is waiting
     start_minimized: bool = False

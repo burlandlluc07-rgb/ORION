@@ -22,6 +22,7 @@ a { color: var(--text); text-underline-offset: 2px; }
 
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
 @keyframes fade { from { opacity: 0; } }
+@keyframes slide-in { from { opacity: 0; transform: translateX(16px); } }
 @keyframes pop { from { opacity: 0; transform: translateY(4px) scale(0.98); } }
 @keyframes pulse { 50% { opacity: 0.35; } }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -303,7 +304,6 @@ kbd { font: 10.5px var(--mono); color: var(--text-3); border: 1px solid var(--li
 .slash-item { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-radius: var(--radius-sm); cursor: pointer; }
 .slash-item.sel, .slash-item:hover { background: var(--hover); }
 .slash-item .n { font-weight: 600; font-family: var(--mono); font-size: 13px; }
-.composer-hint { max-width: var(--chat-w); margin: 8px auto 0; text-align: center; font-size: 11.5px; color: var(--text-3); pointer-events: auto; }
 
 /* Empty / home: greeting, composer in the middle, starters below */
 .home { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 28px 12vh; gap: 28px; }
@@ -312,7 +312,6 @@ kbd { font: 10.5px var(--mono); color: var(--text-3); border: 1px solid var(--li
 .home p.sub { margin: -16px 0 0; color: var(--text-3); text-align: center; font-size: 13.5px; }
 .home .composer-wrap { position: static; padding: 0; background: none; width: 100%; max-width: var(--chat-w); }
 .home .composer textarea { min-height: 76px; }
-.home .composer-hint { display: none; }
 .starters { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: var(--chat-w); animation: fade var(--dur-3) var(--ease) 80ms both; }
 .starter { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px; border-radius: var(--radius-sm); border: 1px solid var(--line-2); background: transparent;
   color: var(--text-2); font-size: 13px; transition: background var(--dur-1), color var(--dur-1), border-color var(--dur-1); }
@@ -330,7 +329,7 @@ kbd { font: 10.5px var(--mono); color: var(--text-3); border: 1px solid var(--li
 
 /* Right panel */
 .right { width: var(--right-w); background: var(--bg-2); display: flex; flex-direction: column; overflow-y: auto; border-left: 1px solid var(--line);
-  animation: fade var(--dur-2) var(--ease); }
+  animation: slide-in var(--dur-3) var(--ease-out); }
 .right-head { display: flex; align-items: center; gap: 8px; height: 52px; padding: 0 10px 0 18px; flex: none; }
 .right-head .t { font-size: 13px; font-weight: 600; flex: 1; }
 .panel-sec { padding: 4px 12px 12px; }
@@ -350,7 +349,8 @@ kbd { font: 10.5px var(--mono); color: var(--text-3); border: 1px solid var(--li
 
 /* ── Pages ──────────────────────────────────────────────────────────── */
 .page { flex: 1; overflow-y: auto; container-type: inline-size; }
-.page-inner { max-width: var(--page-w); margin: 0 auto; padding: 44px 36px 80px; animation: fade var(--dur-2) var(--ease); }
+.page-inner { max-width: var(--page-w); margin: 0 auto; padding: 44px 36px 80px; animation: rise var(--dur-3) var(--ease-out); }
+.tab-body { animation: fade var(--dur-2) var(--ease); }
 .page-head { display: flex; align-items: flex-end; gap: 14px; margin-bottom: 28px; }
 .page-head h2 { font-family: var(--font-serif); font-size: var(--fs-2xl); margin: 0; font-weight: 400; letter-spacing: -0.015em; line-height: 1.2; }
 .page-head p { margin: 6px 0 0; color: var(--text-2); max-width: 640px; }
@@ -506,3 +506,53 @@ kbd { font: 10.5px var(--mono); color: var(--text-3); border: 1px solid var(--li
 .ac-note .ac-undo { color: var(--text); font-weight: 500; }
 .ac-note:hover { color: var(--text); }
 .quick-out .ap-queue { margin-bottom: 12px; }
+
+/* ── Notch ──────────────────────────────────────────────────────────────
+   A black pill flush with the top of the screen. Always black (like the hardware notch), white ink, grey detail.
+   It springs between sizes; contents fade in once the shape has grown. */
+/* Black behind the pill: on Windows the window is clipped to the pill's shape (orion/desktop/notch.py). */
+html.notch-doc, html.notch-doc body, html.notch-doc #root { background: #000 !important; overflow: hidden; }
+.notch-root { position: fixed; inset: 0; display: flex; justify-content: center; align-items: flex-start; pointer-events: none; }
+.notch-pill {
+  --spring: cubic-bezier(0.34, 1.32, 0.64, 1);
+  pointer-events: auto; position: relative; overflow: hidden; background: #000; color: #ededed;
+  width: 148px; height: 30px; border-radius: 0 0 16px 16px; cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 10px 30px rgba(0, 0, 0, 0.35);
+  transition: width 460ms var(--spring), height 460ms var(--spring), border-radius 320ms var(--ease-out), box-shadow 200ms;
+}
+.notch-pill:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.5); outline-offset: -2px; }
+.notch-pill.idle:hover, .notch-pill.idle:focus-visible { width: 200px; height: 38px; border-radius: 0 0 19px 19px; }
+.notch-pill.peek { width: 440px; height: 58px; border-radius: 0 0 24px 24px; }
+.notch-pill.open { width: 680px; height: 480px; border-radius: 0 0 28px 28px; cursor: default; }
+
+.notch-idle { height: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 14px; }
+.notch-hint { font-size: 12px; color: #a3a3a3; white-space: nowrap; display: inline-flex; gap: 8px; align-items: center;
+  max-width: 0; opacity: 0; overflow: hidden; transition: max-width 360ms var(--ease-out), opacity 200ms; }
+.notch-pill.idle:hover .notch-hint, .notch-pill.idle:focus-visible .notch-hint { max-width: 160px; opacity: 1; transition-delay: 80ms; }
+.notch-hint kbd { background: #1c1c1c; border-color: #2e2e2e; color: #a3a3a3; }
+
+.notch-peek { height: 100%; display: flex; align-items: center; gap: 12px; padding: 4px 22px 0;
+  animation: notch-in 360ms var(--ease-out) 120ms both; }
+.notch-peek .nt { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.notch-peek .nd { font-size: 11.5px; color: #8f8f8f; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.notch-dots { display: inline-flex; gap: 4px; flex: none; }
+.notch-dots i { width: 5px; height: 5px; border-radius: 50%; background: #ededed; animation: bounce 1.1s infinite; }
+.notch-dots i:nth-child(2) { animation-delay: 0.15s; }
+.notch-dots i:nth-child(3) { animation-delay: 0.3s; }
+
+.notch-panel { height: 100%; display: flex; flex-direction: column; animation: notch-in 380ms var(--ease-out) 140ms both; }
+.notch-panel .quick-input { padding: 14px 20px 12px; }
+.notch-panel .quick-input input { font-size: 16px; }
+.notch-panel .quick-foot { padding: 8px 18px 12px; }
+@keyframes notch-in { from { opacity: 0; transform: translateY(-6px) scale(0.98); filter: blur(2px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .notch-pill, .notch-hint { transition-duration: 1ms !important; }
+  .notch-peek, .notch-panel { animation: none; }
+}
+
+/* Smooth, but never in the way: honour Windows' "Show animations" switch. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+}
+.quick-out .approval { margin-bottom: 14px; }
