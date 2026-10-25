@@ -1,6 +1,7 @@
 import { Laptop, Moon, Sun, Zap, Brain, FolderOpen, Info, KeyRound, Keyboard, Mic, Monitor, RefreshCw, ShieldCheck, Smartphone, Stethoscope, CheckCircle2, XCircle, MinusCircle, Loader2, Trash2, UserRound } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { BackupBrain } from "../components/BackupBrain";
+import { OfflineSpeech } from "../components/OfflineSpeech";
 import { Field, Modal, Toggle } from "../components/ui";
 import { api } from "../lib/api";
 import { useStore } from "../lib/store";
@@ -198,6 +199,7 @@ export function SettingsView() {
           <Toggle on={st.voice.wake_word} onChange={(v) => saveVoice({ wake_word: v })} />
         </Field>
         {st.voice.wake_word && <WakeWordSettings />}
+        <OfflineSpeech />
         <Field label="Speak replies" hint="Read answers aloud for voice requests, timers and reminders.">
           <Toggle on={st.voice.speak_replies} onChange={(v) => saveVoice({ speak_replies: v })} />
         </Field>
@@ -532,6 +534,14 @@ function WakeWordSettings() {
           </div>
         </div>
       </Field>
+      {(vs.offline_stt || vs.wake_engine === "offline") && (
+        <Field label="Wake engine" hint="Windows: light on the CPU. Offline model: the downloaded speech model listens for the wake phrase; more accurate, more CPU while people talk. With Windows, the offline model still double-checks the near-misses.">
+          <select className="select" value={vs.wake_engine === "offline" ? "offline" : "windows"}
+            onChange={(e) => save({ voice: { ...vs, wake_engine: e.target.value as Settings["voice"]["wake_engine"] } })}>
+            <option value="windows">Windows speech</option><option value="offline">Offline model</option>
+          </select>
+        </Field>
+      )}
       <Field label="Speech language" hint="The language you say the wake phrase in. Uses the speech languages installed in Windows (Settings → Time & language → Speech).">
         <select className="select" value={vs.wake_language} onChange={(e) => save({ voice: { ...vs, wake_language: e.target.value } })}>
           <option value="">Same as Windows</option>

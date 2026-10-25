@@ -2,7 +2,7 @@
 #   pip install -e .[dev,docs]  &&  pyinstaller packaging/orion.spec --noconfirm
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
 
 ROOT = Path(SPECPATH).parent
 
@@ -13,7 +13,7 @@ hidden = (
     + collect_submodules("pystray")
     + collect_submodules("keyring.backends")
     + ["pycaw.pycaw", "comtypes.stream", "pywinauto", "screen_brightness_control", "miniaudio", "edge_tts", "webrtcvad", "ddgs",
-       "mcp.client.stdio", "mcp.client.streamable_http", "qrcode.image.svg", "pywebpush", "py_vapid", "icalendar", "recurring_ical_events", "openwakeword", "pypdf", "docx", "openpyxl", "pptx", "fpdf"]
+       "mcp.client.stdio", "mcp.client.streamable_http", "qrcode.image.svg", "pywebpush", "py_vapid", "icalendar", "recurring_ical_events", "openwakeword", "sherpa_onnx", "pypdf", "docx", "openpyxl", "pptx", "fpdf"]
     + collect_submodules("playwright")
 )
 datas = [
@@ -33,9 +33,14 @@ try:
 except Exception:
     pass
 
+# Offline speech recognition runtime: sherpa-onnx's extension + onnxruntime.dll (the model is downloaded later, on
+# request, into the data folder; it is never bundled).
+binaries = collect_dynamic_libs("sherpa_onnx")
+
 a = Analysis(
     [str(ROOT / "orion" / "__main__.py")],
     pathex=[str(ROOT)],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hidden,
     hookspath=[str(ROOT / "packaging" / "hooks")],
