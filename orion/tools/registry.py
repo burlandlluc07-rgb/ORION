@@ -65,6 +65,9 @@ class Tool:
     wants_context: str | None = None
     kit: str | None = None  # None = core (always offered); otherwise the toolkit it belongs to (see kits.py)
     always_ask: bool = False  # ask before every single call, whatever the approval setting (e.g. sending a message)
+    # For a tool with a background route for some calls: True when this call (its args) will take it, so the
+    # router doesn't treat it as a foreground step (see tasks/routing.py).
+    background: Callable[[dict], bool] | None = None
 
     def declaration(self) -> dict:
         return {"name": self.name, "description": self.description, "parameters_json_schema": self.parameters}

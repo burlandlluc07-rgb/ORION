@@ -1,5 +1,5 @@
 import {
-  Blocks, Cable, CalendarDays, FolderOpen, Lightbulb, Loader2, Mail, MessageCircle, Plug, Plus, Puzzle, RefreshCw, Sparkles, Trash2, UserRound, Wrench,
+  Blocks, Cable, CalendarDays, FolderOpen, Lightbulb, Link2, Loader2, Mail, MessageCircle, Plug, Plus, Puzzle, QrCode, RefreshCw, ShieldAlert, Sparkles, Trash2, UserRound, Wrench,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Markdown } from "../components/Markdown";
@@ -436,6 +436,123 @@ interface WhatsAppInfo {
   configured: boolean; dry_run: boolean; phone_number_id: string; business_account_id: string;
   verified_name: string; display_number: string; has_token: boolean; contacts: { name: string; number: string; synced?: boolean }[];
   contact_sync: { provider: string; label: string; user: string; count: number; last_sync: number; error: string } | null;
+  gateway: GatewayInfo;
+}
+
+// ── Personal WhatsApp in the background (opt-in, unofficial) ─────────────
+interface SendLimits { gap: number; per_day: number; same_text: number }
+interface GatewayInfo {
+  enabled: boolean; state: "off" | "stopped" | "error" | "waiting_for_link" | "linked"; account: string; error: string; warning: string;
+  limits: SendLimits; sent_today: number;
+}
+
+const LIMIT_FIELDS: { key: keyof SendLimits; label: string; min: number; max: number }[] = [
+  { key: "gap", label: "Seconds between messages", min: 5, max: 600 },
+  { key: "per_day", label: "Messages a day", min: 1, max: 100 },
+  { key: "same_text", label: "Chats one text may go to in an hour", min: 1, max: 10 },
+];
+
+function GatewayCard({ initial }: { initial: GatewayInfo }) {
+  const toast = useStore((s) => s.toast);
+  const [g, setG] = useState<GatewayInfo>(initial);
+  const [accept, setAccept] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [qr, setQr] = useState<{ image: string; expires_in: number } | null>(null);
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const waiting = g.state === "waiting_for_link";
+
+  // While a QR or pairing code is on screen, check every few seconds whether it was scanned.
+  useEffect(() => {
+    if (!waiting || (!qr && !code)) return;
+    const id = window.setInterval(async () => {
+      const next = await api.get<GatewayInfo>("/api/accounts/whatsapp/gateway").catch(() => null);
+      if (next) setG(next);
+      if (next?.state === "linked") { setQr(null); setCode(""); toast({ title: "WhatsApp linked", tone: "success" }); }
+    }, 3000);
+    return () => window.clearInterval(id);
+  }, [waiting, qr, code, toast]);
+
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true); setErr("");
+    try { await fn(); } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  };
+  const turnOn = () => run(async () => { setG(await api.put<GatewayInfo>("/api/accounts/whatsapp/gateway", { accept_risk: true })); setAccept(false); });
+  const turnOff = (forget: boolean) => run(async () => {
+    setG(await api.del<GatewayInfo>(`/api/accounts/whatsapp/gateway${forget ? "?forget=true" : ""}`)); setQr(null); setCode("");
+  });
+  const saveLimit = (key: keyof SendLimits, value: number) => run(async () => {
+    setG(await api.put<GatewayInfo>("/api/accounts/whatsapp/gateway/limits", { [key]: value }));
+  });
+  const showQr = () => run(async () => { setCode(""); setQr(await api.post<{ image: string; expires_in: number }>("/api/accounts/whatsapp/gateway/qr", {})); });
+  const showCode = () => run(async () => { setQr(null); setCode((await api.post<{ code: string }>("/api/accounts/whatsapp/gateway/code", { number: phone })).code); });
+
+  const line = g.state === "linked" ? `Linked to ${g.account} · sends after your yes, with no window` :
+    waiting ? "On · not linked yet: scan the QR code with your phone" :
+    g.state === "error" ? g.error : g.state === "stopped" ? "On · starting…" : "Off · personal sends open WhatsApp Desktop and press Send";
+
+  return (
+    <div className="modal-body">
+      <div className="field" style={{ padding: 0 }}>
+        <div><div className="fl"><Link2 size={13} /> Send and read in the background (unofficial)</div>
+          <div className="fh">{line}</div></div>
+        <div className="fc row">
+          {g.enabled && <button className="btn sm" disabled={busy} onClick={() => turnOff(false)}>Turn off</button>}
+          {g.enabled && <button className="btn sm danger" disabled={busy} onClick={() => turnOff(true)}><Trash2 size={12} /> Unlink and delete</button>}
+        </div>
+      </div>
+      {!g.enabled && (
+        <>
+          <div className="fh" style={{ fontSize: 12.5, lineHeight: 1.55, padding: "10px 12px", border: "1px solid var(--line-2)", borderRadius: "var(--radius-sm)", background: "var(--panel)" }}>
+            <div className="fl" style={{ marginBottom: 4 }}><ShieldAlert size={13} /> Read this first</div>
+            {g.warning} ORION downloads the program from GitHub, checks its fingerprint, and runs it only on this PC.
+            Turning it off goes back to the current way; "Unlink and delete" also logs it out of your WhatsApp.
+          </div>
+          <label className="row" style={{ fontSize: 13, gap: 8, cursor: "pointer" }}>
+            <input type="checkbox" checked={accept} onChange={(e) => setAccept(e.target.checked)} />
+            I understand WhatsApp may restrict my account, and I want to use this anyway
+          </label>
+          <div className="row">
+            <button className="btn" disabled={!accept || busy} onClick={turnOn}>
+              {busy ? <><Loader2 size={13} className="spin" /> Downloading and checking…</> : "Turn on"}</button>
+          </div>
+        </>
+      )}
+      {g.enabled && g.limits && (
+        <div className="fh muted" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
+          <b>Pace:</b> to keep your account safe, ORION sends like a person: it shows “typing…” first, waits between messages and
+          stops at a daily limit. {g.sent_today} sent in the last 24 hours.
+          <div className="row" style={{ flexWrap: "wrap", marginTop: 6 }}>
+            {LIMIT_FIELDS.map((f) => (
+              <label key={f.key} className="row" style={{ gap: 6 }}>
+                {f.label}
+                <input className="input" type="number" min={f.min} max={f.max} style={{ width: 70 }} defaultValue={g.limits[f.key]}
+                  key={`${f.key}-${g.limits[f.key]}`} disabled={busy}
+                  onBlur={(e) => { const v = Number(e.target.value); if (v !== g.limits[f.key]) saveLimit(f.key, v); }} />
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+      {waiting && (
+        <>
+          <div className="fh muted" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
+            On your phone: WhatsApp → Settings → Linked devices → Link a device, then scan the code. Or link with your phone number instead.
+          </div>
+          <div className="row" style={{ flexWrap: "wrap" }}>
+            <button className="btn" disabled={busy} onClick={showQr}><QrCode size={13} /> {qr ? "New QR code" : "Show QR code"}</button>
+            <input className="input" style={{ width: 170 }} value={phone} placeholder="+34 612 345 678" onChange={(e) => setPhone(e.target.value)} />
+            <button className="btn" disabled={busy || !phone} onClick={showCode}>Get a code instead</button>
+          </div>
+          {qr && <img src={qr.image} alt="WhatsApp link QR code" width={220} height={220}
+            style={{ background: "#fff", padding: 10, borderRadius: "var(--radius-sm)", imageRendering: "pixelated" }} />}
+          {code && <div className="fl" style={{ fontSize: 22, letterSpacing: 4, fontVariantNumeric: "tabular-nums" }}>{code}</div>}
+        </>
+      )}
+      {err && <div className="err">{err}</div>}
+    </div>
+  );
 }
 
 function WhatsAppSection() {
@@ -513,7 +630,7 @@ function WhatsAppSection() {
         <div className="modal-body">
           <div className="fh muted" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
             <b>Your own WhatsApp</b> works without any setup: import your phone's contacts below (or add people one by one), then ask ORION to WhatsApp someone by name. It asks you
-            yes or no with the exact message, then opens WhatsApp Desktop and presses Send (or just types it in for you to send).
+            yes or no with the exact message, then opens WhatsApp Desktop and presses Send (or just types it in for you to send). To send without any window, use the background link below.
           </div>
           <div className="fh muted" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
             <b>Optional, a business number in the background:</b> from Meta's developer site: your app → WhatsApp → API Setup. Messages come from that WhatsApp Business number, not your personal WhatsApp.
@@ -531,6 +648,7 @@ function WhatsAppSection() {
           </div>
         </div>
       )}
+      <GatewayCard initial={info.gateway} />
       <div className="modal-body">
         <div className="fh muted" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
           <b>Import contacts:</b> on Android, Contacts → Settings → Export to a .vcf file; on iPhone, icloud.com → Contacts → select all → Export vCard;
