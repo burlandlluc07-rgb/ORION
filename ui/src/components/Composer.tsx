@@ -210,7 +210,7 @@ export const Composer = forwardRef<ComposerHandle, { busy: boolean; remote?: boo
           ref={ta}
           value={text}
           rows={1}
-          placeholder={voiceLive ? "Listening… or type here" : "How can I help you today?"}
+          placeholder={voiceLive ? "Listening… or type here" : "How can I help? Type / for a skill"}
           onChange={onType}
           onBlur={() => setFix(null)}
           onPaste={(e) => { if (e.clipboardData.files.length) { e.preventDefault(); addFiles(e.clipboardData.files); } }}
@@ -257,9 +257,6 @@ export const Composer = forwardRef<ComposerHandle, { busy: boolean; remote?: boo
           )}
         </div>
       </div>
-      {!remote && <div className="composer-hint">
-        <kbd>/</kbd> for skills · Shift+Enter for a new line · Esc stops · risky actions always ask first
-      </div>}
     </div>
   );
 });

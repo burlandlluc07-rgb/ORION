@@ -71,7 +71,7 @@ export const useStore = create<Store>((set, get) => ({
   heard: null,
   models: [],
   toasts: [],
-  rightOpen: localStorage.getItem("orion.right") !== "0",
+  rightOpen: localStorage.getItem("orion.right") === "1",  // closed until you open it
   rightPeek: false,
   sidebarOpen: localStorage.getItem("orion.sidebar") !== "0",
   onboarding: false,
