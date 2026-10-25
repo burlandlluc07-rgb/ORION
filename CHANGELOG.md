@@ -1,10 +1,29 @@
 # Changelog
 
-## 3.0.2
-One email fix on top of 3.0.1. Versions 3.0.0 and 3.0.1 were built but never published, so everything in them is in
-this release too and listed below. If you're on 2.7.x or older, all of it is new.
+## 3.0.3
+The notch and offline speech, on top of 3.0.2. Versions 3.0.0 to 3.0.2 were built but never published, so everything
+in them is in this release too and listed below. If you're on 2.7.x or older, all of it is new.
 
-### Fixed
+### New
+- **ORION hides in a notch until you need it.** A small black pill at the top centre of the screen. Hover it to see
+  "Ask ORION · Alt Space", click it or press Alt+Space to ask something. While ORION listens, thinks or runs a task
+  it springs open into a one-line status, and it opens by itself when an approval is waiting, without taking focus
+  from what you're typing. It stays out of the way in full-screen games, films and presentations. It replaces the
+  separate Quick Bar window; turn it off in Settings → Shortcuts → Notch (after a restart) to get the Quick Bar back.
+- **Speech understood on your PC, no quota needed (optional).** Settings → Voice → Offline speech recognition offers a
+  one-time 487 MB download (670 MB on disk, about 900 MB of memory while voice is on). Nothing downloads until you
+  tick the box and press Download, and the file is checked before it's used. Once installed, what you say, spoken
+  yes/no approvals and wake-word near-misses are understood on the PC first, and Gemini is only asked when that
+  fails. 25 European languages; Catalan isn't one of them, so Catalan still goes to Gemini. Live mode is unchanged.
+
+### Changed
+- **Less clutter.** The side panel starts closed and lost the System and Gemini cards (the per-model meters are now in
+  Settings → Brain → "Used today"; ask "why is my PC slow?" for the system check). Tasks and What ORION did are one
+  Activity page with two tabs. The version line, the hint lines under the composers and two of the six starter chips
+  are gone (shortcuts are in Settings → Shortcuts, skills still work through `/`). Pages and panels move with short,
+  smooth animations, and Windows' "Show animations" setting is respected.
+
+### From 3.0.2: fixed
 - **Emails have real line breaks.** Some AI models (often the free fallbacks) sent an email's text with "\n" typed
   in it, so it arrived in Outlook as one long line with the backslashes showing. ORION now turns a typed \n, \r\n or
   \t into a real line break or tab in the email, forward notes and subject lines, and leaves Windows paths like
