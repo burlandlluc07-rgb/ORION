@@ -25,6 +25,8 @@ interface Store {
   messages: Message[];
   tasks: Record<string, Task>;
   approvals: Approval[];
+  /** The approval brought up by the approvals hotkey or picked from the queue; shown first. */
+  approvalFocus: string | null;
   vitals: Vitals | null;
   voice: VoiceStatus;
   transcript: { role: string; text: string; tentative?: boolean } | null;
@@ -54,6 +56,18 @@ interface Store {
 
 let toastSeq = 1;
 
+/** Approvals in queue order: waiting ones by arrival, then the ones put back with "Later". */
+export function queueOrder(list: Approval[], ids?: string[]): Approval[] {
+  const pos = ids ? new Map(ids.map((id, i) => [id, i])) : null;
+  const sorted = pos ? [...list].sort((a, b) => (pos.get(a.id) ?? 1e9) - (pos.get(b.id) ?? 1e9)) : list;
+  return [...sorted.filter((a) => !a.parked), ...sorted.filter((a) => a.parked)];
+}
+
+/** The one approval that keyboard shortcuts act on: the focused one, else the front of the queue. */
+export function frontApproval(s: { approvals: Approval[]; approvalFocus: string | null }): Approval | undefined {
+  return s.approvals.find((a) => a.id === s.approvalFocus) ?? s.approvals.find((a) => !a.parked);
+}
+
 const normTask = (t: Task): Task => ({ ...t, plan: t.plan ?? [], steps: t.steps ?? [] });
 
 export const useStore = create<Store>((set, get) => ({
@@ -65,6 +79,7 @@ export const useStore = create<Store>((set, get) => ({
   messages: [],
   tasks: {},
   approvals: [],
+  approvalFocus: null,
   vitals: null,
   voice: { state: "off" },
   transcript: null,
@@ -100,7 +115,7 @@ export const useStore = create<Store>((set, get) => ({
 
   refreshState: async () => {
     const engine = await api.get<EngineState>("/api/state");
-    set({ engine, voice: engine.voice, approvals: engine.approvals, onboarding: !engine.has_key || !engine.settings.onboarded });
+    set({ engine, voice: engine.voice, approvals: queueOrder(engine.approvals), onboarding: !engine.has_key || !engine.settings.onboarded });
   },
 
   send: async (text, files) => {
@@ -140,7 +155,7 @@ export const useStore = create<Store>((set, get) => ({
         const st = ev.state as EngineState;
         const tasks = { ...s.tasks };
         for (const t of st.tasks) tasks[t.id] = normTask(t);
-        set({ engine: st, voice: st.voice, approvals: st.approvals, tasks,
+        set({ engine: st, voice: st.voice, approvals: queueOrder(st.approvals), tasks,
           onboarding: !st.has_key || !st.settings.onboarded });
         break;
       }
@@ -183,11 +198,18 @@ export const useStore = create<Store>((set, get) => ({
         set({ tasks: { ...s.tasks, [ev.task.id]: normTask(ev.task) } });
         break;
       case "approval.request":
-        set({ approvals: [...s.approvals.filter((a) => a.id !== ev.approval.id), ev.approval] });
+        set({ approvals: queueOrder([...s.approvals.filter((a) => a.id !== ev.approval.id), ev.approval]) });
         if (document.hidden) get().toast({ title: "Approval needed", body: ev.approval.label, tone: "warn" });
         break;
+      case "approval.updated":
+        set({ approvals: queueOrder(s.approvals.map((a) => (a.id === ev.approval.id ? ev.approval : a)), ev.queue),
+              approvalFocus: ev.approval.parked && s.approvalFocus === ev.approval.id ? null : s.approvalFocus });
+        break;
+      case "approval.focus":
+        set({ approvalFocus: ev.id });
+        break;
       case "approval.resolved":
-        set({ approvals: s.approvals.filter((a) => a.id !== ev.id) });
+        set({ approvals: s.approvals.filter((a) => a.id !== ev.id), approvalFocus: s.approvalFocus === ev.id ? null : s.approvalFocus });
         break;
       case "vitals":
         set({ vitals: ev.vitals });

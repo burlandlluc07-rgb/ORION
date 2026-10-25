@@ -1,6 +1,6 @@
 import { CornerDownLeft, Maximize2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { ApprovalCard } from "../components/ApprovalCard";
+import { ApprovalQueue } from "../components/ApprovalQueue";
 import { Markdown } from "../components/Markdown";
 import { Logo } from "../components/Logo";
 import { TaskCard } from "../components/TaskCard";
@@ -49,7 +49,7 @@ export function QuickBar() {
         <CornerDownLeft size={16} className="muted" />
       </div>
       <div className="quick-out">
-        {s.approvals.map((a, i) => <ApprovalCard key={a.id} a={a} hotkey={i === s.approvals.length - 1} />)}
+        <ApprovalQueue items={s.approvals} />
         {lastUser && <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>› {lastUser.content}</div>}
         {task && <TaskCard task={task} />}
         {show ? <Markdown text={show.content || "…"} /> : lastUser ? <div className="typing"><i /><i /><i /></div>

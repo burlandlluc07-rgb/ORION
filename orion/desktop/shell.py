@@ -135,6 +135,22 @@ class DesktopShell:
         self.quick.evaluate_js("window.__orionQuickFocus && window.__orionQuickFocus()")
         self._quick_visible = True
 
+    def show_approvals(self) -> None:
+        """Approvals hotkey: bring the waiting approval up in the Quick Bar (it is only shown, never answered)."""
+        eng = self.server.engine
+        if not eng.approvals.queue():
+            self.notify("ORION", "No approvals waiting.")
+            return
+
+        async def focus() -> None:
+            eng.approvals.focus()
+
+        self.server.call(focus)
+        if self.quick and not getattr(self, "_quick_visible", False):
+            self.toggle_quick()
+        elif not self.quick:
+            self.show_main()
+
     def window_action(self, action: str) -> None:
         if action == "show":
             self.show_main()
@@ -232,7 +248,8 @@ class DesktopShell:
             if eng.voice:
                 self.server.call(eng.voice.toggle)
 
-        self.hotkeys = Hotkeys({s.hotkey_quickbar: self.toggle_quick, s.hotkey_voice: voice})
+        self.hotkeys = Hotkeys({s.hotkey_quickbar: self.toggle_quick, s.hotkey_voice: voice,
+                                s.hotkey_approvals: self.show_approvals})
         self.hotkeys.start()
 
     # ── Autostart ──────────────────────────────────────────────────────────
