@@ -24,6 +24,9 @@ class DesktopShell:
         self.url = ""
         self.window: Any = None
         self.quick: Any = None
+        self.notch: Any = None
+        self._notch_mode = "idle"
+        self._notch_hidden = False
         self.tray: Any = None
         self.hotkeys: Any = None
         self._quitting = False
@@ -51,10 +54,22 @@ class DesktopShell:
             "ORION", self.url, width=width, height=height, x=x, y=y, min_size=(760, 520), background_color="#000000",
             hidden=start_hidden, text_select=True,
         )
-        self.quick = webview.create_window(
-            "ORION Quick", self.url + "#/quick", width=720, height=440, frameless=True, on_top=True,
-            hidden=True, background_color="#000000", easy_drag=True, resizable=False,
-        )
+        if self.config.settings.notch:
+            # The notch replaces the separate Quick Bar window: same hotkey, one small window instead of two.
+            from . import notch
+
+            x, y, w, h = self._notch_geometry("idle")
+            self.notch = webview.create_window(
+                notch.TITLE, self.url + "#/notch", width=w, height=h, x=x, y=y, frameless=True, on_top=True,
+                transparent=True, focus=False, shadow=False, resizable=False, easy_drag=False,
+                background_color="#000000",
+            )
+            self.notch.events.shown += lambda: threading.Thread(target=self._watch_fullscreen, name="notch", daemon=True).start()
+        else:
+            self.quick = webview.create_window(
+                "ORION Quick", self.url + "#/quick", width=720, height=440, frameless=True, on_top=True,
+                hidden=True, background_color="#000000", easy_drag=True, resizable=False,
+            )
         self.window.events.closing += self._on_closing
         self.window.events.shown += self.apply_titlebar
         self._start_tray()
@@ -67,7 +82,7 @@ class DesktopShell:
             log.exception("Native window failed; falling back to the default browser")
             import webbrowser
 
-            self.window = self.quick = None
+            self.window = self.quick = self.notch = None
             webbrowser.open(self.url)
             self.notify("ORION", "Opened in your browser. Install the Microsoft Edge WebView2 Runtime for the app window.")
             import time
@@ -91,11 +106,12 @@ class DesktopShell:
     def _on_closing(self) -> bool:
         if self._quitting or not self.config.settings.close_to_tray or self.tray is None:
             self._quitting = True
-            if self.quick:
-                try:
-                    self.quick.destroy()
-                except Exception:
-                    pass
+            for extra in (self.quick, self.notch):
+                if extra:
+                    try:
+                        extra.destroy()
+                    except Exception:
+                        pass
             return True
         self.window.hide()
         return False
@@ -118,6 +134,9 @@ class DesktopShell:
             self.apply_titlebar()  # also picks up a Windows light/dark switch while ORION was hidden
 
     def toggle_quick(self) -> None:
+        if self.notch:
+            self.notch.evaluate_js("window.__orionNotch && window.__orionNotch('toggle')")
+            return
         if not self.quick:
             return
         if getattr(self, "_quick_visible", False):
@@ -157,8 +176,61 @@ class DesktopShell:
                 self.quick.hide()
                 self._quick_visible = False
             self.show_main()
+        elif action.startswith("notch-"):
+            self.notch_action(action[len("notch-"):])
         elif action == "quit":
             threading.Thread(target=self.quit, daemon=True).start()
+
+    # ── Notch ──────────────────────────────────────────────────────────────
+    def _notch_geometry(self, mode: str) -> tuple[int, int, int, int]:
+        from . import notch
+
+        try:
+            import webview
+
+            scr = webview.screens[0]
+            return notch.place(mode, getattr(scr, "x", 0), getattr(scr, "y", 0), scr.width)
+        except Exception:
+            w, h = notch.size_for(mode)
+            return 0, 0, w, h
+
+    def notch_action(self, what: str) -> None:
+        """idle | peek | open | focus | blur | open-main. The page picks the mode, this sizes the window for it."""
+        if not self.notch:
+            return
+        from . import notch, titlebar
+
+        if what == "open-main":
+            self.notch.evaluate_js("window.__orionNotch && window.__orionNotch('close')")
+            self.show_main()
+            return
+        if what in ("focus", "blur"):
+            notch.set_activatable(titlebar.find_window(notch.TITLE), what == "focus")
+            return
+        if what not in notch.SIZES:
+            return
+        self._notch_mode = what
+        try:
+            if not notch.apply(titlebar.find_window(notch.TITLE), what):
+                x, y, w, h = self._notch_geometry(what)
+                self.notch.resize(w, h)
+                self.notch.move(x, y)
+        except Exception:
+            log.exception("Couldn't resize the notch")
+
+    def _watch_fullscreen(self) -> None:
+        """Hide the pill while a full-screen game, film or presentation is in front; bring it back after."""
+        import time
+
+        from . import notch, titlebar
+
+        hwnd = titlebar.find_window(notch.TITLE)
+        notch.apply(hwnd, self._notch_mode)  # also pins it flush to the top on high-DPI screens
+        while not self._quitting and self.notch and hwnd:
+            hide = notch.fullscreen_app_in_front() and self._notch_mode == "idle"
+            if hide != self._notch_hidden and notch.set_visible(hwnd, not hide):
+                self._notch_hidden = hide
+            time.sleep(1.5)
 
     def quit(self) -> None:
         self._quitting = True
@@ -196,7 +268,7 @@ class DesktopShell:
 
         menu = pystray.Menu(
             pystray.MenuItem("Open ORION", lambda *_: self.show_main(), default=True),
-            pystray.MenuItem("Quick command", lambda *_: self.toggle_quick()),
+            pystray.MenuItem("Ask ORION", lambda *_: self.toggle_quick()),
             pystray.MenuItem("Talk to ORION", voice),
             pystray.MenuItem("Stop all tasks", lambda *_: self.server.engine.stop_everything()),
             pystray.Menu.SEPARATOR,
