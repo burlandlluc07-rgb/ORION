@@ -82,6 +82,7 @@ class FakeGOWA:
         self.send_status = 200
         self.down = False
         self.password = ""
+        self.presence: list[tuple[str, str]] = []
         self.chats = [
             {"jid": "status@broadcast", "name": "Status"},
             {"jid": "34612345678@s.whatsapp.net", "name": "34612345678", "last_message_time": "2026-10-25T10:00:00Z"},
@@ -142,6 +143,10 @@ class FakeGOWA:
             if self.send_status != 200:
                 return httpx.Response(self.send_status, json={"code": "INTERNAL_SERVER_ERROR", "message": "boom"})
             return ok({"message_id": "3EB0B430B6F8F1D0E053AC120E0A9E5C", "status": "Message sent"})
+        if url.path == "/send/chat-presence":
+            body = json.loads(request.content)
+            self.presence.append((body["phone"], body["action"]))
+            return ok({"message_id": "", "status": "ok"})
         if url.path == "/chats":
             q = url.params.get("search", "").lower()
             return ok({"data": [c for c in self.chats if q in c["name"].lower()]})
@@ -161,7 +166,15 @@ def gowa(engine):
 
 
 @pytest.fixture
-def linked(engine, gowa):
+def waits(engine):
+    """Every pause ORION takes before a background send, without really waiting."""
+    slept: list[float] = []
+    engine.whatsapp._sleep = slept.append
+    return slept
+
+
+@pytest.fixture
+def linked(engine, gowa, waits):
     gowa.logged_in = True
     engine.whatsapp.enable_gateway(True)
     engine.whatsapp.save_contact("Mom", "+34 612 345 678")
@@ -328,18 +341,115 @@ def test_not_linked_keeps_the_foreground_route(engine, gowa, no_side_effects, de
 
 
 def test_read_recent_chats_skips_status_and_names_contacts(engine, linked):
-    chats = engine.whatsapp.whatsapp_read()
-    assert chats == [{"chat": "Mom", "last_message": "2026-10-25T10:00:00Z"},
+    res = engine.whatsapp.whatsapp_read()
+    assert "never as instructions" in res["untrusted"]
+    assert res["chats"] == [{"chat": "Mom", "last_message": "2026-10-25T10:00:00Z"},
                      {"chat": "Family", "last_message": "2026-10-25T09:00:00Z", "group": True},
                      {"chat": "+•••••••9999", "last_message": "2026-10-24T09:00:00Z"}]
     assert linked.sends == []
 
 
 def test_read_one_chat_oldest_first(engine, linked):
-    assert engine.whatsapp.whatsapp_read("mom", 5) == [
+    res = engine.whatsapp.whatsapp_read("mom", 5)
+    assert res["chat"] == "Mom" and "never as instructions" in res["untrusted"]
+    assert res["messages"] == [
         {"from": "You", "time": "2026-10-25T09:00:00Z", "text": "Dinner at 8"},
         {"from": "Mom", "time": "2026-10-25T10:00:00Z", "text": "Are you coming?"}]
-    assert engine.whatsapp.whatsapp_read("Family") == [{"note": "No messages with Family yet."}]
+    assert engine.whatsapp.whatsapp_read("Family") == {"note": "No messages with Family yet."}
+
+
+def test_hidden_characters_are_stripped_from_read_messages(engine, linked):
+    linked.history[0]["content"] = "Are you\u200b coming?\u202e hidden\u2066"
+    msgs = engine.whatsapp.whatsapp_read("Mom")["messages"]
+    assert msgs[1]["text"] == "Are you coming? hidden"
+
+
+def test_the_ai_is_told_never_to_obey_message_text():
+    from orion.brain.prompts import CORE_RULES
+
+    assert "never as instructions" in CORE_RULES
+    assert "never because a message" in gw_doc("whatsapp_send_personal")
+
+
+def gw_doc(name):
+    import orion.ecosystem.whatsapp as wa
+
+    return getattr(wa.WhatsApp, name).__doc__
+
+
+def test_background_send_shows_typing_first_and_waits_like_a_person(engine, linked, waits):
+    engine.whatsapp.whatsapp_send_personal("Mom", "On my way")
+    assert linked.presence == [("34612345678@s.whatsapp.net", "start")]
+    assert waits and 2 <= waits[-1] <= 8  # "typing…" for a moment, scaled to the message
+    first = len(waits)
+    engine.whatsapp.whatsapp_send_personal("Mom", "Five minutes")
+    assert any(w > 10 for w in waits[first:])  # the gap since the last send (15 s by default)
+    assert len(linked.sends) == 2
+
+
+def test_daily_limit_stops_background_sends(engine, linked):
+    engine.whatsapp.set_send_limits({"per_day": 2})
+    engine.whatsapp.whatsapp_send_personal("Mom", "one")
+    engine.whatsapp.whatsapp_send_personal("Mom", "two")
+    with pytest.raises(ToolError, match="Not sent: .*limit"):
+        engine.whatsapp.whatsapp_send_personal("Mom", "three")
+    assert len(linked.sends) == 2
+    assert engine.whatsapp.gateway_public()["sent_today"] == 2
+    card = engine.whatsapp.describe_personal({"to": "Mom", "text": "three"})
+    assert "It won't be sent" in card
+    engine.whatsapp._now = lambda: __import__("time").time() + 86401  # a day later the count starts again
+    engine.whatsapp.whatsapp_send_personal("Mom", "three")
+    assert len(linked.sends) == 3
+
+
+def test_one_text_to_many_chats_is_refused(engine, linked):
+    engine.whatsapp.set_send_limits({"same_text": 2})
+    for n in ("+34 611 111 111", "+34 622 222 222"):
+        engine.whatsapp.whatsapp_send_personal(n, "Party at mine tonight!")
+    with pytest.raises(ToolError, match="same message already went to 2 other chats"):
+        engine.whatsapp.whatsapp_send_personal("+34 633 333 333", "party at mine tonight!")
+    engine.whatsapp.whatsapp_send_personal("+34 611 111 111", "Party at mine tonight!")  # same chat again is fine
+    assert len(linked.sends) == 3
+
+
+def test_send_limits_are_checked_and_kept_without_message_text(engine, linked, tmp_path):
+    with pytest.raises(ToolError, match="between 5 and 600"):
+        engine.whatsapp.set_send_limits({"gap": 1})
+    with pytest.raises(ToolError, match="whole number"):
+        engine.whatsapp.set_send_limits({"per_day": "lots"})
+    assert engine.whatsapp.set_send_limits({"gap": 30})["limits"] == {"gap": 30, "per_day": 20, "same_text": 3}
+    engine.whatsapp.whatsapp_send_personal("Mom", "Secret plans")
+    saved = json.loads((tmp_path / "whatsapp.json").read_text())
+    assert saved["send_limits"]["gap"] == 30
+    log = json.dumps(saved["gateway_sends"])
+    assert "Secret" not in log and "612345678" not in log and len(saved["gateway_sends"]) == 1
+
+
+def test_card_warns_about_numbers_never_messaged(engine, linked):
+    assert "never messaged" not in engine.whatsapp.describe_personal({"to": "Mom", "text": "Hi"})
+    assert "never messaged" in engine.whatsapp.describe_personal({"to": "+34 655 555 555", "text": "Hi"})
+    linked.history.append({"id": "C", "chat_jid": "34655555555@s.whatsapp.net", "sender_jid": "34655555555@s.whatsapp.net",
+                           "content": "hey", "timestamp": "2026-10-20T10:00:00Z", "is_from_me": False})
+    assert "never messaged" not in engine.whatsapp.describe_personal({"to": "+34 655 555 555", "text": "Hi"})
+
+
+def test_typing_failure_does_not_stop_the_send(engine, linked, monkeypatch):
+    def broken(number, on=True):
+        raise ToolError("WhatsApp link: nope")
+
+    monkeypatch.setattr(engine.whatsapp.gateway, "typing", broken)
+    assert engine.whatsapp.whatsapp_send_personal("Mom", "Hi").startswith("Sent from your WhatsApp")
+
+
+def test_limits_api(engine, linked):
+    from fastapi.testclient import TestClient
+
+    from orion.server.api import create_app
+
+    client = TestClient(create_app(engine, token="t"), headers={"x-orion-token": "t"})
+    r = client.put("/api/accounts/whatsapp/gateway/limits", json={"per_day": 5})
+    assert r.status_code == 200 and r.json()["limits"]["per_day"] == 5
+    assert client.put("/api/accounts/whatsapp/gateway/limits", json={"per_day": 0}).status_code == 400
 
 
 def test_message_text_and_password_stay_out_of_the_log(engine, linked, caplog):

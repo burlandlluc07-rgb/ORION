@@ -440,7 +440,17 @@ interface WhatsAppInfo {
 }
 
 // ── Personal WhatsApp in the background (opt-in, unofficial) ─────────────
-interface GatewayInfo { enabled: boolean; state: "off" | "stopped" | "error" | "waiting_for_link" | "linked"; account: string; error: string; warning: string }
+interface SendLimits { gap: number; per_day: number; same_text: number }
+interface GatewayInfo {
+  enabled: boolean; state: "off" | "stopped" | "error" | "waiting_for_link" | "linked"; account: string; error: string; warning: string;
+  limits: SendLimits; sent_today: number;
+}
+
+const LIMIT_FIELDS: { key: keyof SendLimits; label: string; min: number; max: number }[] = [
+  { key: "gap", label: "Seconds between messages", min: 5, max: 600 },
+  { key: "per_day", label: "Messages a day", min: 1, max: 100 },
+  { key: "same_text", label: "Chats one text may go to in an hour", min: 1, max: 10 },
+];
 
 function GatewayCard({ initial }: { initial: GatewayInfo }) {
   const toast = useStore((s) => s.toast);
@@ -471,6 +481,9 @@ function GatewayCard({ initial }: { initial: GatewayInfo }) {
   const turnOn = () => run(async () => { setG(await api.put<GatewayInfo>("/api/accounts/whatsapp/gateway", { accept_risk: true })); setAccept(false); });
   const turnOff = (forget: boolean) => run(async () => {
     setG(await api.del<GatewayInfo>(`/api/accounts/whatsapp/gateway${forget ? "?forget=true" : ""}`)); setQr(null); setCode("");
+  });
+  const saveLimit = (key: keyof SendLimits, value: number) => run(async () => {
+    setG(await api.put<GatewayInfo>("/api/accounts/whatsapp/gateway/limits", { [key]: value }));
   });
   const showQr = () => run(async () => { setCode(""); setQr(await api.post<{ image: string; expires_in: number }>("/api/accounts/whatsapp/gateway/qr", {})); });
   const showCode = () => run(async () => { setQr(null); setCode((await api.post<{ code: string }>("/api/accounts/whatsapp/gateway/code", { number: phone })).code); });
@@ -505,6 +518,22 @@ function GatewayCard({ initial }: { initial: GatewayInfo }) {
               {busy ? <><Loader2 size={13} className="spin" /> Downloading and checking…</> : "Turn on"}</button>
           </div>
         </>
+      )}
+      {g.enabled && g.limits && (
+        <div className="fh muted" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
+          <b>Pace:</b> to keep your account safe, ORION sends like a person: it shows “typing…” first, waits between messages and
+          stops at a daily limit. {g.sent_today} sent in the last 24 hours.
+          <div className="row" style={{ flexWrap: "wrap", marginTop: 6 }}>
+            {LIMIT_FIELDS.map((f) => (
+              <label key={f.key} className="row" style={{ gap: 6 }}>
+                {f.label}
+                <input className="input" type="number" min={f.min} max={f.max} style={{ width: 70 }} defaultValue={g.limits[f.key]}
+                  key={`${f.key}-${g.limits[f.key]}`} disabled={busy}
+                  onBlur={(e) => { const v = Number(e.target.value); if (v !== g.limits[f.key]) saveLimit(f.key, v); }} />
+              </label>
+            ))}
+          </div>
+        </div>
       )}
       {waiting && (
         <>

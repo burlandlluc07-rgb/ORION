@@ -329,6 +329,15 @@ class Gateway:
                             "Check WhatsApp before sending again.")
         return mid
 
+    def typing(self, number: str, on: bool = True) -> None:
+        """Show (or stop showing) "typing…" in the chat, the way a person's phone does before a message."""
+        self._api("POST", "/send/chat-presence", timeout=10,
+                  json={"phone": jid_for(number), "action": "start" if on else "stop"})
+
+    def has_history(self, number: str) -> bool:
+        """Whether this account already has at least one message with that number."""
+        return bool(self.messages(jid_for(number), 1))
+
     def chats(self, limit: int = 10, search: str = "") -> list[dict]:
         params: dict = {"limit": min(max(int(limit), 1), 50) + 5}
         if search:

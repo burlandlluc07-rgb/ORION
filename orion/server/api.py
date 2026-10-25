@@ -591,6 +591,13 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
     async def delete_whatsapp_gateway(forget: bool = False):
         return await asyncio.to_thread(engine.whatsapp.disable_gateway, forget)
 
+    @app.put("/api/accounts/whatsapp/gateway/limits", dependencies=[X])
+    async def put_whatsapp_gateway_limits(body: dict = Body(...)):
+        try:
+            return await asyncio.to_thread(engine.whatsapp.set_send_limits, body)
+        except ToolError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
     @app.post("/api/accounts/whatsapp/gateway/qr", dependencies=[X])
     async def whatsapp_gateway_qr():
         try:
