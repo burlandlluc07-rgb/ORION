@@ -49,7 +49,7 @@ def _short(text: str, n: int) -> str:
 def summary(tool: str, label: str) -> str:
     if tool in MESSAGE_TOOLS:
         label = _QUOTED.sub("(message not shown)", label)
-        label = label.replace(" (ORION opens WhatsApp and presses Send)", "")
+        label = label.replace(" (ORION opens WhatsApp and presses Send)", "").replace(" (in the background)", "")
     return _short(label, SUMMARY_MAX)
 
 

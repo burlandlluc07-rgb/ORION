@@ -79,6 +79,13 @@ def media_key(keys: str) -> str | None:
     return MEDIA_KEYS.get(str(keys or "").strip().lower().replace(" ", ""))
 
 
+def _takes_background_route(tool: "Tool", args: dict) -> bool:
+    try:
+        return bool(tool.background(args))  # type: ignore[misc]
+    except Exception:  # when in doubt, the call keeps its foreground classification and the desktop gate
+        return False
+
+
 def capabilities_for(tool: "Tool", settings: "Settings | None" = None, browser_visible: bool = False,
                      args: dict | None = None) -> Capabilities:
     """What one call can do. ``args`` lets a tool with a background route for some requests take it."""
@@ -90,6 +97,8 @@ def capabilities_for(tool: "Tool", settings: "Settings | None" = None, browser_v
     if name == "window_action" and args.get("action") in QUIET_WINDOW_ACTIONS:
         return Capabilities(route="app_automation", desktop="visible", changes_local=True,
                             evidence="the window's state was read back")
+    if tool.background is not None and _takes_background_route(tool, args):
+        return Capabilities(route="api_mcp", changes_external=True, evidence="the service's response")
     if source.startswith("mcp:"):
         external = tool.risk != "safe"
         return Capabilities(route="api_mcp", changes_external=external, evidence="the connector's response")

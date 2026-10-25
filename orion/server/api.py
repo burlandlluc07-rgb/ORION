@@ -576,6 +576,42 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
         engine.whatsapp.remove()
         return engine.whatsapp.public()
 
+    @app.get("/api/accounts/whatsapp/gateway", dependencies=[X])
+    async def whatsapp_gateway():
+        return await asyncio.to_thread(engine.whatsapp.gateway_public, True)
+
+    @app.put("/api/accounts/whatsapp/gateway", dependencies=[X])
+    async def put_whatsapp_gateway(body: dict = Body(...)):
+        try:
+            return await asyncio.to_thread(engine.whatsapp.enable_gateway, body.get("accept_risk") is True)
+        except ToolError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.delete("/api/accounts/whatsapp/gateway", dependencies=[X])
+    async def delete_whatsapp_gateway(forget: bool = False):
+        return await asyncio.to_thread(engine.whatsapp.disable_gateway, forget)
+
+    @app.put("/api/accounts/whatsapp/gateway/limits", dependencies=[X])
+    async def put_whatsapp_gateway_limits(body: dict = Body(...)):
+        try:
+            return await asyncio.to_thread(engine.whatsapp.set_send_limits, body)
+        except ToolError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/accounts/whatsapp/gateway/qr", dependencies=[X])
+    async def whatsapp_gateway_qr():
+        try:
+            return await asyncio.to_thread(engine.whatsapp.gateway_qr)
+        except ToolError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/accounts/whatsapp/gateway/code", dependencies=[X])
+    async def whatsapp_gateway_code(body: dict = Body(...)):
+        try:
+            return await asyncio.to_thread(engine.whatsapp.gateway_code, str(body.get("number", "")))
+        except ToolError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
     @app.put("/api/accounts/whatsapp/contacts", dependencies=[X])
     async def put_whatsapp_contact(body: dict = Body(...)):
         try:
