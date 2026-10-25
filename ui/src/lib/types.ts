@@ -125,6 +125,7 @@ export interface Settings {
   allowed_roots: string[];
   voice: VoiceSettings;
   hotkey_quickbar: string;
+  notch?: boolean;
   hotkey_voice: string;
   start_minimized: boolean;
   launch_on_startup: boolean;
