@@ -1,0 +1,87 @@
+[
+  {
+    "name": "idle: size, flush top, centred",
+    "ok": true,
+    "detail": "rect=(402,0,622,44) expected 220x44 on a 1024px screen"
+  },
+  {
+    "name": "idle: window clipped to the pill",
+    "ok": true,
+    "detail": "region kind=3 box=(36,-32,184,30) expected pill 148x30"
+  },
+  {
+    "name": "idle: can't take focus (WS_EX_NOACTIVATE)",
+    "ok": true,
+    "detail": "exstyle=0x8050008"
+  },
+  {
+    "name": "peek: size, flush top, centred",
+    "ok": true,
+    "detail": "rect=(282,0,742,72) expected 460x72 on a 1024px screen"
+  },
+  {
+    "name": "peek: window clipped to the pill",
+    "ok": true,
+    "detail": "region kind=3 box=(10,-48,450,58) expected pill 440x58"
+  },
+  {
+    "name": "peek: focus stays in Notepad",
+    "ok": true,
+    "detail": "foreground='Untitled - Notepad'"
+  },
+  {
+    "name": "open: size, flush top, centred",
+    "ok": true,
+    "detail": "rect=(162,0,862,500) expected 700x500 on a 1024px screen"
+  },
+  {
+    "name": "open: window clipped to the pill",
+    "ok": true,
+    "detail": "region kind=3 box=(10,-56,690,480) expected pill 680x480"
+  },
+  {
+    "name": "open: focus stays in Notepad",
+    "ok": true,
+    "detail": "foreground='Untitled - Notepad'"
+  },
+  {
+    "name": "idle: size, flush top, centred",
+    "ok": true,
+    "detail": "rect=(402,0,622,44) expected 220x44 on a 1024px screen"
+  },
+  {
+    "name": "idle: window clipped to the pill",
+    "ok": true,
+    "detail": "region kind=3 box=(36,-32,184,30) expected pill 148x30"
+  },
+  {
+    "name": "open: size, flush top, centred",
+    "ok": true,
+    "detail": "rect=(162,0,862,500) expected 700x500 on a 1024px screen"
+  },
+  {
+    "name": "open: window clipped to the pill",
+    "ok": true,
+    "detail": "region kind=3 box=(10,-56,690,480) expected pill 680x480"
+  },
+  {
+    "name": "hotkey: opens and takes focus",
+    "ok": true,
+    "detail": "foreground='ORION Notch'"
+  },
+  {
+    "name": "idle: size, flush top, centred",
+    "ok": true,
+    "detail": "rect=(402,0,622,44) expected 220x44 on a 1024px screen"
+  },
+  {
+    "name": "idle: window clipped to the pill",
+    "ok": true,
+    "detail": "region kind=3 box=(36,-32,184,30) expected pill 148x30"
+  },
+  {
+    "name": "closed again: back to no-focus",
+    "ok": true,
+    "detail": "exstyle=0x8050008"
+  }
+]
