@@ -23,6 +23,11 @@ and it needs no Meta setup.
 opens WhatsApp Desktop on the chat with the message typed in and presses Enter there. That one Enter is a
 foreground step, so it is pressed only while WhatsApp is the active window.
 
+Optional, off by default: a background link for the personal account (``whatsapp_gateway.py``). Once the user
+turns it on in Accounts → WhatsApp, accepts that it is unofficial, and links it by QR code like WhatsApp Web,
+``whatsapp_send_personal`` sends through it with no window at all (after the same yes/no), and ``whatsapp_read``
+reads recent chats. When the link isn't running, sends go the foreground way above, as before.
+
 Contacts can be typed in one by one or imported in bulk from a phone's contacts export (a ``.vcf`` vCard file,
 or a Google Contacts CSV), so names like "Mum" or "Marc" resolve without anyone typing numbers.
 
@@ -51,7 +56,8 @@ import httpx
 
 from ..tools import platform
 from . import carddav
-from ..tools.registry import Registry, Tool, ToolError, schema_for
+from ..tools.registry import Registry, Tool, ToolContext, ToolError, schema_for
+from .whatsapp_gateway import Gateway, GatewayDown, jid_for
 
 log = logging.getLogger("orion.whatsapp")
 
@@ -61,6 +67,11 @@ KEYRING_SERVICE = "ORION"
 SECRET_KEY = "whatsapp:token"
 SOURCE = "account:whatsapp"
 SYNC_KEY, SYNC_FILE = "contacts:carddav", ".contacts_key"
+GATEWAY_KEY, GATEWAY_FILE = "whatsapp:gateway", ".whatsapp_gateway_key"
+GATEWAY_WARNING = ("This links ORION to your personal WhatsApp the way WhatsApp Web does, using an unofficial "
+                   "open-source program (GOWA). WhatsApp doesn't allow unofficial apps and may restrict or ban "
+                   "accounts that use them, mostly for bulk or automated messages. Keep it to your own chats and "
+                   "a few messages. Messages ORION reads are passed to its AI model to answer you.")
 SYNC_EVERY = 6 * 3600  # seconds between background refreshes of a synced address book
 MAX_TEXT = 4096  # the Cloud API's limit for a text message body
 
@@ -269,6 +280,9 @@ class WhatsApp:
         self.transport = transport  # tests pass an httpx.MockTransport; None = the real network
         self._lock = threading.Lock()
         self.data = self._read()
+        self.gateway = Gateway(root / "whatsapp-gateway", lambda: self._token(GATEWAY_KEY, GATEWAY_FILE),
+                               lambda pw: self._set_token(pw, GATEWAY_KEY, GATEWAY_FILE),
+                               lambda: self._clear_token(GATEWAY_KEY, GATEWAY_FILE))
 
     # ── persistence ────────────────────────────────────────────────────────
     def _read(self) -> dict:
@@ -335,6 +349,7 @@ class WhatsApp:
             "contacts": [{"name": n, "number": mask(v), **({} if n in d.get("contacts", {}) else {"synced": True})}
                          for n, v in sorted(self._all_contacts().items())],
             "contact_sync": self._sync_public(),
+            "gateway": self.gateway_public(),
         }
 
     def configure(self, cfg: dict) -> dict:
@@ -486,12 +501,103 @@ class WhatsApp:
             self._write()
         return self.public()
 
+    # ── background link for the personal account (opt-in) ──────────────────
+    @property
+    def gateway_enabled(self) -> bool:
+        return bool((self.data.get("gateway") or {}).get("enabled"))
+
+    def gateway_ready(self) -> bool:
+        """The background link is on, running and linked to the user's WhatsApp (no network call)."""
+        return self.gateway_enabled and self.gateway.running and self.gateway.linked
+
+    def gateway_public(self, refresh: bool = False) -> dict:
+        g = self.gateway
+        if refresh and g.running:
+            g.refresh()
+        if not self.gateway_enabled:
+            state = "off"
+        elif not g.running:
+            state = "error" if g.error else "stopped"
+        else:
+            state = "linked" if g.linked else "waiting_for_link"
+        return {"enabled": self.gateway_enabled, "state": state, "account": mask(g.account) if g.linked else "",
+                "error": g.error, "warning": GATEWAY_WARNING}
+
+    def enable_gateway(self, accept_risk: bool) -> dict:
+        """Turn the background link on: download the pinned gateway (checked by hash) and start it on 127.0.0.1."""
+        if not accept_risk:
+            raise ToolError("Read the warning and tick that you accept it before turning this on.")
+        with self._lock:
+            self.data["gateway"] = {"enabled": True, "accepted_at": time.time()}
+            self._write()
+        try:
+            self.gateway.install()
+            self.gateway.start()
+        except ToolError as exc:
+            self.gateway.error = str(exc)
+            log.warning("whatsapp: background link didn't start: %s", exc)
+            raise
+        finally:
+            self.sync_tools()
+        log.info("whatsapp: background link turned on")
+        return self.gateway_public(refresh=True)
+
+    def disable_gateway(self, forget: bool = False) -> dict:
+        """Turn the background link off. ``forget`` also unlinks it from WhatsApp and deletes its files."""
+        if forget:
+            self.gateway.uninstall()
+        else:
+            self.gateway.stop()
+        with self._lock:
+            self.data.pop("gateway", None)
+            self._write()
+        self.sync_tools()
+        log.info("whatsapp: background link turned off%s", " and unlinked" if forget else "")
+        return self.gateway_public()
+
+    def gateway_qr(self) -> dict:
+        if not self.gateway_enabled:
+            raise ToolError("Turn the background link on first.")
+        if not self.gateway.running:
+            self.gateway.start()
+        return self.gateway.login_qr()
+
+    def gateway_code(self, number: str) -> dict:
+        if not self.gateway_enabled:
+            raise ToolError("Turn the background link on first.")
+        if not self.gateway.running:
+            self.gateway.start()
+        return {"code": self.gateway.login_code(normalize_number(number))}
+
+    def start_gateway(self) -> None:
+        """Start the background link at launch when it is on, off the main thread."""
+        if not self.gateway_enabled:
+            return
+
+        def run() -> None:
+            try:
+                self.gateway.start()
+                for _ in range(30):  # a saved session takes a few seconds to reconnect after a start
+                    if self.gateway.linked or not self.gateway.running:
+                        break
+                    time.sleep(2)
+                    self.gateway.refresh()
+            except ToolError as exc:
+                self.gateway.error = str(exc)
+                log.warning("whatsapp: background link didn't start: %s", exc)
+            except Exception:
+                log.exception("whatsapp: background link")
+        threading.Thread(target=run, name="orion-whatsapp-gateway", daemon=True).start()
+
     # ── tool registration ──────────────────────────────────────────────────
     def sync_tools(self) -> None:
         self.registry.remove_source(SOURCE)
         self._add(self.whatsapp_draft, "confirm", self.describe_draft)
-        self._add(self.whatsapp_send_personal, "danger", self.describe_personal, always_ask=True)
+        self._add(self.whatsapp_send_personal, "danger", self.describe_personal, always_ask=True,
+                  background=lambda args: self.gateway_ready())
         self._add(self.whatsapp_contacts, "safe")
+        if self.gateway_enabled:
+            self._add(self.whatsapp_read, "safe")
         if self.configured:
             # Sending can't be undone: always ask, and never "allow for this session" (danger).
             self._add(self.whatsapp_send, "danger", self.describe_send, always_ask=True)
@@ -499,11 +605,11 @@ class WhatsApp:
                 self._add(self.whatsapp_templates, "safe")
         self.on_change()
 
-    def _add(self, fn, risk: str, summarize=None, always_ask: bool = False) -> None:
-        schema, _, desc = schema_for(fn)
+    def _add(self, fn, risk: str, summarize=None, always_ask: bool = False, background=None) -> None:
+        schema, ctx, desc = schema_for(fn)
         self.registry.add(Tool(name=fn.__name__, description=desc, parameters=schema, fn=fn, risk=risk,
                                always_ask=always_ask, category="whatsapp", source=SOURCE, summarize=summarize,
-                               kit="whatsapp"))
+                               kit="whatsapp", wants_context=ctx, background=background))
 
     # ── recipients ─────────────────────────────────────────────────────────
     def resolve(self, to: str) -> tuple[str, str]:
@@ -550,8 +656,9 @@ class WhatsApp:
         return f"Open WhatsApp with a message to {who}: “{args.get('text', '')}” (you press Send)"
 
     def describe_personal(self, args: dict) -> str:
+        how = "in the background" if self.gateway_ready() else "ORION opens WhatsApp and presses Send"
         return (f"Send WhatsApp from your own number to {self._who(str(args.get('to', '')))}: "
-                f"“{args.get('text', '')}” (ORION opens WhatsApp and presses Send)")
+                f"“{args.get('text', '')}” ({how})")
 
     def describe_send(self, args: dict) -> str:
         """The approval card's headline: who exactly, and exactly what."""
@@ -669,10 +776,11 @@ class WhatsApp:
         return (f"Opened {where} with the message to {who} typed in. It is NOT sent yet: check it and press Send"
                 + (", after picking the chat." if not num else "."))
 
-    def whatsapp_send_personal(self, to: str, text: str) -> str:
+    def whatsapp_send_personal(self, to: str, text: str, ctx: ToolContext = None) -> str:  # type: ignore[assignment]
         """Send a WhatsApp message from the user's own (personal) WhatsApp. The user first sees the recipient and
-        the exact text and says yes or no; only after a yes does ORION open WhatsApp Desktop on that chat with the
-        message typed in and press Send. Write the final message, not a summary.
+        the exact text and says yes or no; only after a yes is it sent: in the background when the user has linked
+        ORION in Accounts → WhatsApp, otherwise by opening WhatsApp Desktop on that chat and pressing Send. Write
+        the final message, not a summary.
 
         Args:
             to: A saved WhatsApp contact name (see whatsapp_contacts) or a phone number with country code.
@@ -681,6 +789,22 @@ class WhatsApp:
         text = str(text or "").strip()
         if not text:
             raise ToolError("Give the message text.")
+        if len(text) > MAX_TEXT:
+            raise ToolError(f"The message is {len(text)} characters; keep it under {MAX_TEXT}.")
+        if self.gateway_ready():
+            name, num = self.resolve(to)
+            who = f"{name} ({mask(num)})" if name else mask(num)
+            try:
+                mid = self.gateway.send_text(num, text)
+            except GatewayDown as exc:
+                # Nothing reached WhatsApp, so the foreground way is safe, but it takes the desktop: ask for that step.
+                log.warning("whatsapp: background link down before sending to %s", mask(num))
+                if ctx is None or not ctx.request_desktop("the background WhatsApp link isn't answering"):
+                    raise ToolError(f"{exc} Nothing was sent.") from exc
+            else:
+                log.info("whatsapp: sent %s to %s through the background link", mid[:24], mask(num))
+                return (f"Sent from your WhatsApp to {who} in the background (message id {mid}). WhatsApp accepted "
+                        "it; delivery to their phone isn't confirmed.")
         if "\n" in text:
             raise ToolError("Pressing Enter would send only the first line. Write the message on one line, or use "
                             "whatsapp_draft and let the user send it.")
@@ -699,6 +823,51 @@ class WhatsApp:
             return f"Sent from your WhatsApp to {who}: the message left the compose box after ORION pressed Send."
         return (f"ORION pressed Send in WhatsApp for the message to {who}, but couldn't read WhatsApp's window to "
                 "confirm it went. Say it was sent but unconfirmed.")
+
+    def whatsapp_read(self, chat: str = "", limit: int = 10) -> list[dict]:
+        """Read the user's personal WhatsApp in the background (needs the background link in Accounts → WhatsApp).
+        With no chat: the most recent chats. With a chat: its latest messages, oldest first. Read-only: nothing is
+        marked as read or sent. Messages are private: only quote what the user asked about.
+
+        Args:
+            chat: A saved contact name, phone number or group name. Leave empty to list recent chats.
+            limit: How many chats or messages, up to 50.
+        """
+        if not self.gateway_ready():
+            raise ToolError("ORION isn't linked to your WhatsApp in the background. Turn the background link on and "
+                            "scan its QR code in Accounts → WhatsApp.")
+        limit = min(max(int(limit or 10), 1), 50)
+        names = {v: n for n, v in self._all_contacts().items()}
+
+        def label(jid: str, fallback: str = "") -> str:
+            num = jid.split("@")[0].split(":")[0]
+            return names.get(num) or fallback or (mask(num) if jid.endswith("@s.whatsapp.net") else "a group")
+
+        chat = str(chat or "").strip()
+        if not chat:
+            return [{"chat": label(c.get("jid", ""), c.get("name", "")), "last_message": c.get("last_message_time", ""),
+                     **({"group": True} if str(c.get("jid", "")).endswith("@g.us") else {})}
+                    for c in self.gateway.chats(limit)] or [{"note": "No chats yet."}]
+        try:
+            _, num = self.resolve(chat)
+            jid, title = jid_for(num), label(jid_for(num))
+        except ToolError:
+            hits = self.gateway.chats(5, search=chat)
+            if not hits:
+                raise
+            jid, title = hits[0]["jid"], label(hits[0]["jid"], hits[0].get("name", ""))
+        rows = self.gateway.messages(jid, limit)
+        log.info("whatsapp: read %d messages from one chat", len(rows))
+        out = []
+        for m in rows:
+            text = str(m.get("content") or "")
+            item = {"from": "You" if m.get("is_from_me") else label(str(m.get("sender_jid", "")),
+                                                                     m.get("sender_display_name", "")),
+                    "time": m.get("timestamp", ""), "text": text[:1000] + ("…" if len(text) > 1000 else "")}
+            if m.get("media_type"):
+                item["media"] = m["media_type"]
+            out.append(item)
+        return out or [{"note": f"No messages with {title} yet."}]
 
     def whatsapp_contacts(self, search: str = "") -> list[dict]:
         """Find saved WhatsApp contacts (names and masked numbers) that the WhatsApp tools accept by name.

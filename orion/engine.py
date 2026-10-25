@@ -119,6 +119,7 @@ class Engine:
         self._bg.append(asyncio.create_task(self._update_loop(), name="updates"))
         self.proactive.start()
         self.whatsapp.start_background_sync()  # keeps a synced address book fresh (no-op until connected)
+        self.whatsapp.start_gateway()  # the opt-in background link for personal WhatsApp (no-op while off)
         self.missions.recover()
         if self.config.settings.background_agent:
             self.start_background()
@@ -208,6 +209,7 @@ class Engine:
         await self.remote.stop()
         await self.proactive.stop()
         await self.learner.stop()
+        await asyncio.to_thread(self.whatsapp.gateway.stop)
         from .tools.browser import BROWSER
 
         if BROWSER._ctx is not None:

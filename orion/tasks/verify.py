@@ -238,6 +238,10 @@ def _whatsapp_draft(args: dict, result: str) -> dict:
 
 
 def _whatsapp_personal(args: dict, result: str) -> dict:
+    m = re.search(r"in the background \(message id (\S+)\)", result or "")
+    if m:  # the background link only answers with an id once WhatsApp's server has taken the message
+        return {"status": "passed", "reason": "WhatsApp accepted it through the background link",
+                "evidence": [f"message id {m.group(1)}"]}
     if (result or "").startswith("Sent from your WhatsApp"):
         return passed("the typed message left WhatsApp's compose box after Send was pressed")
     return unverified("Send was pressed in WhatsApp, but its window couldn't be read to confirm")

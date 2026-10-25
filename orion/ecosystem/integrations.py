@@ -75,10 +75,18 @@ def _whatsapp(engine: "Engine") -> dict:
     contacts = len(wa["contacts"])
     draft = (f"open a typed-in message in your own WhatsApp for you to press Send (whatsapp_draft), to "
              f"{contacts} saved contact(s) or any number")
+    linked = wa["gateway"]["state"] == "linked"
+    if linked:  # the opt-in background link: personal sends and reading, no window
+        always = always[:1]
+        draft += (f"; send approved messages from your own number {wa['gateway']['account']} and read recent chats "
+                  "in the background (unofficial link you turned on)")
     if not wa["configured"]:
-        return {**base, "state": "partial", "can": [draft],
-                "blocked": ["sending in the background: that needs a WhatsApp Business number"] + always[1:2],
-                "read_only_test": "whatsapp_contacts; nothing is opened or sent",
+        return {**base, "state": "ready" if linked else "partial", "can": [draft],
+                "blocked": always[:1] if linked else
+                ["sending in the background: that needs the background link or a WhatsApp Business number"]
+                + always[1:2],
+                "read_only_test": "whatsapp_read or whatsapp_contacts; nothing is sent" if linked else
+                "whatsapp_contacts; nothing is opened or sent",
                 "next": "Personal WhatsApp works now as a draft you send. For background sending from a business "
                         "number, add the Phone number ID and access token from Meta in Accounts → WhatsApp."}
     if wa["dry_run"]:
