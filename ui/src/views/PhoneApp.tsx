@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityLog } from "../components/ActivityLog";
+import { WeeklyRecap } from "../components/WeeklyRecap";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { Composer } from "../components/Composer";
 import { Logo } from "../components/Logo";
@@ -736,6 +737,10 @@ function ActivityTab() {
             ))}
           </div>
         )}
+      </section>
+      <section>
+        <div className="ctl-title">Your week</div>
+        <WeeklyRecap compact />
       </section>
       <section>
         <div className="ctl-title">What ORION did</div>

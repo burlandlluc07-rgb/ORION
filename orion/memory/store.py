@@ -198,8 +198,12 @@ class Store:
         rows = self._q("SELECT * FROM tasks WHERE id=?", (tid,))
         return dict(rows[0]) | {"steps": json.loads(rows[0]["steps"]), "plan": json.loads(rows[0]["plan"])} if rows else None
 
-    def list_tasks(self, limit: int = 50) -> list[dict]:
-        rows = self._q("SELECT * FROM tasks ORDER BY updated DESC LIMIT ?", (limit,))
+    def list_tasks(self, limit: int = 50, since: float | None = None) -> list[dict]:
+        """Newest first. ``since`` keeps only tasks updated at or after that time."""
+        if since is None:
+            rows = self._q("SELECT * FROM tasks ORDER BY updated DESC LIMIT ?", (limit,))
+        else:
+            rows = self._q("SELECT * FROM tasks WHERE updated >= ? ORDER BY updated DESC LIMIT ?", (since, limit))
         return [dict(r) | {"steps": json.loads(r["steps"]), "plan": json.loads(r["plan"])} for r in rows]
 
     # ── Routines (scheduled prompts) ───────────────────────────────────────

@@ -483,6 +483,58 @@ kbd { font: 10.5px var(--mono); color: var(--text-3); border: 1px solid var(--li
 .act.compact .act-detail { padding-left: 14px; }
 .act.compact .act-detail dl { grid-template-columns: 78px 1fr; }
 
+/* ── Weekly recap (above the activity log) ─────────────────────────── */
+.act-heading { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); font-weight: 600; margin: 0 0 10px; }
+.recap { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px 18px; margin-bottom: 22px; display: flex; flex-direction: column; gap: 16px; }
+.recap-head { display: flex; align-items: center; gap: 10px; }
+.recap-head > svg { color: var(--text-2); flex: none; }
+.recap-title { font-family: var(--font-display); font-weight: 600; font-size: var(--fs-md); }
+.recap-range { font-size: 12px; color: var(--text-3); }
+.recap-vs::before { content: "·"; margin: 0 6px; }
+.recap.compact .recap-vs { display: block; }
+.recap.compact .recap-vs::before { content: none; }
+.recap-empty, .recap-ok { color: var(--text-3); font-size: 13px; }
+.recap-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.recap-stat { background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; min-width: 0; }
+.recap-num { font-family: var(--font-display); font-size: var(--fs-2xl); font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.recap-stat.bad .recap-num { color: var(--bad); }
+.recap-label { font-size: 12.5px; font-weight: 600; margin-top: 2px; }
+.recap-note { font-size: 11.5px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recap-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+.recap-day { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11px; color: var(--text-3); }
+.recap-bar { width: 100%; max-width: 44px; height: 56px; background: var(--panel-2); border-radius: var(--radius-xs); display: flex; align-items: flex-end; overflow: hidden; }
+.recap-bar i { display: flex; align-items: flex-end; width: 100%; min-height: 2px; background: var(--text-2); border-radius: var(--radius-xs) var(--radius-xs) 0 0; }
+.recap-bar b { display: block; width: 100%; background: var(--bad); }
+.recap-day.future .recap-bar { background: transparent; border: 1px dashed var(--line-2); }
+.recap-dn { color: var(--text-2); font-weight: 550; }
+.recap-dc { font-variant-numeric: tabular-nums; min-height: 1em; }
+.recap-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.recap-sub { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); font-weight: 600; margin-bottom: 8px; }
+.recap-sub .muted { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.recap-top { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.recap-top li { position: relative; display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 5px 8px; border-radius: var(--radius-xs); min-width: 0; }
+.recap-top li > i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-soft); border-radius: var(--radius-xs); z-index: 0; }
+.recap-top li > span { position: relative; z-index: 1; }
+.recap-top.plain li { padding: 5px 0; border-bottom: 1px solid var(--line); border-radius: 0; }
+.recap-top.plain li:last-child { border-bottom: 0; }
+.recap-count { font-variant-numeric: tabular-nums; color: var(--text); font-weight: 600; }
+.recap-fail { font-size: 11px; color: var(--bad); }
+.recap-proof { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.recap-proof li { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; }
+.recap-proof li > svg { color: var(--text-2); margin-top: 3px; flex: none; }
+.recap-proof .grow { display: flex; flex-direction: column; min-width: 0; }
+.recap-proof .t { font-weight: 550; }
+.recap-proof .muted { font-size: 12px; overflow-wrap: anywhere; }
+.recap.compact { padding: 14px; margin-bottom: 0; gap: 14px; }
+.recap.compact .recap-stats { grid-template-columns: 1fr 1fr; gap: 8px; }
+.recap.compact .recap-num { font-size: var(--fs-xl); }
+.recap.compact .recap-cols { grid-template-columns: 1fr; gap: 14px; }
+.recap.compact .icon-btn { width: 40px; height: 40px; }
+@media (max-width: 720px) {
+  .recap-stats { grid-template-columns: 1fr 1fr; }
+  .recap-cols { grid-template-columns: 1fr; }
+}
+
 /* Auto-correct undo hint in the composer bar */
 .ac-note { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; margin-left: 4px; border: 0; border-radius: 999px;
   background: var(--hover); color: var(--text-2); font-size: 12px; white-space: nowrap; overflow: hidden; max-width: 60%; animation: fade var(--dur-2) var(--ease); }

@@ -367,6 +367,18 @@ def activity_check(o: "Orion") -> None:
               if note else "missing"))
 
 
+def recap_check(o: "Orion") -> None:
+    """The weekly recap counts this week's actions from the same log, with every failure listed."""
+    r = o.c.get("/api/activity/recap").json()
+    days = r.get("days", [])
+    ok = (r.get("total", 0) >= 3 and len(days) == 7 and sum(d["count"] for d in days) == r["total"]
+          and len(r.get("problem_entries", [])) == min(r.get("problems", 0), 10)
+          and all(e["outcome"] in ("failed", "attention") for e in r.get("problem_entries", [])))
+    record("weekly recap: this week's actions counted, failures listed", ok,
+           f"{r.get('total')} actions, {r.get('worked')} worked ({r.get('checked')} checked), "
+           f"{r.get('problems')} problems, approvals={r.get('approvals')}")
+
+
 def main() -> int:
     HOME.mkdir(parents=True, exist_ok=True)
     settings = {"user_name": "Lluc", "onboarded": True, "voice": {"mode": "classic"}}
@@ -501,6 +513,7 @@ def main() -> int:
     # ── What ORION did (activity log) ──────────────────────────────────────
     try:
         activity_check(o)
+        recap_check(o)
     except Exception as exc:
         record("activity log", False, repr(exc))
 

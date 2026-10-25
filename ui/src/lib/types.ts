@@ -302,3 +302,28 @@ export interface ActivityPage {
   counts: Record<"ok" | "problem" | "declined" | "live", number>;
   routes: { id: string; label: string }[];
 }
+
+/** One week of the activity log in numbers (GET /api/activity/recap). */
+export interface ActivityRecap {
+  start: number;
+  end: number;
+  weeks_ago: number;
+  total: number;
+  previous_total: number;
+  has_older: boolean;
+  tasks: number;
+  worked: number;
+  checked: number;
+  read_only: number;
+  not_checked: number;
+  problems: number;
+  declined: number;
+  live: number;
+  desktop: number;
+  approvals: { you_approved: number; you_declined: number; automatic: number; your_command: number };
+  days: { date: string; count: number; problems: number; future: boolean }[];
+  routes: { id: string; label: string; count: number }[];
+  top: { tool: string; label: string; count: number; problems: number }[];
+  problem_entries: ActivityEntry[];
+  proof: ActivityEntry[];
+}

@@ -12,6 +12,7 @@ import hmac
 import mimetypes
 import logging
 import secrets
+import time
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +42,7 @@ REMOTE_CONTROLS = {
     "home_control", "home_scene",
 }
 ACTIVITY_TASKS = 500  # how far back the activity log reads (tasks, each with its steps)
+RECAP_TASKS = 3000  # most tasks the weekly recap reads (this week and the one before)
 MAX_ATTACH = 15 * 1024 * 1024
 TEXT_EXT = {".txt", ".md", ".py", ".js", ".ts", ".json", ".csv", ".html", ".css", ".xml", ".yaml", ".yml", ".log",
             ".ini", ".toml", ".java", ".c", ".cpp", ".cs", ".go", ".rs", ".sql", ".sh", ".ps1", ".bat"}
@@ -324,6 +326,17 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
         bg = engine.background.history(ACTIVITY_TASKS) if engine.background.running else []
         return activity_log.filter_entries(activity_log.collect(tasks, bg), outcome=outcome, route=route, q=q[:100],
                                            after=after[:40], limit=max(1, min(limit, 300)))
+
+    @app.get("/api/activity/recap", dependencies=[A])
+    async def activity_recap(weeks_ago: int = 0):
+        """This week (or ``weeks_ago`` weeks back) in numbers, with proof and every failure. Read-only."""
+        weeks_ago = max(0, min(weeks_ago, 52))
+        now = time.time()
+        since, _ = activity_log.week_bounds(now, weeks_ago + 1)  # the week before too, for the comparison
+        tasks = ([t.to_dict() for t in engine.tracker.active.values()]
+                 + engine.store.list_tasks(RECAP_TASKS, since=since))
+        bg = engine.background.history(RECAP_TASKS) if engine.background.running else []
+        return activity_log.recap(activity_log.collect(tasks, bg), now, weeks_ago)
 
     # ── Routines ───────────────────────────────────────────────────────────
     def _routine_view(r: dict) -> dict:
