@@ -113,6 +113,12 @@ class Settings(BaseModel):
     # Answer a waiting approval by typing or saying a plain "yes" or "no" (desktop, phone and voice), as well
     # as with the buttons. Unclear answers never count: the approval keeps waiting.
     voice_approvals: bool = True
+    # How long an approval request waits for your answer before it lapses (not done), in seconds.
+    # 0 = it waits in the queue until you answer it (default). Nothing is ever approved by waiting.
+    approval_timeout: int = 0
+    # Approve on the phone app asks for the phone's fingerprint, face or screen lock, where the phone and the
+    # connection (https) support it. Deny never asks.
+    phone_biometric: bool = True
     # The background agent: a task queue that works on files in its own folders, shell commands with no
     # window and web search, never the desktop. Its tasks wait for your OK on risky steps and survive restarts.
     background_agent: bool = True
@@ -124,6 +130,7 @@ class Settings(BaseModel):
     # is doing and any approval waiting, and otherwise stays tucked away. Off = the old floating Quick Bar.
     notch: bool = True
     hotkey_voice: str = "<ctrl>+<alt>+j"
+    hotkey_approvals: str = "<ctrl>+<alt>+a"  # jump to the approval that is waiting
     start_minimized: bool = False
     launch_on_startup: bool = False
     close_to_tray: bool = True

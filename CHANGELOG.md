@@ -1,5 +1,79 @@
 # Changelog
 
+## 3.0.3
+The notch and offline speech, on top of 3.0.2. Versions 3.0.0 to 3.0.2 were built but never published, so everything
+in them is in this release too and listed below. If you're on 2.7.x or older, all of it is new.
+
+### New
+- **ORION hides in a notch until you need it.** A small black pill at the top centre of the screen. Hover it to see
+  "Ask ORION · Alt Space", click it or press Alt+Space to ask something. While ORION listens, thinks or runs a task
+  it springs open into a one-line status, and it opens by itself when an approval is waiting, without taking focus
+  from what you're typing. It stays out of the way in full-screen games, films and presentations. It replaces the
+  separate Quick Bar window; turn it off in Settings → Shortcuts → Notch (after a restart) to get the Quick Bar back.
+- **Speech understood on your PC, no quota needed (optional).** Settings → Voice → Offline speech recognition offers a
+  one-time 487 MB download (670 MB on disk, about 900 MB of memory while voice is on). Nothing downloads until you
+  tick the box and press Download, and the file is checked before it's used. Once installed, what you say, spoken
+  yes/no approvals and wake-word near-misses are understood on the PC first, and Gemini is only asked when that
+  fails. 25 European languages; Catalan isn't one of them, so Catalan still goes to Gemini. Live mode is unchanged.
+
+### Changed
+- **Less clutter.** The side panel starts closed and lost the System and Gemini cards (the per-model meters are now in
+  Settings → Brain → "Used today"; ask "why is my PC slow?" for the system check). Tasks and What ORION did are one
+  Activity page with two tabs. The version line, the hint lines under the composers and two of the six starter chips
+  are gone (shortcuts are in Settings → Shortcuts, skills still work through `/`). Pages and panels move with short,
+  smooth animations, and Windows' "Show animations" setting is respected.
+
+### From 3.0.2: fixed
+- **Emails have real line breaks.** Some AI models (often the free fallbacks) sent an email's text with "\n" typed
+  in it, so it arrived in Outlook as one long line with the backslashes showing. ORION now turns a typed \n, \r\n or
+  \t into a real line break or tab in the email, forward notes and subject lines, and leaves Windows paths like
+  C:\new\tools alone.
+
+### From 3.0.1: new
+- **More free answers a day with Gemma.** When every free Flash model has used up its daily quota, ORION now
+  keeps going on Google's free Gemma 4 models with the same key, before it switches to the backup brain. Gemma has
+  its own daily quota, separate from Flash. It's less capable than Flash, so it comes last. Voice transcription
+  stays on Flash because Gemma can't hear audio. ORION starts from a guess at Gemma's limits and corrects it the
+  first time Google reports the real one. The "Spare models" switch in Settings turns this off along with the
+  other spare models.
+
+### From 3.0.1: fixed
+- **Backup brain on Groq's free plan answers instead of saying it's rate-limited.** Groq's free plan allows 8,000
+  tokens a minute, and ORION's full request (instructions plus about 75 tools) cost most of that, so a plain "hi" used
+  the whole minute and the next message was refused. On Groq ORION now sends a lean request: only the tools your
+  message looks like it needs (plus web search, remember and toolkits), the last three chat turns, and a smaller
+  reply budget. A "hi" now costs roughly a quarter of what it did. When the plan is still used up, the message says
+  how long to wait instead of "try again in a minute".
+
+### From 3.0.0: fixed
+- **Backup brain no longer fails on big requests.** On small free plans (like Groq's 8000 tokens a minute) ORION's
+  full instructions, tools and chat history could be too big, and the provider refused the request. ORION now reads
+  the limit from the error, shrinks the request and tries again: less room for the reply, long tool results cut
+  short, shorter tool descriptions, older chat turns dropped (your current message stays whole), a shorter prompt,
+  and fewer tools only as a last resort. It remembers the limit so later requests fit first time, waits briefly when
+  told to try again in a few seconds, and if something still can't fit you get a plain sentence instead of a raw error.
+
+### From 3.0.0: new since 2.7
+- **A new look** closer to Claude's desktop app, still black, white and grey, with an animated Orion logo, an
+  activity panel, clearer approval cards and reorganised Settings.
+- **Title bar in ORION's colours**, dark grey in dark mode and light grey in light mode. The Windows buttons, Snap
+  and resizing work as normal.
+- **A phone app made for touch**, with a full-screen Screen tab (pinch to zoom, tap to click).
+- **Backup brain** for when Gemini's free quota runs out (OmniRoute, OpenRouter, Groq or any OpenAI-compatible
+  service). Setup: docs/backup-brain.md.
+- **Auto-correct while typing** on the PC and the phone, with Undo, and it never touches links, paths, code, names or
+  commands. Turn it off in Settings → Personal.
+- **Answer approvals with yes or no**, typed or spoken, on the PC or the phone, instead of tapping Allow or Deny.
+  A yes approves that one step only. Toggle in Settings → Safety & permissions.
+- **What ORION did**, a screen listing every action ORION took, how it ran, who approved it and the proof it worked
+  or the error. Also in the phone app's Activity tab.
+- **More work without taking your screen.** Minimizing, restoring and closing windows, volume and media keys, and
+  filling classic text boxes now happen in the background. The real mouse is still the last resort and still asks.
+
+### Already in 2.7.x (for reference)
+- Sort email by importance (read-only, learns from your corrections), WhatsApp messages from your own number after
+  your yes, and contacts imported from your phone's export or synced over CardDAV.
+
 ## 3.0.1
 Two fixes for running out of free AI quota, on top of 3.0.0.
 

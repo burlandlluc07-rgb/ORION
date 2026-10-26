@@ -291,6 +291,17 @@ export function SettingsView() {
         <Field label="Answer approvals with yes or no" hint="When ORION is waiting for your OK, type or say a plain “yes” or “no” on your PC or phone instead of tapping. It answers only the one waiting request. Anything unclear doesn't count, so the request keeps waiting. Yes never means “allow for this session”.">
           <Toggle on={st.voice_approvals !== false} onChange={(v) => save({ voice_approvals: v })} />
         </Field>
+        <Field label="Waiting approvals" hint="Requests wait in a queue, one at a time, until you answer. “Later” puts one back without answering it, and the approvals shortcut (Shortcuts below) brings the waiting one up. With a time limit, an unanswered request lapses and isn't done. Nothing is ever approved by waiting.">
+          <select className="select" value={String(st.approval_timeout ?? 0)} onChange={(e) => save({ approval_timeout: Number(e.target.value) })}>
+            <option value="0">Wait until I answer (default)</option>
+            <option value="180">Lapse after 3 minutes</option>
+            <option value="600">Lapse after 10 minutes</option>
+            <option value="1800">Lapse after 30 minutes</option>
+          </select>
+        </Field>
+        <Field label="Fingerprint for Approve on the phone" hint="Approve on the phone app asks for the phone's fingerprint, face or screen lock, checked by ORION on this PC. Deny never asks. Works when the phone opens ORION through its secure link (Tailscale or Cloudflare) and has a screen lock. Typed or spoken “yes” isn't affected.">
+          <Toggle on={st.phone_biometric !== false} onChange={(v) => save({ phone_biometric: v })} />
+        </Field>
         <Field label="ORION's browser" hint="In the background, websites are used without a window. ORION shows the window when you need to sign in yourself.">
           <select className="select" value={st.browser_mode} onChange={(e) => save({ browser_mode: e.target.value })}>
             <option value="background">Background (recommended)</option>
@@ -337,6 +348,7 @@ export function SettingsView() {
         </Field>
         <Field label={st.notch !== false ? "Open the notch" : "Quick Bar"} hint="Summon ORION over any app. Takes effect after restart."><input className="input" defaultValue={st.hotkey_quickbar} onBlur={(e) => save({ hotkey_quickbar: e.target.value })} /></Field>
         <Field label="Push to talk / end voice" hint="Takes effect after restart."><input className="input" defaultValue={st.hotkey_voice} onBlur={(e) => save({ hotkey_voice: e.target.value })} /></Field>
+        <Field label="Jump to the waiting approval" hint="Opens the notch (or Quick Bar) on the approval that's waiting. It only shows it: you still choose Allow or Deny. Takes effect after restart."><input className="input" defaultValue={st.hotkey_approvals} onBlur={(e) => save({ hotkey_approvals: e.target.value })} /></Field>
         <Field label="In the app" hint="Ctrl+K focus input · Ctrl+N new chat · Ctrl+B sidebar · Esc stop · Ctrl+Enter approve"><span /></Field>
       </section>
 
@@ -358,7 +370,7 @@ export function SettingsView() {
 interface RemoteStatus {
   enabled: boolean; running: boolean; port: number; lan_url: string; access: "lan" | "tailscale" | "cloudflare"; secure: boolean;
   tunnel: { mode: string; url: string | null; state: string; detail: string; tailscale_installed: boolean; cloudflared_installed: boolean };
-  devices: { id: string; name: string; created: number; last_seen: number; push: boolean }[];
+  devices: { id: string; name: string; created: number; last_seen: number; push: boolean; biometric?: boolean }[];
   pair_url?: string; qr_svg?: string; error?: string | null;
 }
 
@@ -435,7 +447,8 @@ function PhoneRemote() {
             {st.devices.length === 0 ? <div className="fh">None yet.</div> : st.devices.map((d) => (
               <div key={d.id} className="row" style={{ fontSize: 13 }}>
                 <Smartphone size={14} className="muted" />
-                <span className="grow">{d.name} <span className="muted">· last seen {new Date(d.last_seen * 1000).toLocaleString()}{d.push ? " · notifications on" : ""}</span></span>
+                <span className="grow">{d.name} <span className="muted">· last seen {new Date(d.last_seen * 1000).toLocaleString()}{d.push ? " · notifications on" : ""}{d.biometric ? " · fingerprint for Approve" : ""}</span></span>
+                {d.biometric && <button className="btn sm ghost" title="Forget this phone's fingerprint key. It is set up again on the next Approve." onClick={() => api.del(`/api/devices/${d.id}/biometric`).then(load)}>Reset fingerprint</button>}
                 <button className="btn sm ghost" onClick={() => api.del<RemoteStatus>(`/api/devices/${d.id}`).then(setSt)}><Trash2 size={12} /> Remove</button>
               </div>
             ))}

@@ -300,3 +300,4 @@ html.is-phone .toast { width: 100%; border-radius: 12px; }
   .phone .phone-page, .phone .phone-chat-inner { max-width: 720px; width: 100%; margin: 0 auto; }
   .phone .ctl-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+.phone .ap-row { min-height: var(--tap); }

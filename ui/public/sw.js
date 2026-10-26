@@ -1,4 +1,5 @@
-// ORION phone app service worker: offline shell, push notifications, approve/deny from the lock screen.
+// ORION phone app service worker: offline shell, push notifications, approve/deny from the lock screen
+// (Approve opens the app instead when the phone uses the fingerprint check).
 const SHELL = "orion-shell-v1";
 const AUTH = "orion-auth";
 
@@ -39,11 +40,14 @@ self.addEventListener("notificationclick", (e) => {
   const data = e.notification.data || {};
   e.notification.close();
   if (data.approval_id && (e.action === "approve" || e.action === "deny")) {
+    // Approve may need the fingerprint check, which only the app page can ask for: open the app on it then.
     e.waitUntil(caches.open(AUTH).then((c) => c.match("/__token")).then((r) => r && r.text()).then((token) =>
       fetch(`/api/approvals/${data.approval_id}`, {
         method: "POST", headers: { "content-type": "application/json", "x-orion-token": token || "" },
         body: JSON.stringify({ decision: e.action === "approve" ? "approve" : "deny" }),
-      })));
+      })).then((res) => {
+        if (res && res.status === 403) return self.clients.openWindow("./#/remote");
+      }));
     return;
   }
   const target = data.url || "./#/remote";
