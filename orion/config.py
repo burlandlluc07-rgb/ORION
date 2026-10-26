@@ -55,7 +55,9 @@ class VoiceSettings(BaseModel):
     wake_phrases: list[str] = Field(default_factory=lambda: ["Hey Jarvis", "Hey ORION"])  # any words you like
     wake_sensitivity: float = 0.5  # 0 strict … 1 relaxed
     wake_language: str = ""  # speech language, e.g. "en-GB" or "es-ES" ("" = Windows display language)
-    wake_engine: str = "windows"  # "windows" (any phrase, built in) | "openwakeword" (pre-trained models)
+    # "windows" (any phrase, built in) | "offline" (the downloaded offline speech model hears the phrase; more
+    # accurate, uses more CPU) | "openwakeword" (pre-trained models)
+    wake_engine: str = "windows"
     wake_word_model: str = "hey_jarvis"  # openwakeword model when that engine is chosen
     input_device: int | None = None
     output_device: int | None = None
@@ -65,6 +67,9 @@ class VoiceSettings(BaseModel):
     follow_up_seconds: float = 6.0
     barge_in: bool = True  # talk over ORION to interrupt it (classic mode; Live always allows it)
     chime: bool = True  # a soft tone when ORION starts listening
+    # Offline speech recognition (orion/voice/offline_stt.py). Only does anything once the model is downloaded
+    # from Settings; the download turns it on. Off = everything goes back to Windows speech + Gemini.
+    offline_stt: bool = False
 
 
 # 26: ORION 2.6 turned the approval prompts off; settings saved by older versions still say "ask".

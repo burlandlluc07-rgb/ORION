@@ -610,6 +610,61 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
             raise HTTPException(404)
         return v.status()
 
+    # ── Offline speech recognition (an optional model you download) ───────
+    from ..voice import offline_stt
+
+    stt_store = offline_stt.STORE
+
+    def stt_changed(status: dict) -> None:  # called from the download thread
+        engine.bus.emit("offline_speech", status=status)
+        loop = engine._loop
+        if status["installed"] and status["state"] == "idle" and loop is not None \
+                and not engine.config.settings.voice.offline_stt:
+            loop.call_soon_threadsafe(engine.apply_settings, {"voice": {"offline_stt": True}})
+
+    stt_store.on_change = stt_changed
+
+    def stt_status() -> dict:
+        v = engine.voice.status() if engine.voice else {}
+        return {**stt_store.status(), "enabled": engine.config.settings.voice.offline_stt,
+                "loaded": bool(v.get("offline_stt")), "load_error": v.get("offline_stt_error"),
+                "voice_on": v.get("state") not in (None, "off", "unavailable")}
+
+    @app.get("/api/offline-speech", dependencies=[X])
+    async def offline_speech():
+        return stt_status()
+
+    @app.post("/api/offline-speech/download", dependencies=[X])
+    async def offline_speech_download(body: dict = Body(...)):
+        """Start the model download. The UI shows the size first and sends consent=true only after you agree."""
+        if body.get("consent") is not True:
+            raise HTTPException(400, "Agree to the download size first.")
+        if not offline_stt.runtime_available():
+            raise HTTPException(409, "The offline speech engine isn't part of this ORION build.")
+        stt_store.start_download()
+        return stt_status()
+
+    @app.post("/api/offline-speech/cancel", dependencies=[X])
+    async def offline_speech_cancel():
+        stt_store.cancel()
+        return stt_status()
+
+    @app.delete("/api/offline-speech", dependencies=[X])
+    async def offline_speech_remove():
+        """Turn offline speech off and delete the model from disk."""
+        vs = engine.config.settings.voice
+        patch: dict = {"offline_stt": False}
+        if vs.wake_engine == "offline":
+            patch["wake_engine"] = "windows"
+        engine.apply_settings({"voice": patch})
+        if engine.voice is not None:
+            engine.voice.stt = None
+        import gc
+
+        gc.collect()  # let go of the loaded model so Windows allows deleting its files
+        await asyncio.to_thread(stt_store.remove)
+        return stt_status()
+
     # ── Accounts (email / calendar) ────────────────────────────────────────
     @app.get("/api/accounts", dependencies=[X])
     async def accounts():

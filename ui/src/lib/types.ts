@@ -94,7 +94,7 @@ export interface VoiceSettings {
   wake_phrases: string[];
   wake_sensitivity: number;
   wake_language: string;
-  wake_engine: "windows" | "openwakeword";
+  wake_engine: "windows" | "offline" | "openwakeword";
   wake_word_model: string;
   input_device: number | null;
   output_device: number | null;
@@ -102,6 +102,7 @@ export interface VoiceSettings {
   instant_commands: boolean;
   follow_up: boolean;
   follow_up_seconds: number;
+  offline_stt: boolean;
   barge_in: boolean;
   chime: boolean;
 }
@@ -162,6 +163,8 @@ export interface VoiceStatus {
   wake_phrases?: string[] | null;
   wake_language?: string;
   live_model?: string | null;
+  offline_stt?: boolean;
+  offline_stt_error?: string | null;
   error?: string | null;
 }
 

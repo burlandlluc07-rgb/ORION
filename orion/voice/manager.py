@@ -12,6 +12,10 @@ Speed and smarts on top of both (Windows, all offline):
     * Instant commands: "Hey ORION, pause the music" runs straight away, with no transcription and no Gemini call.
     * Smart end-of-speech (WebRTC VAD), follow-up listening without the wake word, talking over ORION to interrupt.
     * Names from your vault as transcription hints, a quick offline transcript preview, and an offline backup voice.
+
+Optional offline speech recognition (offline_stt.py, a model downloaded from Settings): classic-mode speech and
+spoken yes/no are transcribed on the PC first, Gemini only when that gives nothing; Windows wake-word near-misses
+get a second listen; and the "offline" wake engine finds the wake phrase in its own transcripts.
 """
 
 from __future__ import annotations
@@ -31,6 +35,8 @@ from ..tasks.tracker import parse_yes_no
 from .audio import FRAME, MIC_RATE, Microphone, Speaker, pcm_to_wav
 from .commands import STOP, build_catalog
 from .live import LiveSession
+from .offline_stt import STORE as STT_STORE
+from .offline_stt import match_wake
 from .tts import TTS
 from .vad import EchoGuard, Endpointer, chime, last_utterance
 
@@ -41,6 +47,7 @@ log = logging.getLogger("orion.voice")
 
 COMMAND_CONFIDENCE = 0.8  # instant commands need a confident match; anything less goes to Gemini instead
 RING_FRAMES = 500  # 10 s of audio kept so the words said with the wake phrase aren't lost
+RECHECK_GAP = 1.5  # seconds: one second listen per utterance, however many near-misses Windows reports for it
 
 
 class WakeWord:
@@ -72,6 +79,13 @@ class WakeWord:
 
 
 class VoiceManager:
+    stt = None  # offline_stt.Recognizer once the downloaded model is loaded
+    stt_error: str | None = None
+    _recheck = False
+    _recheck_at = float("-inf")
+    _offline_busy = False
+    _stt_task: asyncio.Task | None = None
+
     def __init__(self, engine: "Engine") -> None:
         self.e = engine
         self.loop = asyncio.get_running_loop()
@@ -127,6 +141,7 @@ class VoiceManager:
                 "wake_language": sp.language if sp is not None else "",
                 "instant_commands": len(self.catalog) if sp is not None and sp.running else 0,
                 "offline_voice": bool(sp is not None and sp.running),
+                "offline_stt": self._stt_ready, "offline_stt_error": self.stt_error,
                 "live_model": self.e.brain.live_model, "error": self.error}
 
     # ── Lifecycle ──────────────────────────────────────────────────────────
@@ -151,25 +166,55 @@ class VoiceManager:
             except Exception as exc:
                 self.error = f"Wake word failed: {exc}"
                 log.warning(self.error)
+        if not vs.offline_stt:
+            self.stt = None  # turned off: free the memory
+        elif self.stt is None and STT_STORE.installed() and not (self._stt_task and not self._stt_task.done()):
+            self._stt_task = asyncio.create_task(self._load_stt(), name="offline-stt")
         if sys.platform == "win32":
             # The Windows speech service starts in the background (the first run compiles a small helper).
             self._speech_task = asyncio.create_task(self._start_speech(), name="speech-service")
-        elif vs.wake_word and vs.wake_engine != "openwakeword":
+        elif vs.wake_word and vs.wake_engine == "windows":
             self.error = "The built-in wake word engine needs Windows."
+        if vs.wake_word and vs.wake_engine == "offline" and not (vs.offline_stt and STT_STORE.installed()):
+            self.error = "The offline wake engine needs the offline speech model: download it under Voice."
         self._wake_task = asyncio.create_task(self._wake_loop(), name="wake-word")
         self.set_state("standby")
+
+    async def _load_stt(self) -> None:
+        from .offline_stt import load
+
+        try:
+            self.stt = await asyncio.to_thread(load, STT_STORE)
+            self.stt_error = None
+        except Exception as exc:
+            self.stt_error = str(exc)
+            log.warning("Offline speech recognition unavailable: %s", exc)
+        self.set_state(self.state, self.detail)
+
+    @property
+    def _stt_ready(self) -> bool:
+        return self.stt is not None and self.vs.offline_stt
+
+    async def _transcribe_offline(self, pcm: bytes) -> str:
+        try:
+            return await asyncio.to_thread(self.stt.transcribe, pcm)  # type: ignore[union-attr]
+        except Exception as exc:
+            log.warning("Offline transcription failed: %s", exc)
+            return ""
 
     async def _start_speech(self) -> None:
         from .wake import SpeechService
 
         vs, loop = self.vs, self.loop
-        listen = vs.wake_word and vs.wake_engine != "openwakeword"
+        listen = vs.wake_word and vs.wake_engine == "windows"
         if vs.instant_commands:
             self.catalog = await asyncio.to_thread(self._build_catalog)
 
         def heard(text: str, conf: float, accepted: bool) -> None:
             loop.call_soon_threadsafe(lambda: self.e.bus.emit("voice.heard", phrase=text, confidence=round(conf, 2),
                                                               accepted=accepted))
+            if not accepted and self._stt_ready:
+                self._recheck = True  # Windows wasn't sure: the offline model gets a second listen
 
         def hit(phrase: str, conf: float, command: str | None) -> None:
             loop.call_soon_threadsafe(self._hits.put_nowait, (phrase, conf, command))
@@ -209,6 +254,7 @@ class VoiceManager:
         for t in (self._wake_task, self._classic_task, self._speech_task):
             if t:
                 t.cancel()
+        # The offline model (self.stt) stays loaded: settings changes restart voice and loading takes seconds.
         self.tts.stop()
         self.tts.backup = None
         self.mic.stop()
@@ -276,6 +322,7 @@ class VoiceManager:
     async def _wake_loop(self) -> None:
         q = self.mic.subscribe()
         ring: list[bytes] = []
+        ep: Endpointer | None = None  # the offline wake engine's utterance finder
         try:
             while True:
                 frame = await q.get()
@@ -287,16 +334,65 @@ class VoiceManager:
                         self.e.bus.emit("voice.wake", phrase=self.vs.wake_word_model)
                         await self.activate(preroll=ring[-10:])
                     continue
+                if self._offline_wake_on:
+                    if self.muted or self.busy or self.speaker.recently_played():
+                        ep = None
+                    else:
+                        ep = ep or Endpointer(start_timeout=1e9, max_seconds=10)
+                        if ep.feed(frame) in ("done", "timeout"):
+                            pcm, ep = bytes(ep.pcm), None
+                            if 0.4 <= len(pcm) / 2 / MIC_RATE and not self._offline_busy:
+                                asyncio.create_task(self._offline_wake(pcm, list(ring)))
+                    continue
                 hit = None
                 while not self._hits.empty():
                     hit = self._hits.get_nowait()
                 if hit is not None and not self.muted:
+                    self._recheck = False
                     await self._on_wake(hit, ring)
+                elif self._recheck:
+                    self._recheck = False
+                    now = time.monotonic()
+                    if not self.muted and not self.busy and now - self._recheck_at > RECHECK_GAP:
+                        self._recheck_at = now
+                        asyncio.create_task(self._offline_wake(last_utterance(ring), list(ring), recheck=True))
         finally:
             self.mic.unsubscribe(q)
 
+    @property
+    def _offline_wake_on(self) -> bool:
+        return self.vs.wake_word and self.vs.wake_engine == "offline" and self._stt_ready
+
+    async def _offline_wake(self, pcm: bytes, ring: list[bytes], recheck: bool = False) -> None:
+        """Transcribe one short utterance on the PC and wake up if it starts with a wake phrase."""
+        from .commands import lookup
+
+        if len(pcm) / 2 / MIC_RATE < 0.4 or self._offline_busy:
+            return
+        self._offline_busy = True
+        try:
+            text = await self._transcribe_offline(pcm)
+        finally:
+            self._offline_busy = False
+        phrases = list(self.vs.wake_phrases)
+        hit = match_wake(text, phrases)
+        if hit is None:
+            near = match_wake(text, phrases, min_ratio=0.6)
+            if near is not None and not recheck:
+                self.e.bus.emit("voice.heard", phrase=near[0], confidence=0.6, accepted=False)
+            return
+        phrase, rest = hit
+        log.info("Wake word (offline%s): %s", " second listen" if recheck else "", phrase)
+        self.e.bus.emit("voice.heard", phrase=phrase, confidence=1.0, accepted=True)
+        if self.muted or self.busy:
+            return
+        command = lookup(self.catalog, rest) if rest and self.catalog else None
+        await self._on_wake((phrase, 1.0, command, rest), ring)
+
     async def _on_wake(self, hit: tuple, ring: list[bytes]) -> None:
-        phrase, conf, command = hit
+        """``hit`` = (phrase, confidence, instant command or None[, offline transcript of what followed])."""
+        phrase, conf, command = hit[:3]
+        said: str | None = hit[3] if len(hit) > 3 else None
         if command and conf < COMMAND_CONFIDENCE:
             command = None  # not sure it was that command: let Gemini hear the whole thing
         log.info("Wake word: %s (%.2f)%s", phrase, conf, f" → {command}" if command else "")
@@ -310,20 +406,25 @@ class VoiceManager:
             self.e.stop_everything()
             self.set_state("standby")
             return
+        # The recogniser reports the wake phrase once the speaker pauses, so whatever followed it ("Hey ORION,
+        # what's the weather?") is already in the ring buffer: use it instead of asking again.
+        seg = last_utterance(ring)
+        extra = len(seg) / 2 / MIC_RATE - (0.42 * len(phrase.split()) + 0.45)
         if command:
-            first: tuple = ("command", command)
+            first: tuple | None = ("command", command)
+        elif said is not None and self.mode != "live":
+            first = ("text", said) if said else None  # already transcribed on the PC: no Gemini call
+            if said:
+                self._ensure_conversation()
+                self.e.bus.emit("voice.transcript", role="user", text=said, conv_id=self.conv_id)
         else:
-            # The recogniser reports the wake phrase once the speaker pauses, so whatever followed it ("Hey ORION,
-            # what's the weather?") is already in the ring buffer: use it instead of asking again.
-            seg = last_utterance(ring)
-            extra = len(seg) / 2 / MIC_RATE - (0.42 * len(phrase.split()) + 0.45)
             first = ("pcm", seg) if extra > 0.6 else None
         if self.mode == "live":
             if command:
                 self._ensure_conversation()
                 asyncio.create_task(self._instant(command))
             elif not self.live.running:
-                frames = _frames(first[1]) if first else ring[-10:]
+                frames = _frames(seg) if extra > 0.6 else ring[-10:]
                 await self.activate(preroll=frames)
             return
         if self.busy:
@@ -408,6 +509,10 @@ class VoiceManager:
         """Utterance → ("command", canonical) for an instant command, else ("text", transcript)."""
         if len(pcm) < MIC_RATE * 2 * 0.3:
             return None
+        if self._stt_ready:  # on the PC first: no quota, no upload
+            understood = await self._understand_offline(pcm)
+            if understood is not None:
+                return understood
         wav = pcm_to_wav(pcm)
         sp = self.speech if self.speech is not None and self.speech.running else None
         dictation: asyncio.Task | None = None
@@ -463,6 +568,16 @@ class VoiceManager:
             return None
         self.e.bus.emit("voice.transcript", role="user", text=text, conv_id=self.conv_id)
         return "text", text
+
+    async def _understand_offline(self, pcm: bytes) -> tuple[str, str] | None:
+        from .commands import lookup
+
+        text = self._strip_wake(await self._transcribe_offline(pcm))
+        if not text:
+            return None  # nothing heard: Gemini gets a go
+        command = lookup(self.catalog, text, list(self.vs.wake_phrases)) if self.catalog else None
+        self.e.bus.emit("voice.transcript", role="user", text=text, conv_id=self.conv_id)
+        return ("command", command) if command else ("text", text)
 
     def _strip_wake(self, text: str) -> str:
         t = text.strip()
@@ -586,6 +701,10 @@ class VoiceManager:
         self.set_state("working", "Waiting for approval on screen")
 
     async def _yes_no_text(self, pcm: bytes) -> str:
+        if self._stt_ready:
+            text = await self._transcribe_offline(pcm)
+            if parse_yes_no(text) is not None:
+                return text
         sp = self.speech if self.speech is not None and self.speech.running else None
         if sp is not None:  # "yes"/"no" is easy for the offline recogniser: no Gemini call needed
             fd, path = tempfile.mkstemp(prefix="orion-yn-", suffix=".wav")
