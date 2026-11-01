@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 3.0.4
+A Brain tab, ghost mode and a face for ORION, plus the notch as part of the one ORION app, on top of 3.0.3. Version 3.0.3
+was built but never published, so everything in it is in this release too (summarised at the end; the full list is
+in the 3.0.3 section of the changelog).
 
 ### New
 - **Brain tab.** A new tab under Memory shows ORION's memory as a live, interactive graph: ORION's core in the middle,
@@ -17,6 +20,30 @@
   your mouse. "Take over" in the notch makes a ghost a normal window, yours. Ghost steps show in the Brain's thoughts.
 - **ORION has a face.** A small star spirit with Orion's belt on his brow lives in the notch, on the home screen and
   beside his ghost cursor. He blinks, listens, thinks, works, talks and sleeps.
+
+### Fixed
+- **One ORION in the taskbar, and the notch stays when you close the window.** The notch used to show up as a second
+  taskbar app called "ORION Notch". It's now part of the one ORION app. Closing the main window while the notch is on
+  only hides the window, so the notch stays and Alt+Space still works; quit from the tray icon. Without a tray icon,
+  closing still quits.
+
+### Not tried on a real PC yet
+These were checked on GitHub's Windows test machines, not yet on a real everyday PC:
+- Ghost mode in your own apps. It passed 21 of 21 checks with Notepad on the test machine. Chrome, Edge,
+  Electron apps (like Discord, Slack or VS Code) and some Microsoft Store apps ignore background input, so for those
+  ORION should ask you instead of working them; that hasn't been seen on a real PC yet.
+- The Brain tab with a big, real memory (it was tested with sample memories).
+- The notch as one app (23 of 23 checks on the test machine, including one taskbar button and closing the window).
+- From earlier versions, still untried on a real account: background personal WhatsApp, the offline speech
+  download, fingerprint approvals on the phone, real inbox sorting, the backup brain on Groq and the Gemma fallback.
+
+### Also in this release (from 3.0.3)
+- The notch at the top of the screen (Alt+Space), offline speech recognition (optional download), an approvals queue
+  with Ctrl+Alt+A, fingerprint approval on the phone, personal WhatsApp in the background (optional, unofficial), a
+  weekly recap above the Activity log, and a less cluttered layout.
+- From 3.0.0 to 3.0.2: emails with real line breaks, Gemma as a free fallback after Flash, a backup brain that fits
+  small free plans like Groq's, a new black, white and grey look, a themed title bar, a touch phone app, auto-correct,
+  yes/no approvals by voice or text, the What ORION did log and more work done in the background.
 
 ## 3.0.3
 The notch, offline speech, an approvals queue, background WhatsApp and a weekly recap, on top of 3.0.2. Versions 3.0.0 to 3.0.2 were built but never published, so everything
