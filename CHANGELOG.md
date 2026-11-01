@@ -1,7 +1,7 @@
 # Changelog
 
 ## 3.0.3
-The notch and offline speech, on top of 3.0.2. Versions 3.0.0 to 3.0.2 were built but never published, so everything
+The notch, offline speech, an approvals queue and background WhatsApp, on top of 3.0.2. Versions 3.0.0 to 3.0.2 were built but never published, so everything
 in them is in this release too and listed below. If you're on 2.7.x or older, all of it is new.
 
 ### New
@@ -15,6 +15,20 @@ in them is in this release too and listed below. If you're on 2.7.x or older, al
   tick the box and press Download, and the file is checked before it's used. Once installed, what you say, spoken
   yes/no approvals and wake-word near-misses are understood on the PC first, and Gemini is only asked when that
   fails. 25 European languages; Catalan isn't one of them, so Catalan still goes to Gemini. Live mode is unchanged.
+- **Approvals wait in a queue until you answer.** Requests no longer lapse after 3 minutes; they wait in order, one
+  card at a time with "1 of 3" and the rest listed below. **Later** moves one to the back without answering it.
+  Ctrl+Alt+A jumps to the waiting request (it never answers it), and Ctrl+Enter approves only the front one. Settings
+  → Safety → "Waiting approvals" can bring back a time limit. Nothing is ever approved by waiting.
+- **Approve on the phone asks for your fingerprint** (or face or screen lock), checked on the PC. Deny never asks.
+  It needs the secure Tailscale or Cloudflare address; on the plain home-network address the phone approves as
+  before. Settings → Phone app shows it per phone, with Reset fingerprint. Typed and spoken yes/no work as before.
+- **Personal WhatsApp in the background (optional, unofficial).** Accounts → WhatsApp → "Send and read in the
+  background" links ORION as a WhatsApp linked device, so messages go out with no window, mouse or focus. It's off
+  until you tick the warning (WhatsApp may restrict accounts that use unofficial links, and messages ORION reads go
+  to its AI model) and link it with a QR or pairing code. Every send still asks yes or no with the exact text, and
+  warns when you've never messaged that number. It keeps a human pace (15 s between messages, 20 a day, the same
+  text to at most 3 chats an hour, all adjustable), and shows "typing…" first. ORION can also read recent chats, and
+  treats what it reads as information, never as instructions. When the link is off, the old way still works.
 
 ### Changed
 - **Less clutter.** The side panel starts closed and lost the System and Gemini cards (the per-model meters are now in
