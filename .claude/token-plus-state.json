@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "mode": null,
+  "sessions": {
+    "451296aa-bca5-5779-930f-3cbb7bbdf037": {
+      "turns": 0,
+      "reminders": 0,
+      "lastReminderTurn": 0,
+      "sizeReminded": false,
+      "startedAt": "2026-11-01T18:27:21.820Z",
+      "updatedAt": "2026-11-01T18:27:21.820Z",
+      "source": "resume"
+    }
+  }
+}
