@@ -157,13 +157,25 @@ def launch(target: str) -> None:
         open_target(target)
 
 
-@tool(category="apps", summary=lambda a: f"Open {a.get('name')}")
-def open_app(name: str) -> str:
-    """Open (launch) an installed application by name, e.g. "spotify", "chrome", "notepad", "settings".
+@tool(category="apps", summary=lambda a: f"Open {a.get('name')}" + ("" if a.get("normal") else " as a ghost window"))
+def open_app(name: str, normal: bool = False, ctx: ToolContext = None) -> str:  # type: ignore[assignment]
+    """Open (launch) an installed application by name, e.g. "word", "spotify", "notepad", "settings". On Windows it
+    opens as a ghost window by default (see-through, click-through, never focused) so the user is never interrupted;
+    then work it with ghost_look / ghost_click / ghost_type / ghost_press, never type_text or mouse_click.
 
     Args:
         name: The app's name as the user said it.
+        normal: True only when the user asks for a normal window to use themselves ("open Spotify for me",
+            "not as a ghost").
     """
+    q = name.strip().lower()
+    settings = getattr(getattr(ctx, "engine", None), "config", None)
+    settings = getattr(settings, "settings", None)
+    is_settings_page = q == "settings" or any(q in (f"{k} settings", f"settings {k}") for k in SETTINGS_PAGES)
+    if IS_WIN and not normal and not is_settings_page and getattr(settings, "ghost_default", True):
+        from .ghost import ghost_open
+
+        return ghost_open(name, ctx=ctx)
     q = name.strip().lower()
     if IS_WIN:
         if q in WIN_BUILTINS:

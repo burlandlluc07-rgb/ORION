@@ -88,8 +88,8 @@ def _control(hwnd: int, control: str):
 @tool(category="ghost", kit=KIT, summary=lambda a: f"Open {a.get('app')} as a ghost window")
 def ghost_open(app: str, ctx: ToolContext = None) -> str:  # type: ignore[assignment]
     """Open a desktop app for ORION's own work as a ghost window: see-through, click-through and never focused,
-    tucked in a corner. The user keeps working undisturbed. Use this (not open_app) whenever YOU need an app to do
-    a job; use open_app only when the user wants the app for themselves.
+    where the app would normally open. The user keeps working undisturbed. Word and Excel take ghost_type
+    straight into the document.
 
     Args:
         app: The app's name, e.g. "notepad", "excel", "calculator".
@@ -100,7 +100,7 @@ def ghost_open(app: str, ctx: ToolContext = None) -> str:  # type: ignore[assign
     if eng is not None:
         s = eng.config.settings
         desk.configure(opacity=getattr(s, "ghost_opacity", None), corner=getattr(s, "ghost_corner", None),
-                       cursor=getattr(s, "ghost_cursor", None))
+                       cursor=getattr(s, "ghost_cursor", None), frame=getattr(s, "ghost_frame", None))
         desk.on_event = lambda _kind, text: _say(ctx, text)
     g = _guard(lambda: desk.open(target, display, keys))
     return (f"{display} is open as a ghost window titled “{g.title}”. Use ghost_look to see it, then ghost_click, "
@@ -205,9 +205,27 @@ def ghost_type(text: str, window: str = "", control: str = "", ctx: ToolContext 
         except Exception:
             pass
         raise ToolError(f"“{control}” won't take text in the background. Ask the user before trying another way.")
-    out = _guard(lambda: desk.type(g, text))
+    out = _guard(lambda: _office_or_messages(desk, g, text))
     _say(ctx, out)
     return out
+
+
+def _office_or_messages(desk, g, text: str) -> str:
+    """Word and Excel take text through Office automation; everything else through the ghost's own messages."""
+    from ..ghost import office
+    from ..ghost.win32 import _exe
+
+    kind = office.office_kind(Path(_exe(g.pid)).stem)
+    if kind:
+        desk.busy(g)  # a new document window that Word opens for this becomes a ghost too
+        try:
+            out = office.type_into(kind, g.hwnd, text)
+        except Exception as exc:  # noqa: BLE001 - COM errors come in many shapes
+            raise ToolError(f"Office wouldn't take the text in the background ({exc}). Ask the user before trying "
+                            "another way.") from exc
+        g.last_action = f"typed {len(text)} characters"
+        return out
+    return desk.type(g, text)
 
 
 @tool(risk="confirm", category="ghost", kit=KIT, summary=lambda a: f"Ghost-press {a.get('keys')}")

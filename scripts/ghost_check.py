@@ -50,6 +50,12 @@ def untouched(step: str, user_win: int, pos: tuple[int, int]) -> None:
     record(f"{step}: your mouse didn't move", now == pos, f"{now} vs {pos}")
 
 
+def _rect_of(hwnd: int) -> tuple[int, int, int, int]:
+    r = ctypes.wintypes.RECT()
+    user32.GetWindowRect(hwnd, ctypes.byref(r))
+    return r.left, r.top, r.right, r.bottom
+
+
 def main() -> int:
     # The user's own work: a normal Notepad in front, with text in it.
     before = set()
@@ -88,6 +94,10 @@ def main() -> int:
     user32.GetLayeredWindowAttributes(g.hwnd, None, ctypes.byref(alpha), ctypes.byref(flags))
     record("ghost is about half see-through", 100 <= alpha.value <= 160, f"alpha {alpha.value}")
     record("ghost is a different window from yours", g.hwnd != user_win, str(g.hwnd))
+    now = _rect_of(g.hwnd)
+    o = g.original_rect
+    record("ghost keeps the size and place the app chose", abs((now[2] - now[0]) - (o[2] - o[0])) <= 40 and
+           abs(now[0] - o[0]) <= 40, f"{now} vs {o}")
     untouched("after opening", user_win, pos)
     shot("1-ghost-opened")
 
@@ -135,6 +145,20 @@ def main() -> int:
     record("take over makes it a normal window", not ex2 & (core.WS_EX_TRANSPARENT | core.WS_EX_NOACTIVATE | core.WS_EX_TOOLWINDOW),
            hex(ex2))
     shot("5-taken-over")
+
+    # 7. ORION's ordinary "open app" tool opens a ghost too, unless asked for a normal window.
+    from orion.tools.apps import open_app
+
+    before = set(DESK.ghosts)
+    yours = int(user32.GetForegroundWindow() or 0)  # the Notepad just taken over is the user's window now
+    out = open_app("notepad")
+    time.sleep(0.8)
+    new = [h for h in DESK.ghosts if h not in before]
+    ex3 = user32.GetWindowLongW(new[0], -20) & 0xFFFFFFFF if new else 0
+    record("open_app opens a ghost by default", bool(new) and bool(ex3 & core.WS_EX_TRANSPARENT), out[:80])
+    untouched("after open_app", yours, pos)
+    for h in new:
+        user32.PostMessageW(h, 0x0010, 0, 0)
 
     record("your mouse never moved, start to finish", cursor_pos() == pos, f"{cursor_pos()} vs {pos}")
     for h in (g.hwnd, user_win):
