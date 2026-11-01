@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Logo } from "../components/Logo";
+import { Avatar, moodFor } from "../components/Avatar";
 import { api } from "../lib/api";
 import { useStore } from "../lib/store";
 import { QuickPanel } from "./QuickBar";
@@ -110,7 +110,7 @@ export function NotchView() {
           </div>
         ) : shown === "peek" && status ? (
           <div className="notch-peek" key={status.title}>
-            <Logo size={22} state={logoState} />
+            <Avatar size={30} mood={moodFor(logoState, !!status?.busy, s.approvals.length)} />
             <div className="grow">
               <div className="nt">{status.title}</div>
               {status.detail && <div className="nd">{status.detail}</div>}
@@ -119,7 +119,7 @@ export function NotchView() {
           </div>
         ) : (
           <div className="notch-idle">
-            <Logo size={15} state={s.voice.state} />
+            <Avatar size={22} mood={moodFor(s.voice.state, false, s.approvals.length)} />
             <span className="notch-hint">Ask ORION{hotkey && <kbd>{hotkey}</kbd>}</span>
           </div>
         )}

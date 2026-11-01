@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { Composer, type ComposerHandle } from "../components/Composer";
 import { Markdown } from "../components/Markdown";
+import { Avatar, moodFor } from "../components/Avatar";
 import { Logo } from "../components/Logo";
 import { TaskCard } from "../components/TaskCard";
 import { api } from "../lib/api";
@@ -140,8 +141,10 @@ export function ChatView() {
         {empty ? (
           <div className="home">
             <div className="home-hello">
-              <Logo size={72} state={busy ? "thinking" : s.voice.state} interactive label="Talk to ORION"
-                onClick={() => api.post("/api/voice/toggle").catch(() => {})} />
+              <button className="home-avatar" aria-label="Talk to ORION" title="Talk to ORION"
+                onClick={() => api.post("/api/voice/toggle").catch(() => {})}>
+                <Avatar size={92} mood={moodFor(busy ? "thinking" : s.voice.state, busy, s.approvals.length)} />
+              </button>
               <h2>{greeting(name)}</h2>
             </div>
             <Composer ref={composer} busy={busy} />

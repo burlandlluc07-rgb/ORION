@@ -9,6 +9,14 @@
   takes a step or replies, a thought appears next to the core and the memories it used light up. A "Latest thoughts"
   list shows the newest thoughts; click one to see the memories it used. Drag, zoom, search, and click any node for
   details or to open its note.
+- **Ghost mode.** When ORION needs a desktop app for his own work he opens it as a ghost window: see-through,
+  click-through, never focused, out of the taskbar, tucked into a corner with a phased grey glow and an "ORION ·
+  ghost" tag. He works it with his own drawn ghost cursor. Your mouse, keyboard and focus are never touched: clicks
+  and typing go through UI Automation and window messages, and he reads the window with PrintWindow. If a ghost
+  grabs the focus, ORION hands it straight back. Apps that ignore background input make him ask instead of using
+  your mouse. "Take over" in the notch makes a ghost a normal window, yours. Ghost steps show in the Brain's thoughts.
+- **ORION has a face.** A small star spirit with Orion's belt on his brow lives in the notch, on the home screen and
+  beside his ghost cursor. He blinks, listens, thinks, works, talks and sleeps.
 
 ## 3.0.3
 The notch, offline speech, an approvals queue, background WhatsApp and a weekly recap, on top of 3.0.2. Versions 3.0.0 to 3.0.2 were built but never published, so everything

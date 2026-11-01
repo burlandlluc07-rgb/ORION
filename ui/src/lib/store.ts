@@ -266,6 +266,7 @@ export const useStore = create<Store>((set, get) => ({
         set({ thoughts: [...s.thoughts, ev.thought as Thought].slice(-60) });
         break;
       case "memory.changed":
+      case "ghost.changed":
       case "missions.changed":
       case "remote.changed":
       case "ecosystem.changed":

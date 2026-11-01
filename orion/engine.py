@@ -26,7 +26,7 @@ from .tools.registry import Registry, decorated_tools
 
 log = logging.getLogger("orion.engine")
 
-CORE_TOOL_MODULES = ["system", "apps", "files", "web", "screen", "productivity", "shell", "office", "media", "browser", "windows", "context"]
+CORE_TOOL_MODULES = ["system", "apps", "files", "web", "screen", "productivity", "shell", "office", "media", "browser", "windows", "context", "ghost"]
 
 
 class Engine:

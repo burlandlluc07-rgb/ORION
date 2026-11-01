@@ -1,6 +1,7 @@
 import { CornerDownLeft, Maximize2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ApprovalQueue } from "../components/ApprovalQueue";
+import { GhostDock } from "../components/GhostDock";
 import { Markdown } from "../components/Markdown";
 import { Logo } from "../components/Logo";
 import { TaskCard } from "../components/TaskCard";
@@ -50,6 +51,7 @@ export function QuickPanel({ onHide, onOpenMain, logoSize = 34 }: { onHide: () =
       </div>
       <div className="quick-out">
         <ApprovalQueue items={s.approvals} />
+        <GhostDock />
         {lastUser && <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>› {lastUser.content}</div>}
         {task && <TaskCard task={task} />}
         {show ? <Markdown text={show.content || "…"} /> : lastUser ? <div className="typing"><i /><i /><i /></div>
