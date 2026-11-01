@@ -56,6 +56,24 @@ def _enum_name(value: Any) -> str:
     return getattr(value, "name", None) or str(value or "")
 
 
+def _strip_signatures(contents: Any) -> bool:
+    """Drop thought signatures from earlier model turns. A signature only works with the model that made
+    it, so after a switch to another model (say Flash ran out of quota) Gemini refuses the request with a
+    400 until they're gone. Returns True when anything was removed."""
+    removed = False
+    for msg in contents if isinstance(contents, list) else []:
+        for part in (msg.get("parts") or []) if isinstance(msg, dict) else []:
+            if isinstance(part, dict):
+                for key in ("thought_signature", "thoughtSignature"):
+                    if part.pop(key, None) is not None:
+                        removed = True
+    return removed
+
+
+def _signature_refused(exc: Any) -> bool:
+    return getattr(exc, "code", None) == 400 and "thought_signature" in str(exc)
+
+
 def _dump(obj: Any) -> dict:
     if isinstance(obj, dict):
         return obj
@@ -148,6 +166,10 @@ class GeminiAgentRunner(AgentLoop):
                     self._exhausted[model] = time.monotonic() + QUOTA_COOLDOWN
                     log.warning("Gemini %s is out of quota; switching to %s", model, models[index + 1])
                     index += 1
+                    _strip_signatures(contents)  # the next model can't read this one's thought signatures
+                    continue
+                if _signature_refused(exc) and _strip_signatures(contents):
+                    log.warning("Gemini %s refused another model's thought signatures; retrying without them", model)
                     continue
                 attempt += 1
                 if exc.code not in RETRY_CODES or attempt >= attempts:

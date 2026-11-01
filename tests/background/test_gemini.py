@@ -173,3 +173,39 @@ def test_quota_error_on_last_model_fails(make_agent, cfg):
     agent.start()
     done = agent.wait(agent.submit("x")["id"], 5)
     assert done["status"] == "failed" and "429" in done["error"]
+
+
+def _signatures(call):
+    return [p for m in call["contents"] for p in m.get("parts", [])
+            if isinstance(p, dict) and (p.get("thought_signature") or p.get("thoughtSignature"))]
+
+
+def test_model_switch_drops_other_models_signatures(make_agent, cfg, workdir):
+    """Flash runs out of quota mid-task: the next model must not get Flash's thought signatures (Gemini 400s)."""
+    from google.genai import errors
+
+    from orion.background import config
+    chain = config.Config(config._merge(cfg, {"gemini": {"fallback_models": ["gemini-flash-lite-latest"]}}))
+    (workdir / "notes.txt").write_text("buy milk")
+    quota = errors.ClientError(429, {"error": {"code": 429, "message": "quota", "status": "RESOURCE_EXHAUSTED"}})
+    client = FakeGenai([gemini_reply(("read_file", {"path": "notes.txt"})), quota, gemini_reply("buy milk")])
+    agent = make_agent(runners={"agent": GeminiAgentRunner(chain, client=client)})
+    agent.start()
+    done = agent.wait(agent.submit("What is in notes.txt?")["id"], 5)
+    assert done["status"] == "completed", done["error"]
+    flash_retry, lite = client.models.calls[1:]
+    assert flash_retry["model"] == "gemini-flash-latest" and _signatures(flash_retry)
+    assert lite["model"] == "gemini-flash-lite-latest" and not _signatures(lite)
+
+
+def test_refused_signature_is_retried_without_it(make_agent, cfg, workdir):
+    from google.genai import errors
+    (workdir / "notes.txt").write_text("buy milk")
+    refused = errors.ClientError(400, {"error": {"code": 400, "status": "INVALID_ARGUMENT", "message":
+        "Request contains a thought_signature from a previous model response, but this model does not support it."}})
+    agent, client = make(make_agent, cfg, [gemini_reply(("read_file", {"path": "notes.txt"})), refused,
+                                           gemini_reply("buy milk")])
+    done = agent.wait(agent.submit("What is in notes.txt?")["id"], 5)
+    assert done["status"] == "completed", done["error"]
+    assert done["result"] == "buy milk"
+    assert _signatures(client.models.calls[1]) and not _signatures(client.models.calls[2])

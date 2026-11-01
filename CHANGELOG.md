@@ -26,6 +26,10 @@ in the 3.0.3 section of the changelog).
   taskbar app called "ORION Notch". It's now part of the one ORION app. Closing the main window while the notch is on
   only hides the window, so the notch stays and Alt+Space still works; quit from the tray icon. Without a tray icon,
   closing still quits.
+- **Tasks keep going when a Gemini model runs out mid-task.** When ORION moved a job to the next free model (say
+  Flash hit its daily quota half way through), Gemini refused it because the first model's private "thought"
+  notes were still attached, and background tasks stopped with "Gemini API error 400". ORION now drops those notes
+  when it switches model and carries on.
 
 ### Not tried on a real PC yet
 These were checked on GitHub's Windows test machines, not yet on a real everyday PC:

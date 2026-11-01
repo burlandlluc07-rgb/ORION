@@ -115,3 +115,35 @@ async def test_streaming_with_tools_falls_back_to_gemma(engine):
         [types.Content(role="user", parts=[types.Part(text="hi")])], tools=tools)]
     assert ("model", GEMMA[0]) in out
     assert [v.text for k, v in out if k == "part"] == ["hi"]
+
+
+async def test_another_models_thought_signature_is_dropped_and_retried(engine):
+    """A tool loop that moved to another model (one ran out of quota) still carries the first model's thought
+    signatures; Gemini refuses those with a 400, so ORION drops them and asks again."""
+    async def chunks():
+        yield pytypes.SimpleNamespace(
+            usage_metadata=None,
+            candidates=[pytypes.SimpleNamespace(content=types.Content(role="model", parts=[types.Part(text="done")]))])
+
+    seen = []
+    refused = errors.ClientError(400, {"error": {"code": 400, "status": "INVALID_ARGUMENT", "message":
+        "Request contains a thought_signature from a previous model response, but this model does not support it."}})
+
+    async def generate_content_stream(model, contents, config):
+        signed = any(p.thought_signature for c in contents for p in c.parts or [])
+        seen.append(signed)
+        if signed:
+            raise refused
+        return chunks()
+
+    use_client(engine, generate_content_stream=generate_content_stream)
+    history = [
+        types.Content(role="user", parts=[types.Part(text="make a file")]),
+        types.Content(role="model", parts=[types.Part(function_call=types.FunctionCall(name="noop", args={}),
+                                                      thought_signature=b"from-flash")]),
+        types.Content(role="user", parts=[types.Part(function_response=types.FunctionResponse(
+            name="noop", response={"result": "ok"}))]),
+    ]
+    out = [x async for x in engine.brain.stream(history)]
+    assert seen == [True, False]
+    assert [v.text for k, v in out if k == "part"] == ["done"]

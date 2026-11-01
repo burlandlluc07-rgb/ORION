@@ -27,6 +27,23 @@ def _gemma_refused(model: str, exc: errors.APIError) -> bool:
     return exc.code == 400 and is_gemma(model)
 
 
+def _strip_signatures(contents: list[types.Content]) -> bool:
+    """Drop thought signatures from earlier model turns. A signature only works with the model that made
+    it, so when a tool loop moves to another model (one ran out of quota) Gemini answers 400 until
+    they're gone. Returns True when anything was removed."""
+    removed = False
+    for content in contents:
+        for part in getattr(content, "parts", None) or []:
+            if getattr(part, "thought_signature", None):
+                part.thought_signature = None
+                removed = True
+    return removed
+
+
+def _signature_refused(exc: errors.APIError) -> bool:
+    return exc.code == 400 and "thought_signature" in str(exc)
+
+
 def _has_audio(contents: list[types.Content]) -> bool:
     for c in contents:
         for p in c.parts or []:
@@ -225,6 +242,9 @@ class GeminiBrain:
                     if exc.code == 400 and "thinking" in str(exc).lower():
                         cfg.thinking_config = None
                         it = await self.client.aio.models.generate_content_stream(model=model, contents=contents, config=cfg)
+                    elif _signature_refused(exc) and _strip_signatures(contents):
+                        log.warning("%s refused another model's thought signatures; retrying without them", model)
+                        it = await self.client.aio.models.generate_content_stream(model=model, contents=contents, config=cfg)
                     else:
                         raise
                 yield "model", model
@@ -288,6 +308,9 @@ class GeminiBrain:
                 return r.text or ""
             except errors.APIError as exc:
                 last_exc = exc
+                if _signature_refused(exc) and _strip_signatures(contents):
+                    log.warning("%s refused another model's thought signatures; retrying without them", model)
+                    continue
                 if exc.code == 429:
                     delay = self.governor.cool_down(model, str(exc))
                     log.warning("Rate limited on %s for %.0fs: %s", model, delay, str(exc)[:400])
