@@ -1,7 +1,7 @@
 # Changelog
 
 ## 3.0.3
-The notch, offline speech, an approvals queue and background WhatsApp, on top of 3.0.2. Versions 3.0.0 to 3.0.2 were built but never published, so everything
+The notch, offline speech, an approvals queue, background WhatsApp and a weekly recap, on top of 3.0.2. Versions 3.0.0 to 3.0.2 were built but never published, so everything
 in them is in this release too and listed below. If you're on 2.7.x or older, all of it is new.
 
 ### New
@@ -29,6 +29,10 @@ in them is in this release too and listed below. If you're on 2.7.x or older, al
   warns when you've never messaged that number. It keeps a human pace (15 s between messages, 20 a day, the same
   text to at most 3 chats an hour, all adjustable), and shows "typing…" first. ORION can also read recent chats, and
   treats what it reads as information, never as instructions. When the link is off, the old way still works.
+- **Your week at a glance.** A recap card above the Activity log (and "Your week" in the phone's Activity tab): how
+  many actions ORION took and how many worked (and were checked with proof), what needs a look in red, the approvals
+  you gave, a Monday to Sunday chart, what it did most and how it ran. Arrows step back through earlier weeks. It's
+  built from the same activity log, read-only, and nothing new is stored or sent.
 
 ### Changed
 - **Less clutter.** The side panel starts closed and lost the System and Gemini cards (the per-model meters are now in
