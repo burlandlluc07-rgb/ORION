@@ -12,6 +12,10 @@ in the 3.0.3 section of the changelog).
   takes a step or replies, a thought appears next to the core and the memories it used light up. A "Latest thoughts"
   list shows the newest thoughts; click one to see the memories it used. Drag, zoom, search, and click any node for
   details or to open its note.
+- **Every app ORION opens is a ghost.** "Open Word" (or any app) now opens it as a ghost window by default; ask for
+  a normal window ("open Spotify for me") to get one. Windows the app opens next while ORION works in it (Word's
+  document after its start screen, dialogs) become ghosts too. Word and Excel take his typing through Office's own
+  automation, so an essay types itself into the ghost Word window while you keep working.
 - **Ghost mode.** When ORION needs a desktop app for his own work he opens it as a ghost window: see-through,
   click-through, never focused, out of the taskbar, about 50% see-through like glass with no outline, and
   opening where and as big as the app would if you opened it yourself. He works it with his own drawn ghost cursor. Your mouse, keyboard and focus are never touched: clicks

@@ -107,3 +107,36 @@ def test_ghost_code_never_takes_real_input():
                 {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)} | \
                 {a.name for n in ast.walk(tree) if isinstance(n, (ast.Import, ast.ImportFrom)) for a in n.names}
         assert not names & banned, f"{path.name} uses {names & banned}"
+
+
+def test_office_text_splitting():
+    from orion.ghost import office
+
+    assert office.office_kind("WINWORD") == "winword" and office.office_kind("notepad") == ""
+    assert office.word_lines("a\r\nb\nc") == ["a", "b", "c"]
+    assert office.excel_rows("a\tb\nc") == [["a", "b"], ["c"]]
+
+
+def test_open_app_is_a_ghost_by_default_on_windows(monkeypatch):
+    from orion.tasks import routing
+
+    class T:
+        name, source, background, risk = "open_app", "builtin", None, "safe"
+
+    monkeypatch.setattr(routing, "IS_WIN", True)
+    caps = routing.capabilities_for(T(), args={"name": "word"})
+    assert caps.route == "app_automation" and not caps.needs_desktop
+    caps = routing.capabilities_for(T(), args={"name": "spotify", "normal": True})
+    assert caps.needs_desktop
+
+
+def test_open_app_hands_windows_launches_to_ghost_mode(monkeypatch):
+    from orion.tools import apps, ghost
+
+    calls = []
+    monkeypatch.setattr(apps, "IS_WIN", True)
+    monkeypatch.setattr(ghost, "ghost_open", lambda name, ctx=None: calls.append(name) or "ghost")
+    monkeypatch.setattr(apps, "launch", lambda target: calls.append(("normal", target)))
+    assert apps.open_app("word") == "ghost"
+    apps.open_app("settings")  # Settings is for the user: a normal window
+    assert calls[0] == "word" and calls[1][0] == "normal"

@@ -100,6 +100,9 @@ def capabilities_for(tool: "Tool", settings: "Settings | None" = None, browser_v
     if name == "window_action" and args.get("action") in QUIET_WINDOW_ACTIONS:
         return Capabilities(route="app_automation", desktop="visible", changes_local=True,
                             evidence="the window's state was read back")
+    if name == "open_app" and IS_WIN and not args.get("normal") and getattr(settings, "ghost_default", True):
+        # Ghost by default: the app opens see-through and unfocusable, so nothing on the user's desktop is taken.
+        return Capabilities(route="app_automation", changes_local=True, evidence="the ghost window appeared")
     if tool.background is not None and _takes_background_route(tool, args):
         return Capabilities(route="api_mcp", changes_external=True, evidence="the service's response")
     if source.startswith("mcp:"):

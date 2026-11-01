@@ -17,6 +17,7 @@ GHOST_BITS = WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTI
 DEFAULT_OPACITY = 0.5
 MIN_OPACITY, MAX_OPACITY = 0.25, 0.85
 MARGIN = 16
+FOLLOW_WINDOWS_S = 25  # after ORION acts in a ghost app, new windows of that app become ghosts too
 CORNERS = ("bottom-right", "bottom-left", "top-right", "top-left")
 LABEL_SPACE = 30  # room above each ghost for its "ORION · ghost" tag
 
