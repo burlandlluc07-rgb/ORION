@@ -38,6 +38,9 @@ VISIBLE = {"open_app", "open_settings_page", "open_website", "search_in_browser"
 BROWSER = {"browser_open", "browser_view", "browser_click", "browser_type", "browser_select", "browser_press",
            "browser_scroll", "browser_back", "browser_tabs", "browser_look", "browser_close", "browser_hide"}
 APP_AUTOMATION = {"list_windows", "inspect_window", "click_control", "set_control_text"}
+# Ghost mode (orion/ghost): ORION's own see-through, click-through, never-focused windows and his drawn cursor.
+# Visible on screen, but nothing of the user's is touched, so no desktop gate: that's the point of ghost mode.
+GHOST = {"ghost_open", "ghost_look", "ghost_click", "ghost_type", "ghost_press", "ghost_windows", "ghost_close"}
 CLI = {"run_command", "run_python", "wifi", "bluetooth", "install_app", "uninstall_app", "app_updates",
        "find_app_to_install", "check_windows_updates", "power_plan", "drive_health", "battery_health",
        "network_info", "internet_speed_test", "ping", "startup_apps", "clean_temp_files", "empty_recycle_bin",
@@ -118,6 +121,9 @@ def capabilities_for(tool: "Tool", settings: "Settings | None" = None, browser_v
                             desktop="visible" if visible and name not in ("browser_close", "browser_hide") else "none",
                             changes_external=tool.risk != "safe", cancellable=False,
                             evidence="the page state after the action")
+    if name in GHOST:
+        return Capabilities(route="app_automation", changes_local=tool.risk != "safe",
+                            evidence="the ghost window, captured and read back")
     if name in APP_AUTOMATION:
         return Capabilities(route="app_automation", changes_local=tool.risk != "safe",
                             evidence="UI Automation reports the control state")

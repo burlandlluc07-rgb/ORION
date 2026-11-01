@@ -1,6 +1,6 @@
 import {
   BookOpen, Crosshair, ExternalLink, FolderOpen, MessageSquare, PanelRightClose, PanelRightOpen, Search, Sparkles, Wrench,
-  X, ZoomIn, ZoomOut,
+  X, ZoomIn, ZoomOut, Ghost,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
@@ -61,6 +61,7 @@ const THOUGHT_META: Record<string, { label: string; icon: typeof Sparkles }> = {
   action: { label: "Doing", icon: Wrench },
   skill: { label: "Skill", icon: BookOpen },
   reply: { label: "Replied", icon: MessageSquare },
+  ghost: { label: "Ghost", icon: Ghost },
 };
 
 function ago(ts: number) {

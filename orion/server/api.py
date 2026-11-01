@@ -975,6 +975,28 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
         open_target(str(target))
         return {"ok": True}
 
+    # ── Ghost windows (orion/ghost): list them, hand one back to the user, or close it ──
+    @app.get("/api/ghost", dependencies=[A])
+    async def ghost_list():
+        from ..ghost.win32 import DESK, IS_WIN
+
+        return {"available": IS_WIN, "windows": DESK.list() if IS_WIN else []}
+
+    @app.post("/api/ghost/{gid}/{action}", dependencies=[X])
+    async def ghost_action(gid: int, action: str):
+        from ..ghost.win32 import DESK, GhostError
+
+        if action not in ("take-over", "close"):
+            raise HTTPException(404, "Unknown ghost action")
+        try:
+            g = DESK.find(gid)
+            msg = await asyncio.to_thread(DESK.take_over if action == "take-over" else DESK.close, g)
+        except GhostError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        engine.thoughts.add("ghost", msg)
+        engine.bus.emit("ghost.changed")
+        return {"ok": True, "message": msg}
+
     @app.post("/api/window/{action}", dependencies=[X])
     async def window(action: str):
         if shell is None:

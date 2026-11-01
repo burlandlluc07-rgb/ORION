@@ -1,0 +1,40 @@
+name: Windows ghost mode check
+on:
+  workflow_dispatch:
+  push:
+    branches: ["claude/ghost-mode-brain"]
+
+permissions:
+  contents: write  # the screenshots are also pushed to the ci/ghost-shots branch
+
+jobs:
+  ghost:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12" }
+      - name: Install ORION
+        run: python -m pip install -U pip && pip install -e .
+      - name: Ghost mode
+        env: { PYTHONIOENCODING: utf-8 }
+        run: python scripts/ghost_check.py
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with: { name: ghost, path: ghost/ }
+      - name: Publish screenshots to the ci/ghost-shots branch
+        if: always()
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898299+github-actions[bot]@users.noreply.github.com"
+          Copy-Item -Recurse ghost $env:RUNNER_TEMP\shots
+          git checkout --orphan ci/ghost-shots
+          git rm -rfq --cached .
+          Remove-Item -Recurse -Force ghost
+          Copy-Item -Recurse $env:RUNNER_TEMP\shots ghost
+          git add ghost
+          git commit -qm "Ghost mode screenshots for ${{ github.sha }}"
+          git push -f origin ci/ghost-shots

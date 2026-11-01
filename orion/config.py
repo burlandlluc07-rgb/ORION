@@ -134,6 +134,11 @@ class Settings(BaseModel):
     start_minimized: bool = False
     launch_on_startup: bool = False
     close_to_tray: bool = True
+    # Ghost mode: apps ORION opens for his own work are see-through, click-through and never focused, and he works
+    # them with his own drawn cursor. Your mouse, keyboard and focus are never touched.
+    ghost_opacity: float = 0.5
+    ghost_corner: str = "bottom-right"
+    ghost_cursor: bool = True
 
     vault_path: str = ""  # Obsidian vault for ORION's memory ("" = Documents/ORION Brain)
     memory_review_day: int = 6  # weekly short-term review: 0 = Monday … 6 = Sunday
