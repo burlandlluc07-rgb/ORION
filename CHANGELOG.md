@@ -1,16 +1,76 @@
 # Changelog
 
+## 3.0.6
+Full-screen ghost windows with a pill that shows what ORION is doing, on top of 3.0.5. Versions 3.0.3 to 3.0.5 were
+built but never published, so everything in them is in this release too: 3.0.5 and 3.0.4 are listed below, 3.0.3 is
+summarised at the end.
+
+### New
+- **Full-screen ghosts that show ORION at work.** Ghost windows now fill the screen like a maximised window, as
+  30% glass (70% solid; change it with the "Ghost glass" setting), still click-through and never focused. While ORION works in one, a black pill at
+  the top says what he's doing,
+  e.g. "ORION is typing in Word", with his spirit and breathing dots. Word and Excel open as ORION's own copy with a
+  blank document, so his typing lands reliably and never touches documents you have open. The old corner setting
+  saved by earlier builds is no longer read (new setting: Ghost layout).
+
+### From 3.0.5: new
+- **Every app ORION opens is a ghost.** "Open Word" (or any app) now opens it as a ghost window by default; ask for
+  a normal window ("open Spotify for me") to get one. Windows the app opens next while ORION works in it (Word's
+  document after its start screen, dialogs) become ghosts too. Word and Excel take his typing through Office's own
+  automation, so an essay types itself into the ghost Word window while you keep working.
+
+### From 3.0.4: new
+- **Brain tab.** A new tab under Memory shows ORION's memory as a live, interactive graph: ORION's core in the middle,
+  its notes around it (About me, each person and project, Plans & dates, This week) and every remembered fact linked
+  to its note, to the people and projects it names, and to related facts. When ORION recalls memories for a request,
+  takes a step or replies, a thought appears next to the core and the memories it used light up. A "Latest thoughts"
+  list shows the newest thoughts; click one to see the memories it used. Drag, zoom, search, and click any node for
+  details or to open its note.
+- **Ghost mode.** When ORION needs a desktop app for his own work he opens it as a ghost window: see-through,
+  click-through, never focused, out of the taskbar, glass you can see through, with no outline. He works it with his own drawn ghost cursor. Your mouse, keyboard and focus are never touched: clicks
+  and typing go through UI Automation and window messages, and he reads the window with PrintWindow. If a ghost
+  grabs the focus, ORION hands it straight back. Apps that ignore background input make him ask instead of using
+  your mouse. "Take over" in the notch makes a ghost a normal window, yours. Ghost steps show in the Brain's thoughts.
+- **ORION has a face.** A small star spirit with Orion's belt on his brow lives in the notch, on the home screen and
+  beside his ghost cursor. He blinks, listens, thinks, works, talks and sleeps.
+
+### From 3.0.4: fixed
+- **One ORION in the taskbar, and the notch stays when you close the window.** The notch used to show up as a second
+  taskbar app called "ORION Notch". It's now part of the one ORION app. Closing the main window while the notch is on
+  only hides the window, so the notch stays and Alt+Space still works; quit from the tray icon. Without a tray icon,
+  closing still quits.
+- **Tasks keep going when a Gemini model runs out mid-task.** When ORION moved a job to the next free model (say
+  Flash hit its daily quota half way through), Gemini refused it because the first model's private "thought"
+  notes were still attached, and background tasks stopped with "Gemini API error 400". ORION now drops those notes
+  when it switches model and carries on.
+
+### Not tried on a real PC yet
+These were checked on GitHub's Windows test machines, not yet on a real everyday PC:
+- Ghost mode in your own apps. It passed 26 of 26 checks with Notepad on the test machine. Chrome, Edge,
+  Electron apps (like Discord, Slack or VS Code) and some Microsoft Store apps ignore background input, so for those
+  ORION should ask you instead of working them; that hasn't been seen on a real PC yet.
+- Word and Excel typing in ghost windows (through Office's own automation). The test machine has no Office, so
+  this has only been checked with automated tests, not with a real Word or Excel.
+- Full-screen ghost windows and the "ORION is …" pill with real apps other than Notepad, and on more than one screen.
+- The Brain tab with a big, real memory (it was tested with sample memories).
+- The notch as one app (23 of 23 checks on the test machine, including one taskbar button and closing the window).
+- From earlier versions, still untried on a real account: background personal WhatsApp, the offline speech
+  download, fingerprint approvals on the phone, real inbox sorting, the backup brain on Groq and the Gemma fallback.
+
+### Also in this release (from 3.0.3)
+- The notch at the top of the screen (Alt+Space), offline speech recognition (optional download), an approvals queue
+  with Ctrl+Alt+A, fingerprint approval on the phone, personal WhatsApp in the background (optional, unofficial), a
+  weekly recap above the Activity log, and a less cluttered layout.
+- From 3.0.0 to 3.0.2: emails with real line breaks, Gemma as a free fallback after Flash, a backup brain that fits
+  small free plans like Groq's, a new black, white and grey look, a themed title bar, a touch phone app, auto-correct,
+  yes/no approvals by voice or text, the What ORION did log and more work done in the background.
+
 ## 3.0.5
 Every app ORION opens is now a ghost, and ghost windows look and sit like the app would on its own, on top of 3.0.4.
 Version 3.0.4 was built but never published, so everything in it is in this release too and listed below. 3.0.3
 wasn't published either; it's summarised at the end.
 
 ### New
-- **Full-screen ghosts that show ORION at work.** Ghost windows now fill the screen like a maximised window (still
-  30% glass (70% solid; "Ghost glass" setting), click-through, never focused). While ORION works in one, a black pill at the top says what he's doing,
-  e.g. "ORION is typing in Word", with his spirit and breathing dots. Word and Excel open as ORION's own copy with a
-  blank document, so his typing lands reliably and never touches documents you have open. The old corner setting
-  saved by earlier builds is no longer read (new setting: Ghost layout).
 - **Every app ORION opens is a ghost.** "Open Word" (or any app) now opens it as a ghost window by default; ask for
   a normal window ("open Spotify for me") to get one. Windows the app opens next while ORION works in it (Word's
   document after its start screen, dialogs) become ghosts too. Word and Excel take his typing through Office's own
