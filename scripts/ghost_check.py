@@ -108,7 +108,7 @@ def main() -> int:
     time.sleep(0.6)
     ghost_edit = child(g.hwnd, "Edit") or child(g.hwnd, "RichEditD2DPT")
     text = window_text(ghost_edit) if ghost_edit else ""
-    record("text reached the ghost", "Hello from ORION's ghost." in text and "Second line" in text, repr(text[:80]))
+    record("text reached the ghost", "Hello from ORION's ghost." in text and "Second line" in text, f"{text[:80]!r} via {g.flags.get('type_target')}")
     user_text = window_text(child(user_win, "Edit"))
     record("your Notepad wasn't typed into", user_text == "Lluc is typing his own notes here.", repr(user_text[:60]))
     untouched("after ghost typing", user_win, pos)

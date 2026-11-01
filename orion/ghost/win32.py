@@ -44,6 +44,7 @@ LWA_ALPHA = 0x2
 ULW_ALPHA = 0x2
 WM_TIMER, WM_APP, WM_CLOSE, WM_QUIT = 0x0113, 0x8000, 0x0010, 0x0012
 WM_MOUSEMOVE, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_LBUTTONDBLCLK = 0x0200, 0x0201, 0x0202, 0x0203
+EM_REPLACESEL, SMTO_ABORTIFHUNG = 0x00C2, 0x0002
 WM_RBUTTONDOWN, WM_RBUTTONUP, WM_KEYDOWN, WM_KEYUP, WM_CHAR, WM_GETTEXT = 0x0204, 0x0205, 0x0100, 0x0101, 0x0102, 0x000D
 MK_LBUTTON, MK_RBUTTON = 0x1, 0x2
 EVENT_SYSTEM_FOREGROUND, EVENT_OBJECT_SHOW = 0x0003, 0x8002
@@ -161,6 +162,8 @@ if IS_WIN:
          wintypes.DWORD, wintypes.DWORD, wintypes.DWORD)
     _sig(user32.SystemParametersInfoW, wintypes.BOOL, wintypes.UINT, wintypes.UINT, P, wintypes.UINT)
     _sig(user32.EnumWindows, wintypes.BOOL, ENUMPROC, wintypes.LPARAM)
+    _sig(user32.EnumChildWindows, wintypes.BOOL, H, ENUMPROC, wintypes.LPARAM)
+    _sig(user32.IsChild, wintypes.BOOL, H, H)
     _sig(user32.LockSetForegroundWindow, wintypes.BOOL, wintypes.UINT)
     _sig(user32.GetCursorPos, wintypes.BOOL, ctypes.POINTER(wintypes.POINT))
     _sig(gdi32.CreateCompatibleDC, wintypes.HDC, wintypes.HDC)
@@ -262,6 +265,13 @@ def _is_app_window(hwnd: int) -> bool:
         return False
     r = _rect(hwnd)
     return r.width >= 200 and r.height >= 120 and bool(_text(hwnd) or user32.GetWindowLongW(hwnd, GWL_STYLE) & WS_CAPTION)
+
+
+def _children(hwnd: int) -> list[int]:
+    out: list[int] = []
+    cb = ENUMPROC(lambda h, _l: out.append(h or 0) or True)
+    user32.EnumChildWindows(hwnd, cb, 0)
+    return [h for h in out if h]
 
 
 def _ancestry_classes(hwnd: int) -> list[str]:
@@ -757,26 +767,49 @@ class GhostDesk:
 
     def focus_target(self, g: Ghost) -> int:
         """The control that has keyboard focus *inside* the ghost's own thread. Every thread keeps its own focus,
-        so this is not your focus: typing there never reaches the window you're using."""
+        so this is not your focus: typing there never reaches the window you're using. A ghost is never activated,
+        so its thread often has no focus at all; then the control ORION last clicked, or the window's text box."""
         info = GUITHREADINFO()
         info.cbSize = ctypes.sizeof(GUITHREADINFO)
-        if user32.GetGUIThreadInfo(_thread(g.hwnd), ctypes.byref(info)) and info.hwndFocus:
+        inside = lambda h: bool(h) and h != g.hwnd and bool(user32.IsChild(g.hwnd, h))
+        if user32.GetGUIThreadInfo(_thread(g.hwnd), ctypes.byref(info)) and inside(info.hwndFocus):
             return info.hwndFocus
-        return g.flags.get("last_target") or g.hwnd
+        last = g.flags.get("last_target")
+        if inside(last) and core.is_edit_class(_class(last)):
+            return last
+        for h in _children(g.hwnd):
+            if core.is_edit_class(_class(h)) and user32.IsWindowVisible(h):
+                return h
+        return last if inside(last) else g.hwnd
 
     def type(self, g: Ghost, text: str) -> str:
         target = self.focus_target(g)
-        if not core.posted_clicks_work(_ancestry_classes(target)):
-            raise GhostError(f"{g.title} doesn't take background typing. Use ghost_type with a field's name instead.")
-        for unit in core.utf16_units(text):
-            user32.PostMessageW(target, WM_CHAR, unit, 1)
+        cls = _class(target)
+        g.flags["type_target"] = cls
+        if core.takes_replacesel(cls):
+            # Standard text boxes take text straight in with EM_REPLACESEL, at their own caret: no keys at all.
+            buf = ctypes.create_unicode_buffer(core.edit_text(text))
+            res = ctypes.c_size_t()
+            ok = user32.SendMessageTimeoutW(target, EM_REPLACESEL, 1, ctypes.cast(buf, ctypes.c_void_p).value,
+                                            SMTO_ABORTIFHUNG, 3000, ctypes.byref(res))
+            if not ok:
+                raise GhostError(f"{g.title} didn't answer in time, so nothing was typed.")
+        else:
+            if not core.posted_clicks_work(_ancestry_classes(target)):
+                raise GhostError(f"{g.title} doesn't take background typing. Use ghost_type with a field's name instead.")
+            for unit in core.utf16_units(text):
+                user32.PostMessageW(target, WM_CHAR, unit, 1)
         g.last_action = f"typed {len(text)} characters"
         return f"Typed {len(text)} characters into {g.title}."
 
     def press(self, g: Ghost, keys: str) -> str:
         codes = core.parse_keys(keys)
         target = self.focus_target(g)
+        edit = core.takes_replacesel(_class(target))
         for vk in codes:
+            if edit and vk == core.VK["enter"]:
+                self.type(g, "\n")
+                continue
             user32.PostMessageW(target, WM_KEYDOWN, vk, core.key_lparam(0, False))
             if vk in core.KEY_CHARS:
                 user32.PostMessageW(target, WM_CHAR, ord(core.KEY_CHARS[vk]), core.key_lparam(0, False))

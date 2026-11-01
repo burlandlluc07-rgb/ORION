@@ -62,6 +62,13 @@ def test_posted_clicks_detection():
     assert not core.posted_clicks_work(["ApplicationFrameWindow"])
 
 
+def test_text_box_classes():
+    assert core.is_edit_class("Edit") and core.is_edit_class("RichEditD2DPT") and core.is_edit_class("RICHEDIT50W")
+    assert not core.is_edit_class("Button") and not core.is_edit_class("")
+    assert core.takes_replacesel("Edit") and not core.takes_replacesel("RichEditD2DPT")
+    assert core.edit_text("a\nb\r\nc") == "a\r\nb\r\nc"
+
+
 def test_scale_point_maps_picture_to_window():
     assert core.scale_point(50, 25, (100, 50), (1000, 500)) == (500, 250)
     assert core.scale_point(5000, -3, (100, 50), (1000, 500)) == (999, 0)

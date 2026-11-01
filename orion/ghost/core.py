@@ -35,6 +35,24 @@ VK: dict[str, int] = {
 KEY_CHARS = {0x0D: "\r", 0x09: "\t", 0x08: "\b", 0x20: " ", 0x1B: "\x1b"}
 
 
+# Text boxes ORION can type into without focus. Plain "Edit" boxes (Notepad, most dialogs) also take whole text
+# with EM_REPLACESEL, which Windows carries across processes for this system class only.
+TEXT_BOX_CLASSES = ("edit", "richedit", "scintilla")
+
+
+def is_edit_class(cls: str) -> bool:
+    return (cls or "").lower().startswith(TEXT_BOX_CLASSES)
+
+
+def takes_replacesel(cls: str) -> bool:
+    return (cls or "").lower() == "edit"
+
+
+def edit_text(text: str) -> str:
+    """Line breaks as a Windows text box stores them."""
+    return text.replace("\r\n", "\n").replace("\n", "\r\n")
+
+
 def ghost_style(style: int) -> int:
     """Extended style that turns a normal top-level window into a ghost."""
     return (style | GHOST_BITS) & ~WS_EX_APPWINDOW
