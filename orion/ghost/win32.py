@@ -361,7 +361,8 @@ class GhostDesk:
     def __init__(self) -> None:
         self.ghosts: dict[int, Ghost] = {}
         self.opacity = core.DEFAULT_OPACITY
-        self.corner = "bottom-right"
+        self.corner = "natural"  # where the app puts itself, as if you had opened it; or a corner
+        self.show_frame = False  # no outline: a ghost is just see-through glass
         self.show_cursor = True
         self.on_event: Callable[[str, str], None] = lambda kind, text: None  # → ORION's thoughts / activity
         self._jobs: queue.Queue = queue.Queue()
@@ -543,7 +544,8 @@ class GhostDesk:
             user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ctypes.c_long(want).value)
 
     def _adopt(self, hwnd: int) -> Ghost:
-        """Turn a window into a ghost: see-through, click-through, unfocusable, out of the taskbar, in the corner."""
+        """Turn a window into a ghost: see-through, click-through, unfocusable, out of the taskbar. It stays where and
+        how big the app made it, like a window you opened yourself, unless a corner is set."""
         if hwnd in self.ghosts:
             return self.ghosts[hwnd]
         was_fg = user32.GetForegroundWindow() == hwnd
@@ -561,17 +563,22 @@ class GhostDesk:
         user32.ShowWindow(hwnd, SW_HIDE)  # the taskbar only notices the new style on the next show
         user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ctypes.c_long(core.ghost_style(ex)).value)
         user32.SetLayeredWindowAttributes(hwnd, 0, core.alpha_byte(self.opacity), LWA_ALPHA)
-        r = _rect(hwnd)
-        work = _work_area()
-        size = core.ghost_size((r.width, r.height), work)
-        slot = core.slot_rect(len(self.ghosts) - 1, size, work, self.corner)
-        user32.SetWindowPos(hwnd, HWND_TOPMOST, slot.left, slot.top, slot.width, slot.height,
-                            SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED)
+        if self.corner in core.CORNERS:
+            r = _rect(hwnd)
+            work = _work_area()
+            size = core.ghost_size((r.width, r.height), work)
+            slot = core.slot_rect(len(self.ghosts) - 1, size, work, self.corner)
+            user32.SetWindowPos(hwnd, HWND_TOPMOST, slot.left, slot.top, slot.width, slot.height,
+                                SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED)
+        else:
+            user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED)
         user32.ShowWindow(hwnd, SW_SHOWNOACTIVATE)
         g.rect = _rect(hwnd).as_tuple()
         if was_fg:
             give_focus_back(self._user_fg)
-        self._frames[hwnd] = self._overlay()
+        if self.show_frame:
+            self._frames[hwnd] = self._overlay()
         self.on_event("ghost", f"Opened {g.title} as a ghost window")
         return g
 
@@ -841,14 +848,17 @@ class GhostDesk:
     def list(self) -> list[dict]:
         return [g.to_dict() for g in self.ghosts.values() if IS_WIN and user32.IsWindow(g.hwnd)]
 
-    def configure(self, opacity: float | None = None, corner: str | None = None, cursor: bool | None = None) -> None:
+    def configure(self, opacity: float | None = None, corner: str | None = None, cursor: bool | None = None,
+                  frame: bool | None = None) -> None:
         if opacity is not None:
             self.opacity = core.clamp_opacity(opacity)
             if IS_WIN and self.ghosts:
                 self._run(lambda: [user32.SetLayeredWindowAttributes(h, 0, core.alpha_byte(self.opacity), LWA_ALPHA)
                                    for h in self.ghosts])
-        if corner in ("bottom-right", "bottom-left", "top-right", "top-left"):
+        if corner in (*core.CORNERS, "natural"):
             self.corner = corner
+        if frame is not None:
+            self.show_frame = bool(frame)
         if cursor is not None:
             self.show_cursor = bool(cursor)
 

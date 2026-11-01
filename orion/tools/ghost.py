@@ -100,7 +100,7 @@ def ghost_open(app: str, ctx: ToolContext = None) -> str:  # type: ignore[assign
     if eng is not None:
         s = eng.config.settings
         desk.configure(opacity=getattr(s, "ghost_opacity", None), corner=getattr(s, "ghost_corner", None),
-                       cursor=getattr(s, "ghost_cursor", None))
+                       cursor=getattr(s, "ghost_cursor", None), frame=getattr(s, "ghost_frame", None))
         desk.on_event = lambda _kind, text: _say(ctx, text)
     g = _guard(lambda: desk.open(target, display, keys))
     return (f"{display} is open as a ghost window titled “{g.title}”. Use ghost_look to see it, then ghost_click, "

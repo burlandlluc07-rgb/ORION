@@ -17,6 +17,7 @@ GHOST_BITS = WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTI
 DEFAULT_OPACITY = 0.5
 MIN_OPACITY, MAX_OPACITY = 0.25, 0.85
 MARGIN = 16
+CORNERS = ("bottom-right", "bottom-left", "top-right", "top-left")
 LABEL_SPACE = 30  # room above each ghost for its "ORION · ghost" tag
 
 # Window classes whose content ignores posted mouse messages: Chromium/Electron render widgets and Store apps.
