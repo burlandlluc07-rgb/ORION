@@ -24,6 +24,12 @@ class FakeWindow:
     def restore(self):
         self.calls.append(("restore",))
 
+    def hide(self):
+        self.calls.append(("hide",))
+
+    def destroy(self):
+        self.calls.append(("destroy",))
+
 
 def make_shell(**settings):
     shell = DesktopShell(SimpleNamespace(settings=Settings(**settings), root=None))
@@ -118,3 +124,36 @@ def test_hover_is_a_shape_only_mode():
 def test_shape_helpers_are_noops_off_windows():
     assert notch.set_shape(0, "idle") is False
     notch.morph(0, "idle", "open")  # must not raise or sleep
+
+
+def test_notch_style_keeps_it_out_of_the_taskbar():
+    # WS_EX_APPWINDOW forced a second "ORION Notch" taskbar button; a tool window has none and isn't in Alt+Tab.
+    style = notch.taskbar_style(notch.WS_EX_NOACTIVATE | notch.WS_EX_APPWINDOW)
+    assert style & notch.WS_EX_TOOLWINDOW
+    assert not style & notch.WS_EX_APPWINDOW
+    assert style & notch.WS_EX_NOACTIVATE  # still never steals focus
+    assert notch.hide_from_taskbar(0) is False
+
+
+def test_closing_the_window_keeps_the_notch_even_with_close_to_tray_off():
+    shell = make_shell(close_to_tray=False)
+    shell.window = FakeWindow()
+    shell.tray = object()
+    assert shell._on_closing() is False  # cancelled: the window hides, ORION and its notch keep running
+    assert ("hide",) in shell.window.calls
+    assert ("destroy",) not in shell.notch.calls
+
+
+def test_closing_without_a_notch_follows_close_to_tray():
+    shell = make_shell(close_to_tray=False, notch=False)
+    shell.notch = None
+    shell.window = FakeWindow()
+    shell.tray = object()
+    assert shell._on_closing() is True
+
+
+def test_closing_without_a_tray_quits_so_orion_can_still_be_closed():
+    shell = make_shell()
+    shell.window = FakeWindow()
+    assert shell._on_closing() is True
+    assert ("destroy",) in shell.notch.calls

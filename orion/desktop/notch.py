@@ -38,6 +38,8 @@ MORPH_SECONDS = 0.34
 
 GWL_EXSTYLE = -20
 WS_EX_NOACTIVATE = 0x08000000
+WS_EX_TOOLWINDOW = 0x00000080  # no taskbar button, not in Alt+Tab
+WS_EX_APPWINDOW = 0x00040000  # forces a taskbar button
 
 # SHQueryUserNotificationState: a full-screen game, video or presentation is in front.
 QUNS_BUSY, QUNS_RUNNING_D3D_FULL_SCREEN, QUNS_PRESENTATION_MODE = 2, 3, 4
@@ -148,6 +150,33 @@ def set_visible(hwnd: int, on: bool) -> bool:
     if sys.platform != "win32" or not hwnd:
         return False
     ctypes.windll.user32.ShowWindow(ctypes.c_void_p(hwnd), 4 if on else 0)  # type: ignore[attr-defined]
+    return True
+
+
+def taskbar_style(style: int) -> int:
+    """The extended style that keeps the pill out of the taskbar and Alt+Tab: it's part of ORION, not a second app."""
+    return (style | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW
+
+
+def hide_from_taskbar(hwnd: int) -> bool:
+    """Drop the notch's own taskbar button, so ORION shows as one app (the main window) instead of two.
+
+    The taskbar only re-reads a window's style when it's shown, so the pill is hidden for a moment, restyled and shown
+    again without activating. Returns True when the style changed.
+    """
+    if sys.platform != "win32" or not hwnd:
+        return False
+    user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+    style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+    new = taskbar_style(style)
+    if new == style:
+        return False
+    visible = bool(user32.IsWindowVisible(hwnd))
+    if visible:
+        user32.ShowWindow(ctypes.c_void_p(hwnd), 0)  # SW_HIDE
+    user32.SetWindowLongW(hwnd, GWL_EXSTYLE, new)
+    if visible:
+        user32.ShowWindow(ctypes.c_void_p(hwnd), 4)  # SW_SHOWNOACTIVATE
     return True
 
 

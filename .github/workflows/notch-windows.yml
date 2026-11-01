@@ -2,7 +2,7 @@ name: Windows notch check
 on:
   workflow_dispatch:
   push:
-    branches: ["feature/notch-ui"]
+    branches: ["feature/notch-ui", "claude/notch-one-app"]
 
 permissions:
   contents: write  # the screenshots are also pushed to the ci/notch-shots branch
