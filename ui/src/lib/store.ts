@@ -1,10 +1,10 @@
 import { create } from "zustand";
 import { api } from "./api";
 import type {
-  Approval, Conversation, EngineState, Message, QuotaRow, Settings, Task, Vitals, VoiceStatus,
+  Approval, Conversation, EngineState, Message, QuotaRow, Settings, Task, Thought, Vitals, VoiceStatus,
 } from "./types";
 
-export type View = "chat" | "missions" | "tasks" | "activity" | "routines" | "ecosystem" | "memory" | "settings";
+export type View = "chat" | "missions" | "tasks" | "activity" | "routines" | "ecosystem" | "memory" | "brain" | "settings";
 
 export interface Toast {
   id: number;
@@ -40,6 +40,8 @@ interface Store {
   onboarding: boolean;
   mode: "auto" | "fast" | "smart";
   bump: Record<string, number>;
+  /** ORION's latest thoughts for the Brain tab, newest last. */
+  thoughts: Thought[];
 
   setView: (v: View) => void;
   openConversation: (id: string | null) => Promise<void>;
@@ -92,6 +94,7 @@ export const useStore = create<Store>((set, get) => ({
   onboarding: false,
   mode: "auto",
   bump: {},
+  thoughts: [],
 
   set: (p) => set(p),
   setView: (view) => set({ view }),
@@ -258,6 +261,9 @@ export const useStore = create<Store>((set, get) => ({
         break;
       case "stopped":
         get().toast({ title: "Stopped", body: ev.count ? `Halted ${ev.count} running task(s).` : "Nothing was running.", tone: "warn" });
+        break;
+      case "brain.thought":
+        set({ thoughts: [...s.thoughts, ev.thought as Thought].slice(-60) });
         break;
       case "memory.changed":
       case "missions.changed":

@@ -236,6 +236,43 @@ export interface Routine {
   last_result: string | null;
 }
 
+export interface Thought {
+  id: string;
+  kind: "recall" | "action" | "skill" | "reply" | string;
+  text: string;
+  /** Memory ids this thought touched (recalled facts). */
+  memories: number[];
+  ts: number;
+  tool?: string;
+}
+
+export interface BrainNode {
+  id: string;
+  kind: "core" | "note" | "memory";
+  label: string;
+  group: string;
+  text?: string;
+  tier?: "permanent" | "short";
+  note?: string;
+  memory_id?: number;
+  created?: number;
+  count?: number;
+}
+
+export interface BrainLink {
+  source: string;
+  target: string;
+  kind: "region" | "note" | "mention" | "related";
+  weight: number;
+}
+
+export interface BrainGraph {
+  nodes: BrainNode[];
+  links: BrainLink[];
+  stats: { memories: number; notes: number; links: number; short: number; truncated: boolean };
+  thoughts: Thought[];
+}
+
 export interface Memory {
   id: number;
   text: string;

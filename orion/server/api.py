@@ -445,6 +445,18 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
         return {"ok": True}
 
     # ── Memory ─────────────────────────────────────────────────────────────
+    @app.get("/api/brain/graph", dependencies=[A])
+    async def brain_graph():
+        """The Brain tab: memory as nodes and links, plus ORION's latest thoughts."""
+        from ..memory.brain import build_graph
+
+        try:
+            await asyncio.to_thread(engine.vault.sync)
+        except OSError:
+            pass
+        graph = await asyncio.to_thread(build_graph, engine.store.list_memories())
+        return {**graph, "thoughts": engine.thoughts.recent()}
+
     @app.get("/api/memories", dependencies=[A])
     async def memories():
         await asyncio.to_thread(engine.vault.sync)

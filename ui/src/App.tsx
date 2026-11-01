@@ -10,6 +10,7 @@ import type { QuotaRow } from "./lib/types";
 import { ActivityView } from "./views/ActivityView";
 import { ChatView } from "./views/ChatView";
 import { EcosystemView } from "./views/EcosystemView";
+import { BrainView } from "./views/BrainView";
 import { MemoryView } from "./views/MemoryView";
 import { MissionsView } from "./views/MissionsView";
 import { NotchView } from "./views/NotchView";
@@ -97,6 +98,7 @@ export default function App() {
             {s.view === "routines" && <RoutinesView />}
             {s.view === "ecosystem" && <EcosystemView />}
             {s.view === "memory" && <MemoryView />}
+            {s.view === "brain" && <BrainView />}
             {s.view === "settings" && <SettingsView />}
           </div>
         )}

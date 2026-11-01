@@ -123,6 +123,7 @@ class Agent:
             return False, f"Unknown or disabled tool: {name}"
         label = tool.describe_call(args)
         step = e.tracker.add_step(task, name, label, tool.risk)
+        e.thoughts.add("action", label, tool=name)
         executor = executor_for(tool, e.config.settings, args)
         caps = executor.capabilities()
         record = TaskRecord(id=step["id"], type=name, executor=executor.name, target=_target_of(args),
@@ -422,11 +423,16 @@ class Agent:
             e.vault.sync()  # pick up edits made in Obsidian
         except OSError:
             pass
-        mems = [m["text"] for m in e.store.core_memories()]
+        core = e.store.core_memories()
+        mems = [m["text"] for m in core]
+        recalled = []
         for m in e.store.recall(query, limit=5):
             text = m["text"] + (" (short-term)" if m.get("tier") == "short" else "")
             if text not in mems and m["text"] not in mems:
                 mems.append(text)
+                recalled.append(m["id"])
+        if query.strip():
+            e.thoughts.add("recall", query, recalled, core=len(core))  # core facts ride along every turn
         s = e.config.settings
         return build_system_prompt(persona=s.persona, assistant=s.assistant_name, user=s.user_name, memories=mems,
                                    skills_index=e.skills.index_prompt(), extra=extra, voice=voice)
@@ -532,6 +538,7 @@ class Agent:
                 "tier": tier}
         msg = e.store.add_message(cid, "assistant", reply, meta)
         e.bus.emit("message.end", conv_id=cid, id=msg_id, message=msg)
+        e.thoughts.add("reply", reply)
         if task.id in e.tracker.active:
             e.tracker.finish(task, "stopped" if task.cancel.is_set() else "done")
         if speech is not None:
@@ -607,5 +614,6 @@ class Agent:
             if not sk:
                 return False, "No such skill. Available: " + ", ".join(s.name for s in e.skills.enabled())
             e.bus.emit("skill.used", name=sk.name, task_id=task.id)
+            e.thoughts.add("skill", f"Following the {sk.name} skill")
             return True, f"SKILL {sk.name} — follow these instructions:\n{sk.body}"
         return await self.run_tool(name, args, task, cid)
