@@ -210,13 +210,17 @@ async def test_reminder_tool_and_scheduler(engine):
 async def test_safe_calls_run_in_parallel_and_keep_order(engine):
     import time
 
+    spans: list[tuple[float, float]] = []
+
     async def slow_read(x: str) -> str:
         """Slow read-only lookup.
 
         Args:
             x: value
         """
+        start = time.perf_counter()
         await asyncio.sleep(0.3)
+        spans.append((start, time.perf_counter()))
         return f"read {x}"
 
     from orion.tools.registry import schema_for
@@ -225,9 +229,11 @@ async def test_safe_calls_run_in_parallel_and_keep_order(engine):
     engine.registry.add(Tool(name="slow_read", description=desc, parameters=schema, fn=slow_read, risk="safe"))
     engine.brain = FakeBrain([[call("slow_read", x="a"), call("slow_read", x="b"), call("slow_read", x="c")],
                               [types.Part(text="done")]])
-    t0 = time.perf_counter()
     await engine.agent.handle("look up three things in parallel please")
-    assert time.perf_counter() - t0 < 0.8  # 3 × 0.3 s would be ~0.9 s sequentially
+    # The three calls overlap in time: each starts before any of them finishes. Timing the calls themselves (not
+    # the whole turn) keeps this free of the agent's own overhead, which a slow Windows runner can stretch.
+    assert len(spans) == 3
+    assert max(s for s, _ in spans) < min(e for _, e in spans)
     responses = [p.function_response.response["result"] for p in engine.brain.calls[1]["contents"][-1].parts]
     assert responses == ["read a", "read b", "read c"]
 
