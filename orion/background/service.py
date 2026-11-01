@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any
 
 from . import config as bg_config
 from .engine import BackgroundAgent
-from .gemini_agent import RETRY_CODES, GeminiAgentRunner
+from .gemini_agent import RETRY_CODES, GeminiAgentRunner, fix_signatures, signature_refused, strip_signatures
 from .runners import RunContext
 from .store import NEEDS_APPROVAL, Store
 
@@ -107,6 +107,9 @@ class OrionGeminiRunner(GeminiAgentRunner):
         gov = self.engine.governor
         client = self._get_client()
         tried: set[str] = set()
+        fixes: dict[str, set[str]] = {}
+        history = isinstance(contents, list)  # the task's own conversation (web search sends a plain query)
+        signed_by = getattr(ctx, "gemini_model", None) if history else None
         for attempt in range(MAX_ATTEMPTS):
             ctx.check()
             wait = max(1.0, min(MAX_SLOT_WAIT, ctx.remaining()))
@@ -114,10 +117,17 @@ class OrionGeminiRunner(GeminiAgentRunner):
                 model = self._on_loop(gov.acquire("smart", exclude=tried, max_wait=wait), ctx)
             except QuotaExhausted as exc:
                 raise RuntimeError(str(exc)) from exc
+            if signed_by and signed_by != model:
+                strip_signatures(contents)  # a thought signature only works with the model that wrote it
+                signed_by = None
             try:
                 response = client.models.generate_content(model=model, contents=contents, config=config)
             except errors.APIError as exc:
                 self._call(gov.record, model)
+                if signature_refused(exc) and fix_signatures(contents, fixes.setdefault(model, set())):
+                    log.warning("Background agent: %s refused the thought signatures in the task; retrying "
+                                "with them fixed", model)
+                    continue
                 if exc.code == 429:
                     delay = self._call(gov.cool_down, model, str(exc))
                     log.warning("Background agent rate limited on %s for %.0fs", model, delay)
@@ -131,6 +141,8 @@ class OrionGeminiRunner(GeminiAgentRunner):
             usage = getattr(response, "usage_metadata", None)
             self._call(gov.record, model, int(getattr(usage, "total_token_count", 0) or 0))
             self.last_model = model
+            if history:
+                ctx.gemini_model = model  # kept per task, so tasks running side by side don't mix up models
             return response
         raise RuntimeError("Gemini kept failing; the background task stopped. Try again later.")
 

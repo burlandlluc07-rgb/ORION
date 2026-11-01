@@ -173,3 +173,69 @@ def test_quota_error_on_last_model_fails(make_agent, cfg):
     agent.start()
     done = agent.wait(agent.submit("x")["id"], 5)
     assert done["status"] == "failed" and "429" in done["error"]
+
+
+
+def _signatures(call):
+    return [p.get("thought_signature") for m in call["contents"] for p in m.get("parts", [])
+            if isinstance(p, dict) and p.get("thought_signature")]
+
+
+def _refused(message):
+    from google.genai import errors
+    return errors.ClientError(400, {"error": {"code": 400, "status": "INVALID_ARGUMENT", "message": message}})
+
+
+OTHER_MODELS = ("Request contains a thought_signature from a previous model response, but this model does not "
+                "support it. Signatures can only be sent back to the model that produced them.")
+MISSING = "Function call is missing a thought_signature in functionCall parts."
+
+
+def test_model_switch_drops_other_models_signatures(make_agent, cfg, workdir):
+    """Flash runs out of quota mid-task: the next model must not get Flash's thought signatures (Gemini 400s)."""
+    from google.genai import errors
+
+    from orion.background import config
+    chain = config.Config(config._merge(cfg, {"gemini": {"fallback_models": ["gemini-flash-lite-latest"]}}))
+    (workdir / "notes.txt").write_text("buy milk")
+    quota = errors.ClientError(429, {"error": {"code": 429, "message": "quota", "status": "RESOURCE_EXHAUSTED"}})
+    client = FakeGenai([gemini_reply(("read_file", {"path": "notes.txt"})), quota, gemini_reply("buy milk")])
+    agent = make_agent(runners={"agent": GeminiAgentRunner(chain, client=client)})
+    agent.start()
+    done = agent.wait(agent.submit("What is in notes.txt?")["id"], 5)
+    assert done["status"] == "completed", done["error"]
+    flash_retry, lite = client.models.calls[1:]
+    assert flash_retry["model"] == "gemini-flash-latest" and _signatures(flash_retry)
+    assert lite["model"] == "gemini-flash-lite-latest" and not _signatures(lite)
+
+
+def test_refused_signature_is_retried_without_it(make_agent, cfg, workdir):
+    (workdir / "notes.txt").write_text("buy milk")
+    agent, client = make(make_agent, cfg, [gemini_reply(("read_file", {"path": "notes.txt"})), _refused(OTHER_MODELS),
+                                           gemini_reply("buy milk")])
+    done = agent.wait(agent.submit("What is in notes.txt?")["id"], 5)
+    assert done["status"] == "completed", done["error"]
+    assert done["result"] == "buy milk"
+    assert _signatures(client.models.calls[1]) and not _signatures(client.models.calls[2])
+
+
+def test_model_that_wants_a_signature_gets_the_skip_marker(make_agent, cfg, workdir):
+    """Dropping the other model's signature isn't enough for a model that wants one on every tool call:
+    then the tool call is marked with Google's "skip validation" value."""
+    from orion.background.gemini_agent import SKIP_SIGNATURE
+    (workdir / "notes.txt").write_text("buy milk")
+    agent, client = make(make_agent, cfg, [gemini_reply(("read_file", {"path": "notes.txt"})), _refused(OTHER_MODELS),
+                                           _refused(MISSING), gemini_reply("buy milk")])
+    done = agent.wait(agent.submit("What is in notes.txt?")["id"], 5)
+    assert done["status"] == "completed", done["error"]
+    assert _signatures(client.models.calls[2]) == []
+    assert _signatures(client.models.calls[3]) == [SKIP_SIGNATURE]
+
+
+def test_a_model_refusing_every_fix_still_fails_cleanly(make_agent, cfg, workdir):
+    (workdir / "notes.txt").write_text("buy milk")
+    agent, client = make(make_agent, cfg, [gemini_reply(("read_file", {"path": "notes.txt"})), _refused(OTHER_MODELS),
+                                           _refused(MISSING), _refused(OTHER_MODELS)])
+    done = agent.wait(agent.submit("What is in notes.txt?")["id"], 5)
+    assert done["status"] == "failed" and "Gemini API error 400" in done["error"]
+    assert len(client.models.calls) == 4
