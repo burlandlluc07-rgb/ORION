@@ -150,12 +150,13 @@ def main() -> int:
     from orion.tools.apps import open_app
 
     before = set(DESK.ghosts)
+    yours = int(user32.GetForegroundWindow() or 0)  # the Notepad just taken over is the user's window now
     out = open_app("notepad")
     time.sleep(0.8)
     new = [h for h in DESK.ghosts if h not in before]
     ex3 = user32.GetWindowLongW(new[0], -20) & 0xFFFFFFFF if new else 0
     record("open_app opens a ghost by default", bool(new) and bool(ex3 & core.WS_EX_TRANSPARENT), out[:80])
-    untouched("after open_app", user_win, pos)
+    untouched("after open_app", yours, pos)
     for h in new:
         user32.PostMessageW(h, 0x0010, 0, 0)
 

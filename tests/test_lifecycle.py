@@ -90,7 +90,8 @@ def test_router_classifies_desktop_use(engine):
     reg = engine.registry
     assert capabilities_for(reg.get("type_text")).desktop == "input"
     assert capabilities_for(reg.get("mouse_click")).route == "foreground"
-    assert capabilities_for(reg.get("open_app")).desktop == "visible"
+    # A normal window for the user is a desktop action; by default (Windows) apps open as ghosts instead.
+    assert capabilities_for(reg.get("open_app"), args={"name": "notepad", "normal": True}).desktop == "visible"
     assert capabilities_for(reg.get("window_action")).desktop == "input"
     assert capabilities_for(reg.get("write_file")).desktop == "none"
     assert capabilities_for(reg.get("create_document")).route == "local"
@@ -105,7 +106,7 @@ async def test_foreground_action_without_approval_is_refused(engine, no_side_eff
     seen = []
     answerer = (answer_approvals(engine, "deny", seen))
     task = engine.tracker.start("t", None)
-    ok, res = await asyncio.wait_for(engine.agent.run_tool("open_app", {"name": "notepad"}, task, None), 5)
+    ok, res = await asyncio.wait_for(engine.agent.run_tool("open_app", {"name": "notepad", "normal": True}, task, None), 5)
     answerer.cancel()
     assert not ok and "declined" in res
     assert no_side_effects == []  # nothing was launched
@@ -303,7 +304,7 @@ async def test_phone_buttons_are_recorded_as_the_users_own_action(engine):
 async def test_unanswered_desktop_request_expires_without_running(engine, no_side_effects, monkeypatch):
     monkeypatch.setattr(engine.approvals, "timeout", lambda: 0.6)  # Settings > Safety: requests lapse
     task = engine.tracker.start("t", None)
-    ok, _ = await asyncio.wait_for(engine.agent.run_tool("open_app", {"name": "notepad"}, task, None), 5)
+    ok, _ = await asyncio.wait_for(engine.agent.run_tool("open_app", {"name": "notepad", "normal": True}, task, None), 5)
     assert not ok and no_side_effects == []  # nobody answered: nothing opened
     assert task.steps[0]["lifecycle"]["stage"] == "cancelled" and engine.approvals.list() == []
 
