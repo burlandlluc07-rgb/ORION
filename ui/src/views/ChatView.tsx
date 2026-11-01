@@ -1,5 +1,5 @@
 import {
-  Check, Copy, FolderTree, PanelRightClose, PanelRightOpen, PenLine, Stethoscope, Sunrise, Target, Telescope, Zap,
+  Check, Copy, FolderTree, PanelRightClose, PanelRightOpen, Stethoscope, Sunrise, Telescope, Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApprovalCard } from "../components/ApprovalCard";
@@ -17,8 +17,6 @@ const STARTERS = [
   { icon: Telescope, title: "Deep research", text: "/deep-research ", desc: "Multi-source research with citations." },
   { icon: FolderTree, title: "Tidy my Downloads", text: "/file-organizer Organise my Downloads folder", desc: "Sort files into folders, safely." },
   { icon: Stethoscope, title: "Why is my PC slow?", text: "/pc-doctor", desc: "Diagnose and fix performance issues." },
-  { icon: Target, title: "Focus mode", text: "/focus-mode 45 minutes", desc: "Close distractions and start a timer." },
-  { icon: PenLine, title: "Write something", text: "/writer ", desc: "Emails, posts and docs in your voice." },
 ];
 
 function greeting(name: string) {
@@ -87,7 +85,9 @@ export function ChatView() {
   [s.messages, s.tasks, s.activeId]);
 
   // Approvals from other conversations are shown by the ApprovalDock instead.
-  const approvals = s.approvals.filter((a) => !a.task_id || !s.tasks[a.task_id]?.conv_id || s.tasks[a.task_id]?.conv_id === s.activeId);
+  // Parked ones and the one the approvals hotkey brought up are in the dock's queue too, so they're left out here.
+  const approvals = s.approvals.filter((a) => !a.parked && a.id !== s.approvalFocus
+    && (!a.task_id || !s.tasks[a.task_id]?.conv_id || s.tasks[a.task_id]?.conv_id === s.activeId));
 
   useEffect(() => {
     const el = scroller.current;
@@ -118,7 +118,7 @@ export function ChatView() {
   const name = s.engine?.settings.user_name ?? "";
   const empty = s.messages.length === 0;
   const assistant = s.engine?.settings.assistant_name ?? "ORION";
-  const approvalCards = approvals.map((a, i) => <ApprovalCard key={a.id} a={a} hotkey={i === approvals.length - 1} />);
+  const approvalCards = approvals.map((a) => <ApprovalCard key={a.id} a={a} />);
 
   return (
     <div className="main">
@@ -152,7 +152,6 @@ export function ChatView() {
                 </button>
               ))}
             </div>
-            <p className="sub">Type <kbd>/</kbd> for skills, drop in a file, or press the orb to talk.</p>
             {s.transcript && <div className="transcript">“{s.transcript.text}”</div>}
             {approvals.length > 0 && <div style={{ width: "100%", maxWidth: "var(--chat-w)", display: "flex", flexDirection: "column", gap: 12 }}>{approvalCards}</div>}
           </div>

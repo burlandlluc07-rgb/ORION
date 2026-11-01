@@ -172,7 +172,7 @@ class Agent:
             loop.call_soon_threadsafe(record.advance, "awaiting_permission", f"fallback: {reason}")
             fut = asyncio.run_coroutine_threadsafe(
                 e.approvals.request(name, desktop_label(f"{label} ({reason})", "input"), tool.risk, args, task,
-                                    desktop=True), loop)
+                                    desktop=True, timeout=APPROVAL_TIMEOUT), loop)  # the tool is mid-run: don't wait forever
             try:
                 granted = bool(fut.result(timeout=APPROVAL_TIMEOUT + 10))
             except Exception:

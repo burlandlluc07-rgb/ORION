@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 from .devices import DeviceRegistry, PushSender
 from .tunnel import Tunnel
+from .webauthn import PhoneBiometrics
 
 if TYPE_CHECKING:
     from ..engine import Engine
@@ -38,6 +39,7 @@ class RemoteServer:
         self.e = engine
         self.devices = DeviceRegistry(engine.store)
         self.push = PushSender(engine.config.root, self.devices)
+        self.biometrics = PhoneBiometrics(self.devices)
         self.tunnel = Tunnel(engine.config.root / "bin", self._url_changed)
         self._server = None
         self._task: asyncio.Task | None = None

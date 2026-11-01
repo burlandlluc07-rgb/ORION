@@ -1,5 +1,5 @@
 import {
-  Blocks, Brain, CalendarClock, Download, History, ListChecks, MessageSquare, PanelLeftClose, PanelLeftOpen, Pin, PinOff, Plus,
+  Blocks, Brain, CalendarClock, Download, History, MessageSquare, PanelLeftClose, PanelLeftOpen, Pin, PinOff, Plus,
   Search, Settings as SettingsIcon, Target, Trash2,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -11,8 +11,7 @@ import { Logo } from "./Logo";
 const NAV: { id: View; label: string; icon: typeof MessageSquare }[] = [
   { id: "chat", label: "Chat", icon: MessageSquare },
   { id: "missions", label: "Missions", icon: Target },
-  { id: "tasks", label: "Tasks", icon: ListChecks },
-  { id: "activity", label: "What ORION did", icon: History },
+  { id: "activity", label: "Activity", icon: History },
   { id: "routines", label: "Routines", icon: CalendarClock },
   { id: "ecosystem", label: "Ecosystem", icon: Blocks },
   { id: "memory", label: "Memory", icon: Brain },
@@ -58,10 +57,7 @@ export function Sidebar() {
         {open && (
           <div className="grow">
             <div className="brand-name">ORION</div>
-            <div className="brand-sub">
-              <span className={`dot ${s.connected ? "ok" : "warn pulse"}`} />
-              {s.connected ? `v${s.engine?.version ?? "2"}` : "connecting…"}
-            </div>
+            {!s.connected && <div className="brand-sub"><span className="dot warn pulse" /> connecting…</div>}
           </div>
         )}
         <button className="icon-btn sm" onClick={toggle} aria-label="Toggle sidebar" title="Toggle sidebar (Ctrl+B)">
@@ -78,11 +74,11 @@ export function Sidebar() {
 
       <nav className="nav">
         {NAV.map((n) => (
-          <button key={n.id} className={`nav-item ${s.view === n.id ? "active" : ""}`} onClick={() => s.setView(n.id)} title={n.label}
-            aria-current={s.view === n.id ? "page" : undefined}>
+          <button key={n.id} className={`nav-item ${s.view === n.id || (n.id === "activity" && s.view === "tasks") ? "active" : ""}`} onClick={() => s.setView(n.id)} title={n.label}
+            aria-current={s.view === n.id || (n.id === "activity" && s.view === "tasks") ? "page" : undefined}>
             <n.icon size={17} />
             {open && n.label}
-            {n.id === "tasks" && running > 0 && <span className="count">{running}</span>}
+            {n.id === "activity" && running > 0 && <span className="count">{running}</span>}
           </button>
         ))}
       </nav>

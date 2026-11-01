@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "orion-assistant"
-version = "3.0.1"
+version = "3.0.3"
 description = "O.R.I.O.N. — a fast, voice-first desktop AI assistant for your PC, powered by Gemini."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -23,6 +23,7 @@ dependencies = [
   "edge-tts>=6.1,<8",
   "miniaudio>=1.59,<2",
   "webrtcvad-wheels>=2.0.14",
+  "sherpa-onnx>=1.12.10,<3",  # offline speech recognition runtime (~27 MB); the model itself is an opt-in download
   "tzdata>=2024.1; sys_platform == 'win32'",
   "sounddevice>=0.4,<1",
   "numpy>=1.24,<3",

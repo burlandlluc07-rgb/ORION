@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 import { useStore } from "../lib/store";
 import type { Task } from "../lib/types";
 
+/** Running and past tasks, step by step. Shown as a tab of the Activity page. */
 export function TasksView() {
   const s = useStore();
   const [history, setHistory] = useState<Task[]>([]);
@@ -39,19 +40,13 @@ export function TasksView() {
   );
 
   return (
-    <div className="page"><div className="page-inner">
-      <div className="page-head">
-        <div className="grow">
-          <h2>Tasks</h2>
-          <p>Everything ORION has done on your PC — every step, every result, every approval.</p>
-        </div>
-        {active.length > 0 && <button className="btn danger" onClick={() => s.stop()}><Square size={13} /> Stop all</button>}
-      </div>
+    <>
+      {active.length > 0 && <div className="row" style={{ marginBottom: 12 }}><span className="grow" /><button className="btn danger" onClick={() => s.stop()}><Square size={13} /> Stop all</button></div>}
       {active.length > 0 && <><div className="side-section" style={{ padding: "0 0 8px" }}>Running now</div><div className="list" style={{ marginBottom: 22 }}>{active.map(card)}</div></>}
       <div className="side-section" style={{ padding: "0 0 8px" }}>History</div>
       {past.length ? <div className="list">{past.map(card)}</div> : (
         <div className="empty"><ListChecks size={28} /><div>No tasks yet. Ask ORION to do something on your PC.</div></div>
       )}
-    </div></div>
+    </>
   );
 }

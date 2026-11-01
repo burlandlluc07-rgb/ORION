@@ -29,6 +29,7 @@ from ..tasks import activity as activity_log
 from ..tasks.schedule import ScheduleError, describe, next_run
 from ..tools.platform import open_target
 from ..tools.registry import ToolError
+from .webauthn import WebAuthnError, b64e, rp_from_origin
 
 log = logging.getLogger("orion.api")
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -234,12 +235,77 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
     async def stop():
         return {"stopped": engine.stop_everything()}
 
+    # ── Approvals: the queue, and the phone's fingerprint check for Approve ──────────────────────────────
+    def _rp_id(request: Request) -> str:
+        """The domain the phone app is open on (WebAuthn keys belong to one domain)."""
+        origin = request.headers.get("origin") or ""
+        return rp_from_origin(origin) if origin else (request.url.hostname or "").lower()
+
+    def check_biometric(request: Request, purpose: str, body: dict) -> None:
+        """Approve from a phone that has a fingerprint key for this address needs a fresh fingerprint check.
+        Deny never does, and the PC app never does (it is unlocked by you at the PC)."""
+        if not remote or not engine.config.settings.phone_biometric:
+            return
+        bio, dev, rp = engine.remote.biometrics, request.state.device["id"], _rp_id(request)
+        if not bio.enrolled(dev, rp):
+            return
+        try:
+            bio.verify(dev, rp, purpose, body.get("assertion"))
+        except WebAuthnError as exc:
+            raise HTTPException(403, {"code": "biometric_required", "message": str(exc)})
+
+    @app.post("/api/approvals/focus", dependencies=[A])
+    async def focus_approval():  # declared before /api/approvals/{aid} so "focus" isn't taken for an id
+        front = engine.approvals.focus()
+        return {"id": front["id"] if front else None}
+
     @app.post("/api/approvals/{aid}", dependencies=[A])
-    async def approve(aid: str, body: dict = Body(...)):
+    async def approve(aid: str, request: Request, body: dict = Body(...)):
         decision = body.get("decision")
         if decision not in ("approve", "deny", "always"):
             raise HTTPException(400, "decision must be approve, deny or always")
+        if decision != "deny":
+            check_biometric(request, f"approve:{aid}", body)
         return {"ok": engine.approvals.respond(aid, decision)}
+
+    @app.post("/api/approvals/{aid}/park", dependencies=[A])
+    async def park_approval(aid: str, body: dict = Body(default={})):
+        """"Later": the request stays waiting, behind the others. ``{"parked": false}`` reopens it."""
+        return {"ok": engine.approvals.park(aid, bool(body.get("parked", True)))}
+
+    @app.get("/api/biometric", dependencies=[A])
+    async def biometric_status(request: Request):
+        rp = _rp_id(request)
+        on = remote and engine.config.settings.phone_biometric
+        return {"enabled": on, "rp_id": rp,
+                "enrolled": bool(on and engine.remote.biometrics.enrolled(request.state.device["id"], rp))}
+
+    @app.post("/api/biometric/options", dependencies=[A])
+    async def biometric_options(request: Request, body: dict = Body(...)):
+        """A one-time challenge for registering this phone's key or for one Approve."""
+        purpose = str(body.get("purpose", ""))
+        if not remote or not (purpose == "register" or purpose.startswith(("approve:", "bg:"))):
+            raise HTTPException(400, "Unknown check.")
+        dev, rp = request.state.device, _rp_id(request)
+        cred = engine.remote.biometrics.keys(dev["id"]).get(rp)
+        return {"challenge": engine.remote.biometrics.challenge(dev["id"], purpose), "rp_id": rp,
+                "user_id": b64e(dev["id"].encode()), "user_name": dev.get("name", "Phone"),
+                "credential_id": cred["id"] if cred else None}
+
+    @app.post("/api/biometric/register", dependencies=[A])
+    async def biometric_register(request: Request, body: dict = Body(...)):
+        if not remote:
+            raise HTTPException(400, "Only the phone app registers a fingerprint key.")
+        try:
+            engine.remote.biometrics.register(request.state.device["id"], _rp_id(request), body)
+        except (WebAuthnError, ValueError, KeyError, TypeError) as exc:
+            raise HTTPException(400, str(exc) or "That didn't work. Try again.")
+        return {"ok": True}
+
+    @app.delete("/api/devices/{device_id}/biometric", dependencies=[X])
+    async def biometric_reset(device_id: str):
+        """From the PC: forget a phone's fingerprint key (lost phone, new fingerprint). It is asked again next time."""
+        return {"ok": engine.remote.biometrics.reset(device_id)}
 
     @app.get("/api/missions", dependencies=[A])
     async def missions():
@@ -296,10 +362,12 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
         return task
 
     @app.post("/api/background/approvals/{aid}", dependencies=[A])
-    async def background_decide(aid: str, body: dict = Body(...)):
+    async def background_decide(aid: str, request: Request, body: dict = Body(...)):
         decision = body.get("decision")
         if decision not in ("approve", "deny"):
             raise HTTPException(400, "decision must be approve or deny")
+        if decision == "approve":
+            check_biometric(request, f"bg:{aid}", body)
         return {"ok": _bg().decide(aid, decision == "approve")}
 
     @app.post("/api/background/{action}", dependencies=[A])
@@ -555,6 +623,61 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
             raise HTTPException(404)
         return v.status()
 
+    # ── Offline speech recognition (an optional model you download) ───────
+    from ..voice import offline_stt
+
+    stt_store = offline_stt.STORE
+
+    def stt_changed(status: dict) -> None:  # called from the download thread
+        engine.bus.emit("offline_speech", status=status)
+        loop = engine._loop
+        if status["installed"] and status["state"] == "idle" and loop is not None \
+                and not engine.config.settings.voice.offline_stt:
+            loop.call_soon_threadsafe(engine.apply_settings, {"voice": {"offline_stt": True}})
+
+    stt_store.on_change = stt_changed
+
+    def stt_status() -> dict:
+        v = engine.voice.status() if engine.voice else {}
+        return {**stt_store.status(), "enabled": engine.config.settings.voice.offline_stt,
+                "loaded": bool(v.get("offline_stt")), "load_error": v.get("offline_stt_error"),
+                "voice_on": v.get("state") not in (None, "off", "unavailable")}
+
+    @app.get("/api/offline-speech", dependencies=[X])
+    async def offline_speech():
+        return stt_status()
+
+    @app.post("/api/offline-speech/download", dependencies=[X])
+    async def offline_speech_download(body: dict = Body(...)):
+        """Start the model download. The UI shows the size first and sends consent=true only after you agree."""
+        if body.get("consent") is not True:
+            raise HTTPException(400, "Agree to the download size first.")
+        if not offline_stt.runtime_available():
+            raise HTTPException(409, "The offline speech engine isn't part of this ORION build.")
+        stt_store.start_download()
+        return stt_status()
+
+    @app.post("/api/offline-speech/cancel", dependencies=[X])
+    async def offline_speech_cancel():
+        stt_store.cancel()
+        return stt_status()
+
+    @app.delete("/api/offline-speech", dependencies=[X])
+    async def offline_speech_remove():
+        """Turn offline speech off and delete the model from disk."""
+        vs = engine.config.settings.voice
+        patch: dict = {"offline_stt": False}
+        if vs.wake_engine == "offline":
+            patch["wake_engine"] = "windows"
+        engine.apply_settings({"voice": patch})
+        if engine.voice is not None:
+            engine.voice.stt = None
+        import gc
+
+        gc.collect()  # let go of the loaded model so Windows allows deleting its files
+        await asyncio.to_thread(stt_store.remove)
+        return stt_status()
+
     # ── Accounts (email / calendar) ────────────────────────────────────────
     @app.get("/api/accounts", dependencies=[X])
     async def accounts():
@@ -588,6 +711,42 @@ def create_app(engine: Engine, token: str | None = None, shell: Any = None, remo
     async def delete_whatsapp():
         engine.whatsapp.remove()
         return engine.whatsapp.public()
+
+    @app.get("/api/accounts/whatsapp/gateway", dependencies=[X])
+    async def whatsapp_gateway():
+        return await asyncio.to_thread(engine.whatsapp.gateway_public, True)
+
+    @app.put("/api/accounts/whatsapp/gateway", dependencies=[X])
+    async def put_whatsapp_gateway(body: dict = Body(...)):
+        try:
+            return await asyncio.to_thread(engine.whatsapp.enable_gateway, body.get("accept_risk") is True)
+        except ToolError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.delete("/api/accounts/whatsapp/gateway", dependencies=[X])
+    async def delete_whatsapp_gateway(forget: bool = False):
+        return await asyncio.to_thread(engine.whatsapp.disable_gateway, forget)
+
+    @app.put("/api/accounts/whatsapp/gateway/limits", dependencies=[X])
+    async def put_whatsapp_gateway_limits(body: dict = Body(...)):
+        try:
+            return await asyncio.to_thread(engine.whatsapp.set_send_limits, body)
+        except ToolError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/accounts/whatsapp/gateway/qr", dependencies=[X])
+    async def whatsapp_gateway_qr():
+        try:
+            return await asyncio.to_thread(engine.whatsapp.gateway_qr)
+        except ToolError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/accounts/whatsapp/gateway/code", dependencies=[X])
+    async def whatsapp_gateway_code(body: dict = Body(...)):
+        try:
+            return await asyncio.to_thread(engine.whatsapp.gateway_code, str(body.get("number", "")))
+        except ToolError as exc:
+            raise HTTPException(400, str(exc)) from exc
 
     @app.put("/api/accounts/whatsapp/contacts", dependencies=[X])
     async def put_whatsapp_contact(body: dict = Body(...)):

@@ -12,12 +12,12 @@ import { ChatView } from "./views/ChatView";
 import { EcosystemView } from "./views/EcosystemView";
 import { MemoryView } from "./views/MemoryView";
 import { MissionsView } from "./views/MissionsView";
+import { NotchView } from "./views/NotchView";
 import { Onboarding } from "./views/Onboarding";
 import { QuickBar } from "./views/QuickBar";
 import { PairView, PhoneApp } from "./views/PhoneApp";
 import { RoutinesView } from "./views/RoutinesView";
 import { SettingsView } from "./views/SettingsView";
-import { TasksView } from "./views/TasksView";
 
 function useTheme(theme: string | undefined) {
   useEffect(() => {
@@ -36,8 +36,10 @@ export default function App() {
   const s = useStore();
   const quick = location.hash.startsWith("#/quick");
   const remote = location.hash.startsWith("#/remote");
+  const notch = location.hash.startsWith("#/notch");
   const pairCode = location.hash.startsWith("#/pair/") ? location.hash.slice("#/pair/".length) : null;
-  useTheme(s.engine?.settings.theme);
+  useTheme(notch ? "dark" : s.engine?.settings.theme);  // the notch is always black, like the hardware one
+  useEffect(() => { document.documentElement.classList.toggle("notch-doc", notch); }, [notch]);
 
   useEffect(() => {
     const off = connectEvents(s.handleEvent, (connected) => {
@@ -80,6 +82,7 @@ export default function App() {
   }
 
   if (quick) return <><QuickBar /><Toasts /></>;
+  if (notch) return <NotchView />;
   if (remote) return <><PhoneApp /><Toasts /></>;
 
   return (
@@ -90,8 +93,7 @@ export default function App() {
         {s.view !== "chat" && (
           <div className="main">
             {s.view === "missions" && <MissionsView />}
-            {s.view === "tasks" && <TasksView />}
-            {s.view === "activity" && <ActivityView />}
+            {(s.view === "activity" || s.view === "tasks") && <ActivityView />}
             {s.view === "routines" && <RoutinesView />}
             {s.view === "ecosystem" && <EcosystemView />}
             {s.view === "memory" && <MemoryView />}

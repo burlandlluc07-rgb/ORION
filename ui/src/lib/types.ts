@@ -68,8 +68,12 @@ export interface Approval {
   risk: "safe" | "confirm" | "danger";
   args: Record<string, unknown>;
   task_id: string | null;
-  expires: number;
+  /** When it lapses (seconds since epoch); null = it waits until answered. */
+  expires: number | null;
   desktop?: boolean;
+  /** Put back with "Later": still waiting, behind the others. */
+  parked?: boolean;
+  created?: number;
 }
 
 export interface QuotaRow {
@@ -90,7 +94,7 @@ export interface VoiceSettings {
   wake_phrases: string[];
   wake_sensitivity: number;
   wake_language: string;
-  wake_engine: "windows" | "openwakeword";
+  wake_engine: "windows" | "offline" | "openwakeword";
   wake_word_model: string;
   input_device: number | null;
   output_device: number | null;
@@ -98,6 +102,7 @@ export interface VoiceSettings {
   instant_commands: boolean;
   follow_up: boolean;
   follow_up_seconds: number;
+  offline_stt: boolean;
   barge_in: boolean;
   chime: boolean;
 }
@@ -121,10 +126,14 @@ export interface Settings {
   approval_mode: "ask" | "auto_safe" | "trust";
   desktop_actions: "ask" | "allow";
   voice_approvals: boolean;
+  approval_timeout: number;
+  phone_biometric: boolean;
+  hotkey_approvals: string;
   browser_mode: "background" | "visible";
   allowed_roots: string[];
   voice: VoiceSettings;
   hotkey_quickbar: string;
+  notch?: boolean;
   hotkey_voice: string;
   start_minimized: boolean;
   launch_on_startup: boolean;
@@ -154,6 +163,8 @@ export interface VoiceStatus {
   wake_phrases?: string[] | null;
   wake_language?: string;
   live_model?: string | null;
+  offline_stt?: boolean;
+  offline_stt_error?: string | null;
   error?: string | null;
 }
 

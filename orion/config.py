@@ -55,7 +55,9 @@ class VoiceSettings(BaseModel):
     wake_phrases: list[str] = Field(default_factory=lambda: ["Hey Jarvis", "Hey ORION"])  # any words you like
     wake_sensitivity: float = 0.5  # 0 strict … 1 relaxed
     wake_language: str = ""  # speech language, e.g. "en-GB" or "es-ES" ("" = Windows display language)
-    wake_engine: str = "windows"  # "windows" (any phrase, built in) | "openwakeword" (pre-trained models)
+    # "windows" (any phrase, built in) | "offline" (the downloaded offline speech model hears the phrase; more
+    # accurate, uses more CPU) | "openwakeword" (pre-trained models)
+    wake_engine: str = "windows"
     wake_word_model: str = "hey_jarvis"  # openwakeword model when that engine is chosen
     input_device: int | None = None
     output_device: int | None = None
@@ -65,6 +67,9 @@ class VoiceSettings(BaseModel):
     follow_up_seconds: float = 6.0
     barge_in: bool = True  # talk over ORION to interrupt it (classic mode; Live always allows it)
     chime: bool = True  # a soft tone when ORION starts listening
+    # Offline speech recognition (orion/voice/offline_stt.py). Only does anything once the model is downloaded
+    # from Settings; the download turns it on. Off = everything goes back to Windows speech + Gemini.
+    offline_stt: bool = False
 
 
 # 26: ORION 2.6 turned the approval prompts off; settings saved by older versions still say "ask".
@@ -108,6 +113,12 @@ class Settings(BaseModel):
     # Answer a waiting approval by typing or saying a plain "yes" or "no" (desktop, phone and voice), as well
     # as with the buttons. Unclear answers never count: the approval keeps waiting.
     voice_approvals: bool = True
+    # How long an approval request waits for your answer before it lapses (not done), in seconds.
+    # 0 = it waits in the queue until you answer it (default). Nothing is ever approved by waiting.
+    approval_timeout: int = 0
+    # Approve on the phone app asks for the phone's fingerprint, face or screen lock, where the phone and the
+    # connection (https) support it. Deny never asks.
+    phone_biometric: bool = True
     # The background agent: a task queue that works on files in its own folders, shell commands with no
     # window and web search, never the desktop. Its tasks wait for your OK on risky steps and survive restarts.
     background_agent: bool = True
@@ -115,7 +126,11 @@ class Settings(BaseModel):
 
     voice: VoiceSettings = Field(default_factory=VoiceSettings)
     hotkey_quickbar: str = "<alt>+<space>"
+    # A small black pill at the top centre of the screen that opens with the Quick Bar hotkey, shows what ORION
+    # is doing and any approval waiting, and otherwise stays tucked away. Off = the old floating Quick Bar.
+    notch: bool = True
     hotkey_voice: str = "<ctrl>+<alt>+j"
+    hotkey_approvals: str = "<ctrl>+<alt>+a"  # jump to the approval that is waiting
     start_minimized: bool = False
     launch_on_startup: bool = False
     close_to_tray: bool = True

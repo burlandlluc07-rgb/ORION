@@ -5,8 +5,8 @@ import {
 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityLog } from "../components/ActivityLog";
+import { ApprovalQueue } from "../components/ApprovalQueue";
 import { WeeklyRecap } from "../components/WeeklyRecap";
-import { ApprovalCard } from "../components/ApprovalCard";
 import { Composer } from "../components/Composer";
 import { Logo } from "../components/Logo";
 import { Orb } from "../components/Orb";
@@ -235,7 +235,7 @@ function ChatTab() {
             </div>
           )}
           {s.messages.map((m) => <MessageView key={m.id} m={m} />)}
-          {s.approvals.map((a) => <ApprovalCard key={a.id} a={a} />)}
+          <ApprovalQueue items={s.approvals} />
         </div>
       </div>
       {recording && <div className="phone-heard rec"><span className="rec-dot" /> Listening… release to send</div>}
@@ -707,7 +707,7 @@ function ActivityTab() {
       {s.approvals.length > 0 && (
         <section>
           <div className="ctl-title">Waiting for you</div>
-          <div className="list">{s.approvals.map((a) => <ApprovalCard key={a.id} a={a} />)}</div>
+          <div className="list"><ApprovalQueue items={s.approvals} /></div>
         </section>
       )}
       <section className="ctl-card">

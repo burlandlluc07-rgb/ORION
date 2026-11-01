@@ -301,9 +301,7 @@ async def test_phone_buttons_are_recorded_as_the_users_own_action(engine):
 
 
 async def test_unanswered_desktop_request_expires_without_running(engine, no_side_effects, monkeypatch):
-    import orion.tasks.tracker as tracker_mod
-
-    monkeypatch.setattr(tracker_mod, "APPROVAL_TIMEOUT", 0.6)
+    monkeypatch.setattr(engine.approvals, "timeout", lambda: 0.6)  # Settings > Safety: requests lapse
     task = engine.tracker.start("t", None)
     ok, _ = await asyncio.wait_for(engine.agent.run_tool("open_app", {"name": "notepad"}, task, None), 5)
     assert not ok and no_side_effects == []  # nobody answered: nothing opened

@@ -17,7 +17,7 @@ from typing import Any, Awaitable, Callable
 from ..events import EventBus
 from ..memory.store import Store, new_id
 
-APPROVAL_TIMEOUT = 180
+APPROVAL_TIMEOUT = 180  # the limit when a caller asks for one (e.g. a desktop fallback inside a running tool)
 
 
 @dataclass
@@ -141,33 +141,48 @@ def parse_approval_reply(text: str) -> bool | None:
 
 
 class ApprovalBroker:
-    """Asks the UI (and, for voice tasks, the user's voice) to approve a risky step."""
+    """Asks the UI (and, for voice tasks, the user's voice) to approve a risky step.
+
+    Waiting requests form a queue in arrival order. By default a request waits until it is answered (it never
+    folds or expires on its own); one can be parked with "Later", which moves it to the back of the queue
+    without answering it, and :meth:`focus` brings the front one up again (the approvals hotkey). Nothing in
+    the queue is ever approved without an explicit answer."""
 
     def __init__(self, bus: EventBus) -> None:
         self.bus = bus
         self.pending: dict[str, tuple[asyncio.Future, dict]] = {}
+        # Seconds a request waits before it lapses (not done); 0 = until answered. Set from Settings by the engine.
+        self.timeout: Callable[[], float] = lambda: 0
         self.session_allow: set[str] = set()
         self.on_voice_request: Callable[[dict], Awaitable[None]] | None = None
         self.on_request: Callable[[dict], None] | None = None  # e.g. push the approval to paired phones
         self.voice_active: Callable[[], bool] | None = None  # a voice session is open: ask out loud for any task
 
     async def request(self, tool: str, label: str, risk: str, args: dict[str, Any], task: Task | None,
-                      desktop: bool = False) -> bool:
+                      desktop: bool = False, timeout: float | None = None) -> bool:
         """Ask the user. ``desktop`` marks a foreground step (mouse, keys, focus or a visible window): it is
         approved for this one action only, so "allow for this session" never covers it."""
-        return await self.ask(tool, label, risk, args, task, desktop) in ("approve", "always")
+        return await self.ask(tool, label, risk, args, task, desktop, timeout=timeout) in ("approve", "always")
 
     async def ask(self, tool: str, label: str, risk: str, args: dict[str, Any], task: Task | None,
-                  desktop: bool = False, approval_id: str | None = None) -> str:
+                  desktop: bool = False, approval_id: str | None = None, timeout: float | None = None) -> str:
         """Like :meth:`request`, but returns the decision: approve, always, deny or expired.
-        ``approval_id`` lets the caller pick the prompt's id, so it can answer the prompt itself later."""
+        ``approval_id`` lets the caller pick the prompt's id, so it can answer the prompt itself later.
+        ``timeout`` overrides the setting (seconds; 0 = wait until answered)."""
         if tool in self.session_allow and risk != "danger" and not desktop:
             return "always"
         aid = approval_id or new_id()
         fut: asyncio.Future = asyncio.get_running_loop().create_future()
+        if timeout is None:
+            try:
+                timeout = float(self.timeout() or 0)
+            except Exception:
+                timeout = 0
         info = {"id": aid, "tool": tool, "label": label, "risk": risk, "args": _preview(args),
-                "task_id": task.id if task else None, "expires": time.time() + APPROVAL_TIMEOUT,
-                "desktop": desktop, "created": time.time(), "source": task.source if task else None}
+                "task_id": task.id if task else None,
+                "expires": time.time() + timeout if timeout and timeout > 0 else None,
+                "desktop": desktop, "created": time.time(), "source": task.source if task else None,
+                "parked": False}
         self.pending[aid] = (fut, info)
         self.bus.emit("approval.request", approval=info)
         if self.on_request is not None:
@@ -192,7 +207,7 @@ class ApprovalBroker:
                     if task and task.cancel.is_set():
                         decision = "deny"
                         break
-                    if time.time() > info["expires"]:
+                    if info["expires"] is not None and time.time() > info["expires"]:
                         decision = "expired"
                         break
         finally:
@@ -235,6 +250,36 @@ class ApprovalBroker:
         self.bus.emit("approval.answered", id=info["id"], approved=answer)
         return {"id": info["id"], "approved": answer, "label": info["label"]}
 
+    def park(self, aid: str, parked: bool = True) -> bool:
+        """"Later": move a request to the back of the queue without answering it (``parked=False`` reopens it)."""
+        item = self.pending.get(aid)
+        if not item or item[0].done():
+            return False
+        item[1]["parked"] = bool(parked)
+        self.pending[aid] = self.pending.pop(aid)  # re-insert: parked ones go behind everything waiting now
+        self.bus.emit("approval.updated", approval=item[1], queue=self.queue_ids())
+        return True
+
+    def queue(self) -> list[dict]:
+        """Waiting requests, front first: unparked ones in arrival order, then parked ones."""
+        items = [info for fut, info in self.pending.values() if not fut.done()]
+        return [i for i in items if not i.get("parked")] + [i for i in items if i.get("parked")]
+
+    def queue_ids(self) -> list[str]:
+        return [i["id"] for i in self.queue()]
+
+    def focus(self) -> dict | None:
+        """Bring the front request up (the approvals hotkey). A parked one is reopened when nothing else waits.
+        Only shows it: it is never answered here."""
+        q = self.queue()
+        if not q:
+            return None
+        front = q[0]
+        if front.get("parked"):
+            self.park(front["id"], False)
+        self.bus.emit("approval.focus", id=front["id"])
+        return front
+
     def voice_pending(self) -> dict | None:
         """The most recent approval that can be answered by voice."""
         items = [info for fut, info in self.pending.values() if not fut.done()]
@@ -246,7 +291,7 @@ class ApprovalBroker:
                 fut.set_result("deny")
 
     def list(self) -> list[dict]:
-        return [info for _, info in self.pending.values()]
+        return self.queue()
 
 
 def _preview(args: dict) -> dict:

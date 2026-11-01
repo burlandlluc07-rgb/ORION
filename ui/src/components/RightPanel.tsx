@@ -1,11 +1,10 @@
 import { useEffect } from "react";
-import { Activity, Gauge, ListChecks, Mic, MicOff, PanelRightClose, Square } from "lucide-react";
+import { ListChecks, Mic, MicOff, PanelRightClose, Square } from "lucide-react";
 import { api } from "../lib/api";
 import { useStore } from "../lib/store";
 import { NARROW, useMedia } from "../lib/useMedia";
 import { Orb } from "./Orb";
 import { PlanList, StepList, TaskStatus } from "./TaskCard";
-import { Meter } from "./ui";
 
 const VOICE_LABEL: Record<string, string> = {
   off: "Voice off", standby: "Standing by", listening: "Listening", thinking: "Thinking", working: "Working",
@@ -31,7 +30,6 @@ export function RightPanel() {
     .filter((t) => t.conv_id === s.activeId || t.status === "running" || t.status === "waiting")
     .sort((a, b) => b.updated - a.updated);
   const current = tasks[0];
-  const v = s.vitals;
   const live = ["listening", "speaking", "thinking", "working", "connecting"].includes(s.voice.state);
   const close = () => {
     if (narrow) return s.set({ rightPeek: false });
@@ -88,32 +86,6 @@ export function RightPanel() {
         </div>
       </div>
 
-      <div className="panel-sec">
-        <div className="panel-card">
-          <div className="panel-title"><Activity size={14} /> System</div>
-          {v ? (
-            <>
-              <Meter label="CPU" value={v.cpu} />
-              <Meter label="Memory" value={v.ram} text={`${v.ram_used_gb} / ${v.ram_total_gb} GB`} />
-              <Meter label="Disk" value={v.disk} text={`${v.disk_free_gb} GB free`} />
-              {v.battery != null && <Meter label={`Battery${v.plugged ? " · charging" : ""}`} value={v.battery} />}
-            </>
-          ) : <div className="panel-note">Reading sensors…</div>}
-        </div>
-      </div>
-
-      <div className="panel-sec">
-        <div className="panel-card">
-          <div className="panel-title"><Gauge size={14} /> Gemini free tier</div>
-          {s.engine?.quota.map((q) => (
-            <div key={q.model} title={`${q.rpm_used}/${q.rpm} requests this minute`}>
-              <Meter label={q.model.replace("gemini-", "")} value={q.rpd_used} max={q.rpd} text={`${q.rpd_used} / ${q.rpd} today`} />
-              {q.cooldown > 0 && <div className="panel-note" style={{ marginTop: -6, marginBottom: 10 }}>Cooling down {q.cooldown}s</div>}
-            </div>
-          ))}
-          <div className="panel-note" style={{ marginTop: 10 }}>Simple commands run locally and don't count. Resets midnight Pacific.</div>
-        </div>
-      </div>
     </aside>
     </>
   );
