@@ -2,7 +2,7 @@ name: Windows ghost mode check
 on:
   workflow_dispatch:
   push:
-    branches: ["claude/ghost-mode-brain"]
+    branches: ["claude/ghost-mode"]
 
 permissions:
   contents: write  # the screenshots are also pushed to the ci/ghost-shots branch
