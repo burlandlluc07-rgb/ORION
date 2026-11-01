@@ -50,9 +50,10 @@ def title_of(hwnd: int) -> str:
     return buf.value
 
 
-def shot(name: str) -> None:
+def shot(name: str, full: bool = False) -> None:
     sw = user32.GetSystemMetrics(0)
-    ImageGrab.grab(bbox=(sw // 2 - 520, 0, sw // 2 + 520, 620)).save(OUT / f"{name}.png")
+    bbox = None if full else (sw // 2 - 520, 0, sw // 2 + 520, 620)
+    ImageGrab.grab(bbox=bbox).save(OUT / f"{name}.png")
 
 
 def check_geometry(hwnd: int, mode: str) -> None:
@@ -75,6 +76,27 @@ def check_geometry(hwnd: int, mode: str) -> None:
     pill_centred = abs((box.left + box.right) / 2 - w / 2) <= 2
     record(f"{mode}: window clipped to the pill", kind > 1 and abs(bw - pw) <= 2 and abs(bh - ph) <= 2 and pill_centred,
            f"region kind={kind} box=({box.left},{box.top},{box.right},{box.bottom}) expected pill {pw}x{ph}")
+
+
+def taskbar_windows(pid: int) -> list[str]:
+    """Titles of this process's windows that get a taskbar button: visible, unowned and not tool windows."""
+    found: list[str] = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def visit(h, _):
+        owner = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(h, ctypes.byref(owner))
+        if owner.value == pid and user32.IsWindowVisible(h):
+            ex = user32.GetWindowLongW(h, -20)
+            unowned = not user32.GetWindow(h, 4)  # GW_OWNER
+            if (ex & 0x40000) or (unowned and not ex & 0x80):
+                title = title_of(h)
+                if title:
+                    found.append(title)
+        return True
+
+    user32.EnumWindows(visit, 0)
+    return found
 
 
 def main() -> int:
@@ -107,7 +129,32 @@ def main() -> int:
         check_geometry(hwnd, "idle")
         exstyle = user32.GetWindowLongW(hwnd, -20)
         record("idle: can't take focus (WS_EX_NOACTIVATE)", bool(exstyle & 0x08000000), f"exstyle={exstyle:#x}")
+        record("notch has no taskbar button of its own (tool window)",
+               bool(exstyle & 0x80) and not exstyle & 0x40000, f"exstyle={exstyle:#x}")
         shot("1-idle")
+
+        # One app: with the main window open, ORION has exactly one taskbar button.
+        c.post("/api/window/show").raise_for_status()
+        time.sleep(3)
+        owner = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+        pid = owner.value  # ORION's process (the launcher may have handed off to it)
+        buttons = taskbar_windows(pid)
+        record("one taskbar button with the window open", buttons == ["ORION"], f"taskbar windows={buttons}")
+        shot("0-one-app", full=True)
+        # Closing the main window keeps ORION and its notch running.
+        main_hwnd = find("ORION")
+        user32.PostMessageW(main_hwnd, 0x0010, 0, 0)  # WM_CLOSE, like the X button
+        time.sleep(3)
+        record("closing the window keeps ORION running", bool(user32.IsWindow(hwnd)) and bool(user32.IsWindow(main_hwnd)),
+               "")
+        record("closing the window hides it", not user32.IsWindowVisible(main_hwnd), "")
+        record("closing the window keeps the notch on screen", bool(user32.IsWindowVisible(hwnd)), "")
+        left = taskbar_windows(pid)
+        record("no taskbar button left after closing", left == [], f"taskbar windows={left}")
+        shot("0-closed-notch-stays", full=True)
+        user32.SetForegroundWindow(np)
+        time.sleep(1)
 
         for mode in ("peek", "open"):
             c.post(f"/api/window/notch-{mode}").raise_for_status()

@@ -105,7 +105,10 @@ class DesktopShell:
             return 1200, 780, None, None
 
     def _on_closing(self) -> bool:
-        if self._quitting or not self.config.settings.close_to_tray or self.tray is None:
+        # With the notch on, closing the window only hides it: the notch is still ORION, so it stays on screen and
+        # Quit in the tray ends everything. Without a tray icon there'd be no way to quit, so closing quits then.
+        keep_running = self.tray is not None and (bool(self.notch) or self.config.settings.close_to_tray)
+        if self._quitting or not keep_running:
             self._quitting = True
             for extra in (self.quick, self.notch):
                 if extra:
@@ -251,6 +254,7 @@ class DesktopShell:
         from . import notch, titlebar
 
         hwnd = titlebar.find_window(notch.TITLE)
+        notch.hide_from_taskbar(hwnd)  # one ORION in the taskbar, not "ORION" + "ORION Notch"
         notch.apply(hwnd, self._notch_mode)  # also pins it flush to the top on high-DPI screens
         notch.set_shape(hwnd, self._notch_mode)
         while not self._quitting and self.notch and hwnd:
