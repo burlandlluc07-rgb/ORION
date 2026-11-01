@@ -10,6 +10,7 @@ import asyncio
 import shutil
 from pathlib import Path
 
+from ..ghost import core
 from .platform import IS_WIN
 from .registry import ToolContext, ToolError, tool
 
@@ -99,7 +100,7 @@ def ghost_open(app: str, ctx: ToolContext = None) -> str:  # type: ignore[assign
     eng = getattr(ctx, "engine", None)
     if eng is not None:
         s = eng.config.settings
-        desk.configure(opacity=getattr(s, "ghost_opacity", None), corner=getattr(s, "ghost_layout", None),
+        desk.configure(opacity=core.glass_to_opacity(getattr(s, "ghost_glass", core.DEFAULT_GLASS)), corner=getattr(s, "ghost_layout", None),
                        cursor=getattr(s, "ghost_cursor", None), frame=getattr(s, "ghost_frame", None))
         desk.on_event = lambda _kind, text: _say(ctx, text)
     from ..ghost import office

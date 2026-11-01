@@ -7,7 +7,7 @@ wasn't published either; it's summarised at the end.
 
 ### New
 - **Full-screen ghosts that show ORION at work.** Ghost windows now fill the screen like a maximised window (still
-  50% glass, click-through, never focused). While ORION works in one, a black pill at the top says what he's doing,
+  30% glass (70% solid; "Ghost glass" setting), click-through, never focused). While ORION works in one, a black pill at the top says what he's doing,
   e.g. "ORION is typing in Word", with his spirit and breathing dots. Word and Excel open as ORION's own copy with a
   blank document, so his typing lands reliably and never touches documents you have open. The old corner setting
   saved by earlier builds is no longer read (new setting: Ghost layout).

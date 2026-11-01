@@ -92,7 +92,7 @@ def main() -> int:
     alpha = ctypes.c_ubyte()
     flags = ctypes.c_uint()
     user32.GetLayeredWindowAttributes(g.hwnd, None, ctypes.byref(alpha), ctypes.byref(flags))
-    record("ghost is about half see-through", 100 <= alpha.value <= 160, f"alpha {alpha.value}")
+    record("ghost is 30% glass (70% solid)", 170 <= alpha.value <= 186, f"alpha {alpha.value}")
     record("ghost is a different window from yours", g.hwnd != user_win, str(g.hwnd))
     now = _rect_of(g.hwnd)
     work = ctypes.wintypes.RECT()

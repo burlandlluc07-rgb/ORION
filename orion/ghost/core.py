@@ -14,7 +14,8 @@ WS_EX_APPWINDOW = 0x00040000
 WS_EX_NOACTIVATE = 0x08000000  # never becomes the active window
 GHOST_BITS = WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE
 
-DEFAULT_OPACITY = 0.5
+DEFAULT_GLASS = 30  # % see-through (Lluc, 2026-11-01: "make it 30% glass")
+DEFAULT_OPACITY = 1 - DEFAULT_GLASS / 100
 MIN_OPACITY, MAX_OPACITY = 0.25, 0.85
 MARGIN = 16
 FOLLOW_WINDOWS_S = 25  # after ORION acts in a ghost app, new windows of that app become ghosts too
@@ -71,6 +72,14 @@ def pill_pos(rect: tuple[int, int, int, int], size: tuple[int, int], margin: int
 def ghost_style(style: int) -> int:
     """Extended style that turns a normal top-level window into a ghost."""
     return (style | GHOST_BITS) & ~WS_EX_APPWINDOW
+
+
+def glass_to_opacity(glass) -> float:
+    """'30% glass' (30% see-through) → window opacity 0.7."""
+    try:
+        return clamp_opacity(1 - float(glass) / 100)
+    except (TypeError, ValueError):
+        return DEFAULT_OPACITY
 
 
 def clamp_opacity(value: float | None) -> float:

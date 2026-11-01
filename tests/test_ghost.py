@@ -159,3 +159,10 @@ def test_saved_corner_setting_no_longer_shrinks_ghosts():
 
     s = Settings(ghost_corner="bottom-right")  # what 2026-11-01 builds saved to disk
     assert s.ghost_layout == "full"
+
+
+def test_ghosts_are_30_percent_glass():
+    from orion.config import Settings
+
+    assert core.glass_to_opacity(30) == pytest.approx(0.7)
+    assert core.alpha_byte(core.glass_to_opacity(Settings(ghost_opacity=0.5).ghost_glass)) == 178
