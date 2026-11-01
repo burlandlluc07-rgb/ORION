@@ -1,4 +1,5 @@
 import { ActivityLog } from "../components/ActivityLog";
+import { WeeklyRecap } from "../components/WeeklyRecap";
 import { useStore } from "../lib/store";
 import { TasksView } from "./TasksView";
 
@@ -12,14 +13,14 @@ export function ActivityView() {
       <div className="page-head">
         <div className="grow">
           <h2>Activity</h2>
-          <p>{tasks ? "Running and past tasks, step by step." : "Every action ORION took, newest first: what it did, who approved it and the proof it worked. Kept on this PC only."}</p>
+          <p>{tasks ? "Running and past tasks, step by step." : "Your week at a glance, then every action ORION took, newest first: what it did, who approved it and the proof it worked. Kept on this PC only."}</p>
         </div>
       </div>
       <div className="tabs" role="tablist">
         <button role="tab" aria-selected={!tasks} className={`tab ${tasks ? "" : "on"}`} onClick={() => setView("activity")}>What ORION did</button>
         <button role="tab" aria-selected={tasks} className={`tab ${tasks ? "on" : ""}`} onClick={() => setView("tasks")}>Tasks</button>
       </div>
-      <div key={view} className="tab-body">{tasks ? <TasksView /> : <ActivityLog />}</div>
+      <div key={view} className="tab-body">{tasks ? <TasksView /> : <><WeeklyRecap /><h3 className="act-heading">Every action</h3><ActivityLog /></>}</div>
     </div></div>
   );
 }

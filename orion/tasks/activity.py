@@ -8,11 +8,16 @@ Nothing new is stored. Each entry is read from records ORION already keeps:
 
 An entry carries a short summary only. Message text (WhatsApp bodies) is cut out of the summary, results are
 shown only when an action failed (an error, not content), and arguments are never included.
+
+``recap`` sums one calendar week of these entries (Monday to Sunday, the PC's local time): counts, who
+approved, the routes used, the actions it took most, a few checked results as proof, and every failure.
 """
 
 from __future__ import annotations
 
 import re
+from collections import Counter
+from datetime import date, datetime, time, timedelta
 from typing import Any, Iterable
 
 ROUTES = {
@@ -184,3 +189,84 @@ def filter_entries(entries: list[dict], *, outcome: str = "", route: str = "", q
     routes = sorted({e["route"] for e in entries if e["route"]})
     return {"entries": page, "more": len(rows) > len(page), "total": len(entries), "counts": counts,
             "routes": [{"id": r, "label": ROUTES.get(r, r)} for r in routes]}
+
+
+# ── Weekly recap ─────────────────────────────────────────────────────────────
+RECAP_PROBLEMS = 10
+RECAP_PROOF = 3
+RECAP_TOP = 6
+
+
+def week_bounds(now: float, weeks_ago: int = 0) -> tuple[float, float]:
+    """Monday 00:00 (local time) of the week ``weeks_ago`` weeks back, and the Monday after it."""
+    today = datetime.fromtimestamp(now).date()
+    monday = today - timedelta(days=today.weekday(), weeks=weeks_ago)
+    return (datetime.combine(monday, time()).timestamp(),
+            datetime.combine(monday + timedelta(days=7), time()).timestamp())
+
+
+def tool_label(tool: str) -> str:
+    return "Background task" if tool == "background_task" else (tool.replace("_", " ").strip().capitalize() or "Action")
+
+
+def _approvals(entries: list[dict]) -> dict[str, int]:
+    out = {"you_approved": 0, "you_declined": 0, "automatic": 0, "your_command": 0}
+    for e in entries:
+        by = e.get("approved_by") or ""
+        if "You approved" in by or "You declined" in by:
+            out["you_approved"] += by.count("You approved")
+            out["you_declined"] += by.count("You declined")
+        elif by.startswith("Allowed automatically"):
+            out["automatic"] += 1
+        elif by.startswith("Your own"):
+            out["your_command"] += 1
+    return out
+
+
+def recap(entries: Iterable[dict], now: float, weeks_ago: int = 0) -> dict[str, Any]:
+    """What ORION did in one week, from ``collect``'s entries. Read-only: nothing is stored or sent."""
+    start, end = week_bounds(now, weeks_ago)
+    prev_start, _ = week_bounds(now, weeks_ago + 1)
+    entries = list(entries)
+    week = sorted((e for e in entries if start <= (e.get("at") or 0) < end), key=lambda e: e["at"], reverse=True)
+    outcomes = Counter(e["outcome"] for e in week)
+    groups = {g: sum(outcomes[o] for o in outs) for g, outs in GROUPS.items()}
+
+    first = datetime.fromtimestamp(start).date()
+    days = []
+    for i in range(7):
+        d: date = first + timedelta(days=i)
+        lo = datetime.combine(d, time()).timestamp()
+        hi = datetime.combine(d + timedelta(days=1), time()).timestamp()
+        day = [e for e in week if lo <= e["at"] < hi]
+        days.append({"date": d.isoformat(), "count": len(day),
+                     "problems": sum(1 for e in day if e["outcome"] in GROUPS["problem"]),
+                     "future": lo > now})
+
+    tools: Counter = Counter(e["tool"] for e in week)
+    failed_by_tool: Counter = Counter(e["tool"] for e in week if e["outcome"] in GROUPS["problem"])
+    routes: Counter = Counter(e["route"] for e in week if e["route"])
+    return {
+        "start": start,
+        "end": end,
+        "weeks_ago": weeks_ago,
+        "total": len(week),
+        "previous_total": sum(1 for e in entries if prev_start <= (e.get("at") or 0) < start),
+        "has_older": any((e.get("at") or 0) < start for e in entries),
+        "tasks": len({e["task_id"] for e in week if e.get("task_id")}),
+        "worked": groups["ok"],
+        "checked": outcomes["verified"],
+        "read_only": outcomes["done"],
+        "not_checked": outcomes["unverified"],
+        "problems": groups["problem"],
+        "declined": groups["declined"],
+        "live": groups["live"],
+        "desktop": sum(1 for e in week if e.get("desktop", "none") != "none"),
+        "approvals": _approvals(week),
+        "days": days,
+        "routes": [{"id": r, "label": ROUTES.get(r, r), "count": n} for r, n in routes.most_common()],
+        "top": [{"tool": t, "label": tool_label(t), "count": n, "problems": failed_by_tool[t]}
+                for t, n in tools.most_common(RECAP_TOP)],
+        "problem_entries": [e for e in week if e["outcome"] in GROUPS["problem"]][:RECAP_PROBLEMS],
+        "proof": [e for e in week if e["outcome"] == "verified" and e["evidence"]][:RECAP_PROOF],
+    }

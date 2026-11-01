@@ -6,6 +6,7 @@ import {
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityLog } from "../components/ActivityLog";
 import { ApprovalQueue } from "../components/ApprovalQueue";
+import { WeeklyRecap } from "../components/WeeklyRecap";
 import { Composer } from "../components/Composer";
 import { Logo } from "../components/Logo";
 import { Orb } from "../components/Orb";
@@ -736,6 +737,10 @@ function ActivityTab() {
             ))}
           </div>
         )}
+      </section>
+      <section>
+        <div className="ctl-title">Your week</div>
+        <WeeklyRecap compact />
       </section>
       <section>
         <div className="ctl-title">What ORION did</div>

@@ -46,7 +46,7 @@ function dur(e: ActivityEntry) {
   return d < 1 ? `${Math.round(d * 1000)}ms` : d < 120 ? `${d.toFixed(1)}s` : `${Math.round(d / 60)}m`;
 }
 
-function Row({ e, open, onToggle, compact }: { e: ActivityEntry; open: boolean; onToggle: () => void; compact?: boolean }) {
+export function ActivityRow({ e, open, onToggle, compact }: { e: ActivityEntry; open: boolean; onToggle: () => void; compact?: boolean }) {
   const s = useStore();
   const [label, tone] = OUTCOME[e.outcome] ?? OUTCOME.running;
   return (
@@ -155,7 +155,7 @@ export function ActivityLog({ compact }: { compact?: boolean }) {
         </div></div>
       ) : (
         <div className="act-list">
-          {entries.map((e) => <Row key={e.id} e={e} compact={compact} open={open === e.id} onToggle={() => setOpen(open === e.id ? null : e.id)} />)}
+          {entries.map((e) => <ActivityRow key={e.id} e={e} compact={compact} open={open === e.id} onToggle={() => setOpen(open === e.id ? null : e.id)} />)}
         </div>
       )}
       {more && <button className="btn act-more" onClick={loadOlder}>Show older</button>}
