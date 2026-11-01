@@ -140,3 +140,29 @@ def test_open_app_hands_windows_launches_to_ghost_mode(monkeypatch):
     assert apps.open_app("word") == "ghost"
     apps.open_app("settings")  # Settings is for the user: a normal window
     assert calls[0] == "word" and calls[1][0] == "normal"
+
+
+def test_full_screen_layout_and_activity_pill():
+    work = core.Rect(0, 0, 1920, 1040)
+    assert core.full_rect(work).as_tuple() == (0, 0, 1920, 1040)
+    assert "full" in core.LAYOUTS
+    pill = sprites.activity("ORION is typing in Word", t=0.4)
+    w, h = pill.size
+    assert w > 200 and h < 70
+    assert pill.getpixel((w // 2, h // 2))[3] > 200  # solid black glass, readable on any app
+    x, y = core.pill_pos((100, 50, 1100, 850), pill.size)
+    assert x == 100 + (1000 - w) // 2 and y == 64
+
+
+def test_saved_corner_setting_no_longer_shrinks_ghosts():
+    from orion.config import Settings
+
+    s = Settings(ghost_corner="bottom-right")  # what 2026-11-01 builds saved to disk
+    assert s.ghost_layout == "full"
+
+
+def test_ghosts_are_30_percent_glass():
+    from orion.config import Settings
+
+    assert core.glass_to_opacity(30) == pytest.approx(0.7)
+    assert core.alpha_byte(core.glass_to_opacity(Settings(ghost_opacity=0.5).ghost_glass)) == 178

@@ -14,10 +14,13 @@ WS_EX_APPWINDOW = 0x00040000
 WS_EX_NOACTIVATE = 0x08000000  # never becomes the active window
 GHOST_BITS = WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE
 
-DEFAULT_OPACITY = 0.5
+DEFAULT_GLASS = 30  # % see-through (Lluc, 2026-11-01: "make it 30% glass")
+DEFAULT_OPACITY = 1 - DEFAULT_GLASS / 100
 MIN_OPACITY, MAX_OPACITY = 0.25, 0.85
 MARGIN = 16
 FOLLOW_WINDOWS_S = 25  # after ORION acts in a ghost app, new windows of that app become ghosts too
+LAYOUTS = ("full", "natural")  # full screen (default) / where the app put itself; or one of CORNERS
+ACTIVITY_S = 8  # how long the "ORION is …" pill stays up after his last action in a ghost
 CORNERS = ("bottom-right", "bottom-left", "top-right", "top-left")
 LABEL_SPACE = 30  # room above each ghost for its "ORION · ghost" tag
 
@@ -55,9 +58,28 @@ def edit_text(text: str) -> str:
     return text.replace("\r\n", "\n").replace("\n", "\r\n")
 
 
+def full_rect(work: Rect) -> Rect:
+    """A ghost that fills the screen's work area, like a maximised window (taskbar left visible)."""
+    return Rect(work.left, work.top, work.right, work.bottom)
+
+
+def pill_pos(rect: tuple[int, int, int, int], size: tuple[int, int], margin: int = 14) -> tuple[int, int]:
+    """Where the activity pill sits: centred near the top of the ghost window."""
+    l, t, r, _b = rect
+    return l + (r - l - size[0]) // 2, t + margin
+
+
 def ghost_style(style: int) -> int:
     """Extended style that turns a normal top-level window into a ghost."""
     return (style | GHOST_BITS) & ~WS_EX_APPWINDOW
+
+
+def glass_to_opacity(glass) -> float:
+    """'30% glass' (30% see-through) → window opacity 0.7."""
+    try:
+        return clamp_opacity(1 - float(glass) / 100)
+    except (TypeError, ValueError):
+        return DEFAULT_OPACITY
 
 
 def clamp_opacity(value: float | None) -> float:

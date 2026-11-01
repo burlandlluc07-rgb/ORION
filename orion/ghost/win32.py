@@ -361,7 +361,7 @@ class GhostDesk:
     def __init__(self) -> None:
         self.ghosts: dict[int, Ghost] = {}
         self.opacity = core.DEFAULT_OPACITY
-        self.corner = "natural"  # where the app puts itself, as if you had opened it; or a corner
+        self.corner = "full"  # full screen like a maximised window; "natural" = where the app put itself; a corner
         self.show_frame = False  # no outline: a ghost is just see-through glass
         self.show_cursor = True
         self.on_event: Callable[[str, str], None] = lambda kind, text: None  # → ORION's thoughts / activity
@@ -373,6 +373,8 @@ class GhostDesk:
         self._hooks: list = []
         self._procs: list = []
         self._frames: dict[int, int] = {}  # ghost hwnd → its frame overlay hwnd
+        self._pills: dict[int, int] = {}  # ghost hwnd → its "ORION is …" activity pill overlay
+        self._pill_keys: dict[int, tuple] = {}
         self._frame_keys: dict[int, tuple] = {}
         self._cursor = 0
         self._cur = (0.0, 0.0)
@@ -470,11 +472,11 @@ class GhostDesk:
                 return
             job()
 
-    def _overlay(self) -> int:
+    def _overlay(self, hide_from_capture: bool = True) -> int:
         ex = core.WS_EX_LAYERED | core.WS_EX_TRANSPARENT | core.WS_EX_TOPMOST | core.WS_EX_TOOLWINDOW | core.WS_EX_NOACTIVATE
         h = user32.CreateWindowExW(ex, "OrionGhostOverlay", "ORION ghost", WS_POPUP, 0, 0, 1, 1, None, None,
                                    self._hinst, None)
-        if h and self._hide_from_capture:
+        if h and hide_from_capture and self._hide_from_capture:
             try:  # keep ORION's own overlays out of screenshots, including the ones he takes himself
                 user32.SetWindowDisplayAffinity(h, WDA_EXCLUDEFROMCAPTURE)
             except Exception:
@@ -539,8 +541,17 @@ class GhostDesk:
                 return g
         return None
 
-    def busy(self, g: Ghost, seconds: float = core.FOLLOW_WINDOWS_S) -> None:
-        g.flags["busy_until"] = time.monotonic() + seconds
+    def busy(self, g: Ghost, seconds: float = core.FOLLOW_WINDOWS_S, doing: str = "") -> None:
+        """ORION is working in ``g``: follow its new windows for a while, and show ``doing`` on it."""
+        now = time.monotonic()
+        g.flags["busy_until"] = now + seconds
+        if doing:
+            g.flags["doing"] = doing
+            g.flags["doing_until"] = now + core.ACTIVITY_S
+
+    def adopt(self, hwnd: int, app: str = "") -> Ghost:
+        """Make an existing window (e.g. the Word window ORION's own Word opened) a ghost."""
+        return self._run(lambda: self._adopt(hwnd, app))
 
     def _matches_pending(self, hwnd: int) -> bool:
         p = self._pending
@@ -571,7 +582,7 @@ class GhostDesk:
                   app=app or (self._pending["app"] if self._pending else ""),
                   original_style=ex, original_rect=_rect(hwnd).as_tuple(), opened=time.time())
         self.ghosts[hwnd] = g
-        self.busy(g)
+        self.busy(g, doing=f"ORION is opening {g.app or g.title}")
         if self._pending:
             self._pending["hwnd"] = hwnd
             self._pending["done"].set()
@@ -582,7 +593,11 @@ class GhostDesk:
         user32.ShowWindow(hwnd, SW_HIDE)  # the taskbar only notices the new style on the next show
         user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ctypes.c_long(core.ghost_style(ex)).value)
         user32.SetLayeredWindowAttributes(hwnd, 0, core.alpha_byte(self.opacity), LWA_ALPHA)
-        if self.corner in core.CORNERS:
+        if self.corner == "full":
+            full = core.full_rect(_work_area())
+            user32.SetWindowPos(hwnd, HWND_TOPMOST, full.left, full.top, full.width, full.height,
+                                SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED)
+        elif self.corner in core.CORNERS:
             r = _rect(hwnd)
             work = _work_area()
             size = core.ghost_size((r.width, r.height), work)
@@ -616,6 +631,7 @@ class GhostDesk:
             r = _frame_rect(hwnd)
             g.rect = r.as_tuple()
             g.title = _text(hwnd) or g.title
+            self._pill_tick(g, r, t)
             if not fr:
                 continue
             if user32.IsIconic(hwnd) or not user32.IsWindowVisible(hwnd):
@@ -630,7 +646,33 @@ class GhostDesk:
             self._blit(fr, img, r.left - pad, r.top - pad - label)
             user32.SetWindowPos(fr, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
 
+    def _pill_tick(self, g: Ghost, r: Rect, t: float) -> None:
+        """Show what ORION is doing on the ghost while he works in it; hide it a few seconds after he stops."""
+        hwnd = g.hwnd
+        show = (time.monotonic() < g.flags.get("doing_until", 0) and not user32.IsIconic(hwnd)
+                and user32.IsWindowVisible(hwnd))
+        pill = self._pills.get(hwnd)
+        if not show:
+            if pill:
+                user32.ShowWindow(pill, SW_HIDE)
+            return
+        if not pill:
+            pill = self._pills[hwnd] = self._overlay(hide_from_capture=False)  # you can screenshot it too
+        text = g.flags.get("doing") or f"ORION is working in {g.title}"
+        key = (r.as_tuple(), text, int(t * 6) % 60)
+        if self._pill_keys.get(hwnd) == key:
+            return
+        self._pill_keys[hwnd] = key
+        img = sprites.activity(text[:70], t)
+        x, y = core.pill_pos(r.as_tuple(), img.size)
+        self._blit(pill, img, x, y)
+        user32.SetWindowPos(pill, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
+
     def _forget(self, hwnd: int) -> None:
+        pill = self._pills.pop(hwnd, 0)
+        self._pill_keys.pop(hwnd, None)
+        if pill:
+            user32.DestroyWindow(pill)
         self.ghosts.pop(hwnd, None)
         fr = self._frames.pop(hwnd, 0)
         self._frame_keys.pop(hwnd, None)
@@ -756,6 +798,7 @@ class GhostDesk:
         raise GhostError(f"No ghost window matches “{window}”. Open ones: " + ", ".join(g.title for g in live.values()))
 
     def look(self, g: Ghost) -> tuple[bytes, tuple[int, int]]:
+        self.busy(g, doing=f"ORION is reading {g.title}")
         jpeg, shot, win = capture(g.hwnd)
         g.shot_size = shot
         g.flags["win_size"] = win
@@ -781,7 +824,7 @@ class GhostDesk:
             user32.PostMessageW(target, WM_LBUTTONDBLCLK, MK_LBUTTON, lp)
             user32.PostMessageW(target, WM_LBUTTONUP, 0, lp)
         g.flags["last_target"] = target
-        self.busy(g)
+        self.busy(g, doing=f"ORION is clicking in {g.title}")
         g.last_action = f"clicked at {px},{py}"
         return f"Clicked {g.title} at ({px}, {py}) with the ghost cursor."
 
@@ -826,7 +869,7 @@ class GhostDesk:
                 raise GhostError(f"{g.title} doesn't take background typing. Use ghost_type with a field's name instead.")
             for unit in core.utf16_units(text):
                 user32.PostMessageW(target, WM_CHAR, unit, 1)
-        self.busy(g)
+        self.busy(g, doing=f"ORION is typing in {g.title}")
         g.last_action = f"typed {len(text)} characters"
         return f"Typed {len(text)} characters into {g.title}."
 
@@ -842,7 +885,7 @@ class GhostDesk:
             if vk in core.KEY_CHARS:
                 user32.PostMessageW(target, WM_CHAR, ord(core.KEY_CHARS[vk]), core.key_lparam(0, False))
             user32.PostMessageW(target, WM_KEYUP, vk, core.key_lparam(0, True))
-        self.busy(g)
+        self.busy(g, doing=f"ORION is pressing {keys} in {g.title}")
         g.last_action = f"pressed {keys}"
         return f"Pressed {keys} in {g.title}."
 
@@ -877,7 +920,7 @@ class GhostDesk:
             if IS_WIN and self.ghosts:
                 self._run(lambda: [user32.SetLayeredWindowAttributes(h, 0, core.alpha_byte(self.opacity), LWA_ALPHA)
                                    for h in self.ghosts])
-        if corner in (*core.CORNERS, "natural"):
+        if corner in (*core.CORNERS, *core.LAYOUTS):
             self.corner = corner
         if frame is not None:
             self.show_frame = bool(frame)

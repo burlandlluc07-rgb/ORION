@@ -92,12 +92,13 @@ def main() -> int:
     alpha = ctypes.c_ubyte()
     flags = ctypes.c_uint()
     user32.GetLayeredWindowAttributes(g.hwnd, None, ctypes.byref(alpha), ctypes.byref(flags))
-    record("ghost is about half see-through", 100 <= alpha.value <= 160, f"alpha {alpha.value}")
+    record("ghost is 30% glass (70% solid)", 170 <= alpha.value <= 186, f"alpha {alpha.value}")
     record("ghost is a different window from yours", g.hwnd != user_win, str(g.hwnd))
     now = _rect_of(g.hwnd)
-    o = g.original_rect
-    record("ghost keeps the size and place the app chose", abs((now[2] - now[0]) - (o[2] - o[0])) <= 40 and
-           abs(now[0] - o[0]) <= 40, f"{now} vs {o}")
+    work = ctypes.wintypes.RECT()
+    user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(work), 0)  # SPI_GETWORKAREA
+    w = (work.left, work.top, work.right, work.bottom)
+    record("ghost fills the screen", all(abs(a - b) <= 16 for a, b in zip(now, w)), f"{now} vs work area {w}")
     untouched("after opening", user_win, pos)
     shot("1-ghost-opened")
 
@@ -122,6 +123,10 @@ def main() -> int:
     user_text = window_text(child(user_win, "Edit"))
     record("your Notepad wasn't typed into", user_text == "Lluc is typing his own notes here.", repr(user_text[:60]))
     untouched("after ghost typing", user_win, pos)
+    time.sleep(0.3)
+    pill = DESK._pills.get(g.hwnd, 0)
+    record("ghost shows what ORION is doing", bool(pill and user32.IsWindowVisible(pill)),
+           g.flags.get("doing", ""))
     shot("4-ghost-typed")
 
     # 4. The ghost tries to grab the foreground (some apps do this to themselves): ORION hands it back.
