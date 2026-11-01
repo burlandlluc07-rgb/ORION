@@ -1,6 +1,6 @@
 import {
   Blocks, Brain, CalendarClock, Download, History, MessageSquare, PanelLeftClose, PanelLeftOpen, Pin, PinOff, Plus,
-  Search, Settings as SettingsIcon, Target, Trash2,
+  Search, Settings as SettingsIcon, Target, Trash2, Waypoints,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { api } from "../lib/api";
@@ -15,6 +15,7 @@ const NAV: { id: View; label: string; icon: typeof MessageSquare }[] = [
   { id: "routines", label: "Routines", icon: CalendarClock },
   { id: "ecosystem", label: "Ecosystem", icon: Blocks },
   { id: "memory", label: "Memory", icon: Brain },
+  { id: "brain", label: "Brain", icon: Waypoints },
 ];
 
 /** Pinned first, then Today / Yesterday / Previous 7 days / Older, like a chat app's recents. */

@@ -34,6 +34,9 @@ class Engine:
         self.config = config or Config()
         self.bus = EventBus()
         self.store = Store(self.config.root / "orion.db")
+        from .memory.brain import ThoughtLog
+
+        self.thoughts = ThoughtLog(self.bus)  # the Brain tab's live feed
         self.governor = Governor(self.config, self.store)
         self.brain = GeminiBrain(self.config, self.governor, self.bus)
         self.registry = Registry()

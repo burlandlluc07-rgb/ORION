@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### New
+- **Brain tab.** A new tab under Memory shows ORION's memory as a live, interactive graph: ORION's core in the middle,
+  its notes around it (About me, each person and project, Plans & dates, This week) and every remembered fact linked
+  to its note, to the people and projects it names, and to related facts. When ORION recalls memories for a request,
+  takes a step or replies, a thought appears next to the core and the memories it used light up. A "Latest thoughts"
+  list shows the newest thoughts; click one to see the memories it used. Drag, zoom, search, and click any node for
+  details or to open its note.
+
 ## 3.0.3
 The notch, offline speech, an approvals queue, background WhatsApp and a weekly recap, on top of 3.0.2. Versions 3.0.0 to 3.0.2 were built but never published, so everything
 in them is in this release too and listed below. If you're on 2.7.x or older, all of it is new.
