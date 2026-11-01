@@ -56,22 +56,62 @@ def _enum_name(value: Any) -> str:
     return getattr(value, "name", None) or str(value or "")
 
 
-def _strip_signatures(contents: Any) -> bool:
-    """Drop thought signatures from earlier model turns. A signature only works with the model that made
-    it, so after a switch to another model (say Flash ran out of quota) Gemini refuses the request with a
-    400 until they're gone. Returns True when anything was removed."""
-    removed = False
+# Google's documented value for "skip thought signature validation" (for history a model didn't write).
+SKIP_SIGNATURE = "skip_thought_signature_validator"
+
+
+def _parts(contents: Any):
     for msg in contents if isinstance(contents, list) else []:
-        for part in (msg.get("parts") or []) if isinstance(msg, dict) else []:
-            if isinstance(part, dict):
-                for key in ("thought_signature", "thoughtSignature"):
-                    if part.pop(key, None) is not None:
-                        removed = True
+        if isinstance(msg, dict):
+            yield msg, [p for p in (msg.get("parts") or []) if isinstance(p, dict)]
+
+
+def strip_signatures(contents: Any) -> bool:
+    """Drop every thought signature from the history. A signature only works with the model that made it,
+    so after a switch to another model (say Flash ran out of quota mid-task) Gemini refuses the request
+    with a 400 until they're gone. Returns True when anything was removed."""
+    removed = False
+    for _msg, parts in _parts(contents):
+        for part in parts:
+            for key in ("thought_signature", "thoughtSignature"):
+                if part.pop(key, None) is not None:
+                    removed = True
     return removed
 
 
-def _signature_refused(exc: Any) -> bool:
-    return getattr(exc, "code", None) == 400 and "thought_signature" in str(exc)
+def skip_signatures(contents: Any) -> bool:
+    """Mark the model's tool calls with Google's "skip validation" signature, for models that insist on a
+    signature on every tool call of the task and would refuse history another model wrote."""
+    added = False
+    for msg, parts in _parts(contents):
+        if msg.get("role") != "model":
+            continue
+        call = next((p for p in parts if p.get("function_call")), None)
+        if call is not None and not (call.get("thought_signature") or call.get("thoughtSignature")):
+            call["thought_signature"] = SKIP_SIGNATURE
+            added = True
+    return added
+
+
+def signature_refused(exc: Any) -> bool:
+    text = str(exc).lower()
+    return getattr(exc, "code", None) == 400 and any(
+        k in text for k in ("thought_signature", "thought signature", "thoughtsignature"))
+
+
+def fix_signatures(contents: Any, done: set[str]) -> bool:
+    """After a 400 about thought signatures: first drop them (they came from another model), and if the
+    model then wants one, mark the tool calls as written elsewhere. Each at most once per request, so a
+    model that refuses both gets the normal error. Returns True when the request changed and is worth
+    trying again."""
+    if "strip" not in done:
+        done.add("strip")
+        if strip_signatures(contents):
+            return True
+    if "skip" not in done:
+        done.add("skip")
+        return skip_signatures(contents)
+    return False
 
 
 def _dump(obj: Any) -> dict:
@@ -154,6 +194,7 @@ class GeminiAgentRunner(AgentLoop):
         attempts = int(self.gcfg.get("retries", 3)) + 1
         models = self._models()
         index, attempt = 0, 0
+        fixes: dict[str, set[str]] = {}
         while True:
             ctx.check()
             model = models[index]
@@ -166,10 +207,10 @@ class GeminiAgentRunner(AgentLoop):
                     self._exhausted[model] = time.monotonic() + QUOTA_COOLDOWN
                     log.warning("Gemini %s is out of quota; switching to %s", model, models[index + 1])
                     index += 1
-                    _strip_signatures(contents)  # the next model can't read this one's thought signatures
+                    strip_signatures(contents)  # the next model can't use this one's thought signatures
                     continue
-                if _signature_refused(exc) and _strip_signatures(contents):
-                    log.warning("Gemini %s refused another model's thought signatures; retrying without them", model)
+                if signature_refused(exc) and fix_signatures(contents, fixes.setdefault(model, set())):
+                    log.warning("Gemini %s refused the thought signatures in the task; retrying with them fixed", model)
                     continue
                 attempt += 1
                 if exc.code not in RETRY_CODES or attempt >= attempts:

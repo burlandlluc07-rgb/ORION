@@ -255,3 +255,60 @@ async def test_settings_toggle(engine, bg):
 def test_service_starts_off():
     svc = BackgroundService(engine=None)  # type: ignore[arg-type]
     assert not svc.running and svc.status() == {"enabled": False}
+
+
+
+def _signatures(call):
+    return [p.get("thought_signature") for m in call["contents"] for p in m.get("parts", [])
+            if isinstance(p, dict) and p.get("thought_signature")]
+
+
+def _quota():
+    return errors.ClientError(429, {"error": {"code": 429, "message": "quota", "status": "RESOURCE_EXHAUSTED"}})
+
+
+def _refused(message):
+    return errors.ClientError(400, {"error": {"code": 400, "status": "INVALID_ARGUMENT", "message": message}})
+
+
+OTHER_MODELS = ("Request contains a thought_signature from a previous model response, but this model does not "
+                "support it. Signatures can only be sent back to the model that produced them.")
+
+
+async def test_switching_model_mid_task_drops_the_first_models_signatures(engine, bg, work):
+    """The 3.0.4 Windows e2e failure: Flash ran out between two steps of a task, the next model got Flash's
+    thought signatures and Gemini refused the request (400), so the task stopped."""
+    (work / "notes.txt").write_text("buy milk")
+    client = FakeGenai([gemini_reply(("read_file", {"path": "notes.txt"})), _quota(), gemini_reply("It says buy milk")])
+    svc = bg(client)
+    done = await finished(svc, svc.submit("What is in notes.txt?")["id"])
+    assert done["status"] == "completed", done["error"]
+    s = engine.config.settings
+    first, again, other = client.models.calls
+    assert [first["model"], again["model"], other["model"]] == [s.model_smart, s.model_smart, s.model_fast]
+    assert _signatures(again) and not _signatures(other)
+
+
+async def test_refused_signatures_are_dropped_and_the_step_retried(engine, bg, work):
+    (work / "notes.txt").write_text("buy milk")
+    client = FakeGenai([gemini_reply(("read_file", {"path": "notes.txt"})), _refused(OTHER_MODELS),
+                        gemini_reply("It says buy milk")])
+    svc = bg(client)
+    done = await finished(svc, svc.submit("What is in notes.txt?")["id"])
+    assert done["status"] == "completed", done["error"]
+    refused, retried = client.models.calls[1:]
+    assert refused["model"] == retried["model"]
+    assert _signatures(refused) and not _signatures(retried)
+
+
+async def test_model_that_wants_signatures_gets_the_skip_marker(engine, bg, work):
+    from orion.background.gemini_agent import SKIP_SIGNATURE
+    (work / "notes.txt").write_text("buy milk")
+    client = FakeGenai([gemini_reply(("read_file", {"path": "notes.txt"})), _quota(),
+                        _refused("Function call is missing a thought_signature in functionCall parts."),
+                        gemini_reply("It says buy milk")])
+    svc = bg(client)
+    done = await finished(svc, svc.submit("What is in notes.txt?")["id"])
+    assert done["status"] == "completed", done["error"]
+    assert _signatures(client.models.calls[2]) == []
+    assert _signatures(client.models.calls[3]) == [SKIP_SIGNATURE]

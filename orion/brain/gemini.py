@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import re
 from typing import Any, AsyncIterator
@@ -27,10 +28,15 @@ def _gemma_refused(model: str, exc: errors.APIError) -> bool:
     return exc.code == 400 and is_gemma(model)
 
 
+# Google's documented "skip thought signature validation" value (sent as this exact text), for history a
+# model didn't write itself.
+SKIP_SIGNATURE = base64.urlsafe_b64decode("skip_thought_signature_validator")
+
+
 def _strip_signatures(contents: list[types.Content]) -> bool:
-    """Drop thought signatures from earlier model turns. A signature only works with the model that made
-    it, so when a tool loop moves to another model (one ran out of quota) Gemini answers 400 until
-    they're gone. Returns True when anything was removed."""
+    """Drop every thought signature from the request. A signature only works with the model that made it,
+    so when a tool loop moves to another model (one ran out of quota) Gemini answers 400 until they're
+    gone. Returns True when anything was removed."""
     removed = False
     for content in contents:
         for part in getattr(content, "parts", None) or []:
@@ -40,8 +46,37 @@ def _strip_signatures(contents: list[types.Content]) -> bool:
     return removed
 
 
+def _skip_signatures(contents: list[types.Content]) -> bool:
+    """Mark the model's tool calls with Google's "skip validation" signature, for models that insist on a
+    signature on every tool call of the turn and refuse history another model wrote."""
+    added = False
+    for content in contents:
+        if getattr(content, "role", None) != "model":
+            continue
+        call = next((p for p in content.parts or [] if p.function_call), None)
+        if call is not None and not call.thought_signature:
+            call.thought_signature = SKIP_SIGNATURE
+            added = True
+    return added
+
+
 def _signature_refused(exc: errors.APIError) -> bool:
-    return exc.code == 400 and "thought_signature" in str(exc)
+    text = str(exc).lower()
+    return exc.code == 400 and any(k in text for k in ("thought_signature", "thought signature", "thoughtsignature"))
+
+
+def _fix_signatures(contents: list[types.Content], done: set[str]) -> bool:
+    """After a 400 about thought signatures: first drop them (another model wrote them), and if the model
+    then wants one, mark the tool calls as written elsewhere. Each at most once per model and request.
+    Returns True when the request changed and is worth sending again."""
+    if "strip" not in done:
+        done.add("strip")
+        if _strip_signatures(contents):
+            return True
+    if "skip" not in done:
+        done.add("skip")
+        return _skip_signatures(contents)
+    return False
 
 
 def _has_audio(contents: list[types.Content]) -> bool:
@@ -229,6 +264,7 @@ class GeminiBrain:
         """Gemini only: falls back to the next model in the tier chain if a request fails before
         anything was yielded."""
         tried = self._not_for(contents)
+        fixes: dict[str, set[str]] = {}
         last_exc: BaseException | None = None
         for _ in range(6):
             model = await self.governor.acquire(tier, exclude=tried, max_wait=180 if patient else 30)
@@ -239,11 +275,8 @@ class GeminiBrain:
                 try:
                     it = await self.client.aio.models.generate_content_stream(model=model, contents=contents, config=cfg)
                 except errors.ClientError as exc:
-                    if exc.code == 400 and "thinking" in str(exc).lower():
+                    if exc.code == 400 and "thinking" in str(exc).lower() and not _signature_refused(exc):
                         cfg.thinking_config = None
-                        it = await self.client.aio.models.generate_content_stream(model=model, contents=contents, config=cfg)
-                    elif _signature_refused(exc) and _strip_signatures(contents):
-                        log.warning("%s refused another model's thought signatures; retrying without them", model)
                         it = await self.client.aio.models.generate_content_stream(model=model, contents=contents, config=cfg)
                     else:
                         raise
@@ -263,6 +296,10 @@ class GeminiBrain:
             except errors.APIError as exc:
                 self.governor.record(model)
                 last_exc = exc
+                if not yielded and _signature_refused(exc) and _fix_signatures(contents, fixes.setdefault(model, set())):
+                    log.warning("%s refused the thought signatures in the request; sending it again with them fixed", model)
+                    tried.discard(model)
+                    continue
                 if exc.code == 429:
                     delay = self.governor.cool_down(model, str(exc))
                     log.warning("Rate limited on %s for %.0fs: %s", model, delay, str(exc)[:400])
@@ -299,6 +336,7 @@ class GeminiBrain:
                            json_mode: bool, patient: bool) -> str:
         extra = {"response_mime_type": "application/json"} if json_mode else {}
         tried = self._not_for(contents)
+        fixes: dict[str, set[str]] = {}
         last_exc: BaseException | None = None
         for attempt in range(6):
             model = await self.governor.acquire(tier, exclude=tried, max_wait=180 if patient else 30)
@@ -308,8 +346,8 @@ class GeminiBrain:
                 return r.text or ""
             except errors.APIError as exc:
                 last_exc = exc
-                if _signature_refused(exc) and _strip_signatures(contents):
-                    log.warning("%s refused another model's thought signatures; retrying without them", model)
+                if _signature_refused(exc) and _fix_signatures(contents, fixes.setdefault(model, set())):
+                    log.warning("%s refused the thought signatures in the request; sending it again with them fixed", model)
                     continue
                 if exc.code == 429:
                     delay = self.governor.cool_down(model, str(exc))

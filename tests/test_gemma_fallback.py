@@ -147,3 +147,35 @@ async def test_another_models_thought_signature_is_dropped_and_retried(engine):
     out = [x async for x in engine.brain.stream(history)]
     assert seen == [True, False]
     assert [v.text for k, v in out if k == "part"] == ["done"]
+
+
+
+async def test_a_model_that_wants_signatures_gets_the_skip_marker(engine):
+    from orion.brain.gemini import SKIP_SIGNATURE
+
+    async def chunks():
+        yield pytypes.SimpleNamespace(
+            usage_metadata=None,
+            candidates=[pytypes.SimpleNamespace(content=types.Content(role="model", parts=[types.Part(text="done")]))])
+
+    seen = []
+    missing = errors.ClientError(400, {"error": {"code": 400, "status": "INVALID_ARGUMENT", "message":
+        "Function call is missing a thought_signature in functionCall parts."}})
+
+    async def generate_content_stream(model, contents, config):
+        sig = contents[1].parts[0].thought_signature
+        seen.append(sig)
+        if sig != SKIP_SIGNATURE:
+            raise missing
+        return chunks()
+
+    use_client(engine, generate_content_stream=generate_content_stream)
+    history = [
+        types.Content(role="user", parts=[types.Part(text="make a file")]),
+        types.Content(role="model", parts=[types.Part(function_call=types.FunctionCall(name="noop", args={}))]),
+        types.Content(role="user", parts=[types.Part(function_response=types.FunctionResponse(
+            name="noop", response={"result": "ok"}))]),
+    ]
+    out = [x async for x in engine.brain.stream(history)]
+    assert seen == [None, SKIP_SIGNATURE]
+    assert [v.text for k, v in out if k == "part"] == ["done"]
