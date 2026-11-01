@@ -88,8 +88,8 @@ def _control(hwnd: int, control: str):
 @tool(category="ghost", kit=KIT, summary=lambda a: f"Open {a.get('app')} as a ghost window")
 def ghost_open(app: str, ctx: ToolContext = None) -> str:  # type: ignore[assignment]
     """Open a desktop app for ORION's own work as a ghost window: see-through, click-through and never focused,
-    where the app would normally open. The user keeps working undisturbed. Word and Excel take ghost_type
-    straight into the document.
+    full screen. The user keeps working undisturbed. Word and Excel open as ORION's own copy with a blank document
+    and take ghost_type straight into it.
 
     Args:
         app: The app's name, e.g. "notepad", "excel", "calculator".
@@ -99,10 +99,16 @@ def ghost_open(app: str, ctx: ToolContext = None) -> str:  # type: ignore[assign
     eng = getattr(ctx, "engine", None)
     if eng is not None:
         s = eng.config.settings
-        desk.configure(opacity=getattr(s, "ghost_opacity", None), corner=getattr(s, "ghost_corner", None),
+        desk.configure(opacity=getattr(s, "ghost_opacity", None), corner=getattr(s, "ghost_layout", None),
                        cursor=getattr(s, "ghost_cursor", None), frame=getattr(s, "ghost_frame", None))
         desk.on_event = lambda _kind, text: _say(ctx, text)
-    g = _guard(lambda: desk.open(target, display, keys))
+    from ..ghost import office
+
+    kind = next((office.office_kind(k) for k in keys if office.office_kind(k)), "")
+    if kind:
+        g = _guard(lambda: _open_office(desk, kind, display))
+    else:
+        g = _guard(lambda: desk.open(target, display, keys))
     return (f"{display} is open as a ghost window titled “{g.title}”. Use ghost_look to see it, then ghost_click, "
             f"ghost_type and ghost_press to work it.")
 
@@ -210,6 +216,24 @@ def ghost_type(text: str, window: str = "", control: str = "", ctx: ToolContext 
     return out
 
 
+def _open_office(desk, kind: str, display: str):
+    """Word / Excel: ORION's own copy through Office automation (a blank document, never your open files), made a
+    ghost as soon as its window exists."""
+    from ..ghost import office
+    from ..ghost.win32 import user32
+
+    locked = bool(user32.LockSetForegroundWindow(1))  # it can't jump in front of you while it starts
+    try:
+        try:
+            hwnd = office.open_office(kind)
+        except Exception as exc:  # noqa: BLE001 - COM errors come in many shapes
+            raise ToolError(f"Couldn't start {display} through Office automation ({exc}).") from exc
+        return desk.adopt(hwnd, display)
+    finally:
+        if locked:
+            user32.LockSetForegroundWindow(2)
+
+
 def _office_or_messages(desk, g, text: str) -> str:
     """Word and Excel take text through Office automation; everything else through the ghost's own messages."""
     from ..ghost import office
@@ -217,7 +241,7 @@ def _office_or_messages(desk, g, text: str) -> str:
 
     kind = office.office_kind(Path(_exe(g.pid)).stem)
     if kind:
-        desk.busy(g)  # a new document window that Word opens for this becomes a ghost too
+        desk.busy(g, doing=f"ORION is typing in {g.app or 'Office'}")  # new windows Word opens become ghosts too
         try:
             out = office.type_into(kind, g.hwnd, text)
         except Exception as exc:  # noqa: BLE001 - COM errors come in many shapes
@@ -262,7 +286,15 @@ def ghost_close(window: str = "", ctx: ToolContext = None) -> str:  # type: igno
     """
     desk = _desk()
     g = _guard(lambda: desk.find(window))
-    out = desk.close(g)
+    from ..ghost import office
+
+    try:
+        mine = office.close_office(g.hwnd)  # ORION's own Word/Excel: quit it without saving
+    except Exception:  # noqa: BLE001
+        mine = False
+    out = desk.close(g) if not mine else f"Closed {g.title}."
+    if mine:
+        desk._run(lambda: desk._forget(g.hwnd))
     _say(ctx, out)
     return out
 

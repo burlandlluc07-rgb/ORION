@@ -18,6 +18,8 @@ DEFAULT_OPACITY = 0.5
 MIN_OPACITY, MAX_OPACITY = 0.25, 0.85
 MARGIN = 16
 FOLLOW_WINDOWS_S = 25  # after ORION acts in a ghost app, new windows of that app become ghosts too
+LAYOUTS = ("full", "natural")  # full screen (default) / where the app put itself; or one of CORNERS
+ACTIVITY_S = 8  # how long the "ORION is …" pill stays up after his last action in a ghost
 CORNERS = ("bottom-right", "bottom-left", "top-right", "top-left")
 LABEL_SPACE = 30  # room above each ghost for its "ORION · ghost" tag
 
@@ -53,6 +55,17 @@ def takes_replacesel(cls: str) -> bool:
 def edit_text(text: str) -> str:
     """Line breaks as a Windows text box stores them."""
     return text.replace("\r\n", "\n").replace("\n", "\r\n")
+
+
+def full_rect(work: Rect) -> Rect:
+    """A ghost that fills the screen's work area, like a maximised window (taskbar left visible)."""
+    return Rect(work.left, work.top, work.right, work.bottom)
+
+
+def pill_pos(rect: tuple[int, int, int, int], size: tuple[int, int], margin: int = 14) -> tuple[int, int]:
+    """Where the activity pill sits: centred near the top of the ghost window."""
+    l, t, r, _b = rect
+    return l + (r - l - size[0]) // 2, t + margin
 
 
 def ghost_style(style: int) -> int:

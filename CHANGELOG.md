@@ -6,6 +6,11 @@ Version 3.0.4 was built but never published, so everything in it is in this rele
 wasn't published either; it's summarised at the end.
 
 ### New
+- **Full-screen ghosts that show ORION at work.** Ghost windows now fill the screen like a maximised window (still
+  50% glass, click-through, never focused). While ORION works in one, a black pill at the top says what he's doing,
+  e.g. "ORION is typing in Word", with his spirit and breathing dots. Word and Excel open as ORION's own copy with a
+  blank document, so his typing lands reliably and never touches documents you have open. The old corner setting
+  saved by earlier builds is no longer read (new setting: Ghost layout).
 - **Every app ORION opens is a ghost.** "Open Word" (or any app) now opens it as a ghost window by default; ask for
   a normal window ("open Spotify for me") to get one. Windows the app opens next while ORION works in it (Word's
   document after its start screen, dialogs) become ghosts too. Word and Excel take his typing through Office's own

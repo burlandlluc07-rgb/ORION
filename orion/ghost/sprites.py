@@ -144,6 +144,30 @@ def frame(width: int, height: int, title: str, t: float = 0.0, pad: int = 10, la
     return img
 
 
+def activity(text: str, t: float = 0.0) -> Image.Image:
+    """The pill shown on a ghost window while ORION works in it: his spirit, what he's doing, three breathing dots.
+    Black glass with a white edge, so it reads on any app."""
+    font = _font(15)
+    probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    tw = int(probe.textlength(text, font=font)) if hasattr(probe, "textlength") else 8 * len(text)
+    h = 38
+    w = 14 + 24 + 10 + tw + 12 + 30 + 14
+    img = Image.new("RGBA", (w + 16, h + 16), (0, 0, 0, 0))
+    glow = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    ImageDraw.Draw(glow).rounded_rectangle([8, 8, 8 + w, 8 + h], radius=h // 2, fill=(255, 255, 255, 70))
+    img.alpha_composite(glow.filter(ImageFilter.GaussianBlur(6)))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([8, 8, 8 + w, 8 + h], radius=h // 2, fill=(12, 12, 12, 235), outline=(255, 255, 255, 150))
+    img.alpha_composite(spirit(24, blink=int(t * 2) % 7 == 0), (8 + 14, 8 + (h - 24) // 2))
+    d.text((8 + 14 + 24 + 10, 8 + (h - 18) // 2), text, font=font, fill=(245, 245, 245, 255))
+    x0 = 8 + 14 + 24 + 10 + tw + 12
+    for i in range(3):
+        a = int(110 + 145 * (0.5 + 0.5 * math.sin(t * 5 - i * 0.9)))
+        cx, cy = x0 + 5 + i * 10, 8 + h // 2
+        d.ellipse([cx - 3, cy - 3, cx + 3, cy + 3], fill=(255, 255, 255, a))
+    return img
+
+
 def bgra_premultiplied(img: Image.Image) -> bytes:
     """Bytes for UpdateLayeredWindow: 32-bit BGRA with colour premultiplied by alpha."""
     img = img.convert("RGBA")

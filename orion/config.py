@@ -137,7 +137,8 @@ class Settings(BaseModel):
     # Ghost mode: apps ORION opens for his own work are see-through, click-through and never focused, and he works
     # them with his own drawn cursor. Your mouse, keyboard and focus are never touched.
     ghost_opacity: float = 0.5
-    ghost_corner: str = "natural"  # "natural" = where the app opens itself; or a corner to tuck ghosts into
+    ghost_corner: str = "natural"  # old setting, no longer read (kept so saved settings still load)
+    ghost_layout: str = "full"  # "full" screen like a maximised window, "natural" (where the app opens), or a corner
     ghost_default: bool = True  # apps ORION opens are ghost windows unless the user asks for a normal one
     ghost_frame: bool = False  # glowing outline around ghost windows (off: plain 50% glass)
     ghost_cursor: bool = True
