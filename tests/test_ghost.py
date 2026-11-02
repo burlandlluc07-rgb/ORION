@@ -166,3 +166,29 @@ def test_ghosts_are_30_percent_glass():
 
     assert core.glass_to_opacity(30) == pytest.approx(0.7)
     assert core.alpha_byte(core.glass_to_opacity(Settings(ghost_opacity=0.5).ghost_glass)) == 178
+
+
+async def test_ghost_look_gives_up_instead_of_hanging(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+
+    from orion.tools import ghost as tools
+    from orion.tools.registry import ToolError
+
+    g = SimpleNamespace(title="Document1 - Word", hwnd=1)
+    desk = SimpleNamespace(find=lambda w: g, look=lambda g: (b"jpeg", (10, 10)))
+
+    async def slow_vision(*_a):
+        await asyncio.sleep(5)
+
+    monkeypatch.setattr(tools, "_desk", lambda: desk)
+    monkeypatch.setattr(tools, "VISION_TIMEOUT_S", 0.05)
+    ctx = SimpleNamespace(engine=SimpleNamespace(brain=SimpleNamespace(vision=slow_vision)))
+    fn = getattr(tools.ghost_look, "fn", tools.ghost_look)
+    with pytest.raises(ToolError, match="took over"):
+        await fn(window="word", ctx=ctx)
+
+    monkeypatch.setattr(tools, "CAPTURE_TIMEOUT_S", 0.05)
+    desk.look = lambda g: __import__("time").sleep(1)
+    with pytest.raises(ToolError, match="didn't draw itself"):
+        await fn(window="word", ctx=ctx)
