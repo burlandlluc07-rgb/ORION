@@ -1,0 +1,132 @@
+[
+  {
+    "name": "lab ready",
+    "ok": true,
+    "detail": "user window 131478"
+  },
+  {
+    "name": "ghost window appears",
+    "ok": true,
+    "detail": "Untitled - Notepad in 0.6s"
+  },
+  {
+    "name": "ghost is see-through",
+    "ok": true,
+    "detail": "0x80801b8"
+  },
+  {
+    "name": "ghost is click-through",
+    "ok": true,
+    "detail": "0x80801b8"
+  },
+  {
+    "name": "ghost is never focused",
+    "ok": true,
+    "detail": "0x80801b8"
+  },
+  {
+    "name": "ghost is not in the taskbar",
+    "ok": true,
+    "detail": "0x80801b8"
+  },
+  {
+    "name": "ghost is 30% glass (70% solid)",
+    "ok": true,
+    "detail": "alpha 178"
+  },
+  {
+    "name": "ghost is a different window from yours",
+    "ok": true,
+    "detail": "131474"
+  },
+  {
+    "name": "ghost fills the screen",
+    "ok": true,
+    "detail": "(0, 0, 1024, 720) vs work area (0, 0, 1024, 720)"
+  },
+  {
+    "name": "after opening: your window keeps focus",
+    "ok": true,
+    "detail": "foreground=131478 yours=131478"
+  },
+  {
+    "name": "after opening: your mouse didn't move",
+    "ok": true,
+    "detail": "(400, 400) vs (400, 400)"
+  },
+  {
+    "name": "ORION can see the ghost window (PrintWindow)",
+    "ok": true,
+    "detail": "(1010, 713) extrema=(0, 255)"
+  },
+  {
+    "name": "after a ghost click: your window keeps focus",
+    "ok": true,
+    "detail": "foreground=131478 yours=131478"
+  },
+  {
+    "name": "after a ghost click: your mouse didn't move",
+    "ok": true,
+    "detail": "(400, 400) vs (400, 400)"
+  },
+  {
+    "name": "text reached the ghost",
+    "ok": true,
+    "detail": "\"Hello from ORION's ghost.\\r\\nSecond line, typed in the background.\" via Edit"
+  },
+  {
+    "name": "your Notepad wasn't typed into",
+    "ok": true,
+    "detail": "'Lluc is typing his own notes here.'"
+  },
+  {
+    "name": "after ghost typing: your window keeps focus",
+    "ok": true,
+    "detail": "foreground=131478 yours=131478"
+  },
+  {
+    "name": "after ghost typing: your mouse didn't move",
+    "ok": true,
+    "detail": "(400, 400) vs (400, 400)"
+  },
+  {
+    "name": "ghost shows what ORION is doing",
+    "ok": true,
+    "detail": "ORION is typing in Untitled - Notepad"
+  },
+  {
+    "name": "a ghost that grabs focus gives it straight back",
+    "ok": true,
+    "detail": "foreground=131478"
+  },
+  {
+    "name": "clicks pass through the ghost",
+    "ok": true,
+    "detail": "window under the ghost: 131478"
+  },
+  {
+    "name": "take over makes it a normal window",
+    "ok": true,
+    "detail": "0x110"
+  },
+  {
+    "name": "open_app opens a ghost by default",
+    "ok": true,
+    "detail": "notepad is open as a ghost window titled \u201cUntitled - Notepad\u201d. Use ghost_look to"
+  },
+  {
+    "name": "after open_app: your window keeps focus",
+    "ok": true,
+    "detail": "foreground=131474 yours=131474"
+  },
+  {
+    "name": "after open_app: your mouse didn't move",
+    "ok": true,
+    "detail": "(400, 400) vs (400, 400)"
+  },
+  {
+    "name": "your mouse never moved, start to finish",
+    "ok": true,
+    "detail": "(400, 400) vs (400, 400)"
+  }
+]
