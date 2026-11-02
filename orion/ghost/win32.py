@@ -44,7 +44,7 @@ LWA_ALPHA = 0x2
 ULW_ALPHA = 0x2
 WM_TIMER, WM_APP, WM_CLOSE, WM_QUIT = 0x0113, 0x8000, 0x0010, 0x0012
 WM_MOUSEMOVE, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_LBUTTONDBLCLK = 0x0200, 0x0201, 0x0202, 0x0203
-EM_REPLACESEL, SMTO_ABORTIFHUNG = 0x00C2, 0x0002
+EM_REPLACESEL, SMTO_ABORTIFHUNG, WM_NULL = 0x00C2, 0x0002, 0x0000
 WM_RBUTTONDOWN, WM_RBUTTONUP, WM_KEYDOWN, WM_KEYUP, WM_CHAR, WM_GETTEXT = 0x0204, 0x0205, 0x0100, 0x0101, 0x0102, 0x000D
 MK_LBUTTON, MK_RBUTTON = 0x1, 0x2
 EVENT_SYSTEM_FOREGROUND, EVENT_OBJECT_SHOW = 0x0003, 0x8002
@@ -164,6 +164,7 @@ if IS_WIN:
     _sig(user32.EnumWindows, wintypes.BOOL, ENUMPROC, wintypes.LPARAM)
     _sig(user32.EnumChildWindows, wintypes.BOOL, H, ENUMPROC, wintypes.LPARAM)
     _sig(user32.IsChild, wintypes.BOOL, H, H)
+    _sig(user32.IsHungAppWindow, wintypes.BOOL, H)
     _sig(user32.LockSetForegroundWindow, wintypes.BOOL, wintypes.UINT)
     _sig(user32.GetCursorPos, wintypes.BOOL, ctypes.POINTER(wintypes.POINT))
     _sig(gdi32.CreateCompatibleDC, wintypes.HDC, wintypes.HDC)
@@ -300,12 +301,24 @@ def give_focus_back(prev: int) -> bool:
             user32.AttachThreadInput(me, them, False)
 
 
+def responsive(hwnd: int, ms: int = 2500) -> bool:
+    """True when the window's thread answers a no-op message in time. PrintWindow would otherwise wait forever on
+    an app that is busy or hung."""
+    if user32.IsHungAppWindow(hwnd):
+        return False
+    res = ctypes.c_size_t()
+    return bool(user32.SendMessageTimeoutW(hwnd, WM_NULL, 0, 0, SMTO_ABORTIFHUNG, ms, ctypes.byref(res)))
+
+
 def capture(hwnd: int, max_side: int = 1600) -> tuple[bytes, tuple[int, int], tuple[int, int]]:
     """A picture of one window via PrintWindow (works behind other windows and needs no focus).
 
     Returns (jpeg, picture size, window size); the picture is the visible frame, scaled to fit ``max_side``."""
     from PIL import Image
 
+    if not responsive(hwnd):
+        raise GhostError(f"{_text(hwnd) or 'That window'} isn't answering right now (it may be busy or showing a "
+                         "message). Try again in a moment.")
     outer, frame = _rect(hwnd), _frame_rect(hwnd)
     w, h = outer.width, outer.height
     if w <= 0 or h <= 0:

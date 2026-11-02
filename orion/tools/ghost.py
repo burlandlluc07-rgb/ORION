@@ -45,6 +45,10 @@ def _guard(fn):
         raise ToolError(str(exc)) from exc
 
 
+CAPTURE_TIMEOUT_S = 12  # PrintWindow waits on the app's own thread; a busy app must not stall ORION
+VISION_TIMEOUT_S = 40
+
+
 def resolve_app(name: str) -> tuple[str, str, list[str]]:
     """(target to launch, display name, names to recognise its window's program by)."""
     from .apps import INDEX, WIN_BUILTINS
@@ -110,6 +114,10 @@ def ghost_open(app: str, ctx: ToolContext = None) -> str:  # type: ignore[assign
         g = _guard(lambda: _open_office(desk, kind, display))
     else:
         g = _guard(lambda: desk.open(target, display, keys))
+    if kind:
+        what = "a blank document" if kind == "winword" else "a blank workbook (A1 selected)"
+        return (f"{display} is open as a ghost window titled “{g.title}” with {what}. Type into it straight away "
+                f"with ghost_type; no need to look first.")
     return (f"{display} is open as a ghost window titled “{g.title}”. Use ghost_look to see it, then ghost_click, "
             f"ghost_type and ghost_press to work it.")
 
@@ -126,12 +134,20 @@ async def ghost_look(question: str = "Describe this window and where its buttons
     """
     desk = _desk()
     g = _guard(lambda: desk.find(window))
-    jpeg, size = await asyncio.to_thread(lambda: _guard(lambda: desk.look(g)))
+    try:
+        jpeg, size = await asyncio.wait_for(asyncio.to_thread(lambda: _guard(lambda: desk.look(g))), CAPTURE_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        raise ToolError(f"{g.title} didn't draw itself within {CAPTURE_TIMEOUT_S} s (it may be busy or showing a "
+                        "message). Try again shortly.") from None
     if ctx is None or ctx.engine is None:
         raise ToolError("Vision is unavailable.")
     prompt = (f"{question}\nThe picture is {size[0]}x{size[1]} pixels. When you mention something to click, give "
               "its centre as (x, y) in those pixels.")
-    answer = await ctx.engine.brain.vision(prompt, jpeg, "image/jpeg")
+    try:
+        answer = await asyncio.wait_for(ctx.engine.brain.vision(prompt, jpeg, "image/jpeg"), VISION_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        raise ToolError(f"Reading the picture of {g.title} took over {VISION_TIMEOUT_S} s (the AI model is slow or "
+                        "out of free quota). Carry on without looking if you can.") from None
     _say(ctx, f"Looked at {g.title}")
     return f"[ghost “{g.title}” {size[0]}x{size[1]}] {answer}"
 
